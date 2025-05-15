@@ -1,0 +1,125 @@
+{
+  "displayName": "B3",
+  "name":        "b3",
+  "mimeTypes":   ["text/x-b3"],
+    
+  "lineComment":      "//",
+  "blockCommentStart": "/*",
+  "blockCommentEnd":   "*/",
+
+  "keywords": [
+    "contract","axiom",
+    "type","partition",
+    "function","predicate","procedure",
+    "var",
+    "define",
+    "inout","out","call",
+    "assert","assume","check","learn","exit","then","else","if","return",
+    "probe",
+    "where","loop",
+    "old","forall","exists","closure",
+    "lift","into","by",
+    "case","false","true"
+  ],
+  
+  "extraKeywords": [
+  ],
+  
+  "verifyKeywords": [
+    "requires","ensures","invariant","reqensinv",
+    "trigger","explains",
+    "injective"
+  ],
+  
+  "extraVerifyKeywords": [
+  ],
+  
+  "types": [
+    "bool","char","int","nat","real",
+    "set","multiset","seq","string","map",
+    "imap","iset",
+    "object","object?","array","array?","array2","bv0"
+  ],
+  
+  "extraTypes": [
+  ],
+
+  
+  "brackets": [
+    ["{","}","delimiter.curly"],  
+    ["[","]","delimiter.square"],  
+    ["(",")","delimiter.parenthesis"] 
+  ],
+  
+  "autoClosingPairs": [["\"","\""], ["@brackets"]],
+
+  
+  "escapes": "\\\\(?:[nrt\\\\\"'0]|u[0-9A-Fa-f]{4})",
+  
+  "digits": "[0-9](_?[0-9])*",
+  "hexdigits": "[0-9a-fA-F](_?[0-9a-fA-F])*",
+  "identifier": "[a-zA-Z'_\\?][\\w'\\?]*",
+  
+  "tokenizer": {
+    "root": [
+      
+      ["(\\{)(\\s*:\\s*@identifier)", ["@brackets","meta.attribute"]],
+      
+      
+      ["(')(@escapes)(')(?![\\w'\\?])", ["string.char","string.char.escape","string.char" ]],
+      ["'[^\\\\'\\n\\r]'(?![\\w'\\?])", "string.char" ],
+      
+      
+      ["array([2-9]\\d*|1\\d+)", "type" ],
+      ["bv([1-9]\\d*)", "type" ],
+      ["@identifier", { 
+        "cases": {"@keywords": "keyword",
+                "@extraKeywords": "keyword",
+                "@verifyKeywords": "constructor.identifier",
+                "@extraVerifyKeywords": "constructor.identifier",
+                "@types"   : "type",
+                "@extraTypes" : "type",
+                "@default" : "identifier" }}],            
+
+      { "include": "@whitespace" },
+
+      ["[{}()\\[\\]]", "@brackets"],
+      ["[;]", "delimiter"],
+
+      ["@digits\\.@digits", "number"],
+      ["0x@hexdigits",  "number"],
+      ["@digits", "number.dec"],
+      
+      ["\"([^\"\\\\]|\\\\.)*$", "string.invalid" ],  
+      ["\"",  "string", "@string" ],
+      
+      ["@\"", { "token": "string.quote", "bracket": "@open", "next": "@litstring" } ]      
+    ],
+
+    "whitespace": [
+      ["[ \\t\\r\\n]+", "white"],
+      ["\\/\\*",       "comment", "@comment" ],
+      ["\\/\\/.*$",    "comment"]
+    ],
+
+    "comment": [
+      ["[^\\/*]+", "comment" ],
+      ["\\/\\*", "comment", "@push" ],    
+      ["\\*/",    "comment", "@pop"  ],
+      ["[\\/*]",   "comment" ]
+    ],  
+
+    "string": [
+      ["[^\\\\\"]+",  "string"],
+      ["@escapes", "string.escape"],
+      ["\\\\.",      "string.escape.invalid"],
+      ["\"",        "string", "@pop" ]
+    ],
+    
+    "litstring": [
+      ["[^\"]+",    "string"],
+      ["\"\"",       "string.escape"],
+      ["\"",        { "token": "string.quote", "bracket": "@close", "next": "@pop" } ]
+    ]
+  }
+}

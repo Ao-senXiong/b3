@@ -1,0 +1,1990 @@
+Title         : B3: An intermediate verification language
+Title Footer  : Manuscript KRML 301, 18 February 2025
+
+<!--
+History:
+  * 18 Feb 2025, more proof reading, filled in and fixed translation/learning of assertions
+  * 17 Feb 2025, dependency management
+  * 13 Feb 2025, added some examples
+  * 11 Feb 2025, more writing
+  * 8 Feb 2025, road post marker, etc.
+  * 7 Feb 2025, more on closures
+  * 5 Feb 2025, closure examples
+  * 4 Feb 2025, add closures
+  * 3 Feb 2025, add some motivating examples
+  * 31 Jan 2025, reorganize into Variations sections
+  * 30 Jan 2025, figured out details of closures
+  * 26 Jan 2025, introduced partitions
+  * 25 Jan 2025, write
+  * 24 Jan 2025, add contracts and calls
+  * 23 Jan 2025, write
+  * 22 Jan 2025, write
+  * 21 Jan 2025, write
+  * 20 Jan 2025, started scribbling down notes (as I'm attending the Viper tutorial at POPL 2025)
+-->
+
+Author        : K. Rustan M. Leino
+
+Colorizer     : b3
+~Pre,~Code    : replace="//\\lambda/\(&lambda;\)\
+                         //\#\{\}/#\
+                         //\#\{L([^}]*)\}/#\(^&lambda;\1^\)\
+                         //\#\{([^}]*)\}/#\(^\1^\)\
+                         //\\bot/\($\bot$\)\
+                         //!=/\(&ne;\)\
+                         //\\not /\(&not;\)\
+                         //\\Imp/\($\Longrightarrow$\)\
+                         //\/\\/\(&Wedge;\)\
+                         //\\\//\(&Vee;\)\
+                         //\\ell/\(&ell;\)\
+                         //\\sigma/\(&sigma;\)\
+                         //\\state/\(&Omega;\)\
+                         //\\emptyseq/\($\varepsilon$\)\
+                         //\+\+/\($\cdot$\)\
+                         //\[\[/\($\llbracket$\)\
+                         //\]\]/\($\rrbracket$\)\
+                         //\*\*/*\
+                         //\*,/\(^*,^\)\
+                         //\*/\(^*^\)\
+                         //\'\'/\(\"\)\
+                         //\'3/\(^3^\)\
+                         //\'4/\(^4^\)\
+                         //\'5/\(^5^\)\
+                         //\'6/\(^6^\)\
+                         //\\hole/\($\square$\)\
+                         //g"
+                language=b3
+
+Package       : times
+Package       : [T1]fontenc
+Package       : [scaled=0.85]beramono
+
+Tex Header  :
+    \newcommand{\Tr}{\textsc{tr}}
+    \newcommand{\Un}{\textsc{un}}
+    \newcommand{\LL}{\textsc{L}}
+
+
+Css Header:
+    .pre-indented { margin-left: 20pt; }
+    .pre-fenced { margin-left: 20pt; }
+
+Wedge        : &#8896;
+wedge        : &#8743;
+Vee          : &#8897;
+vee          : &#8744;
+bot          : &#8869;
+not          : &not;
+ell          : &ell;
+Omega        : &Omega;
+sigma        : &sigma;
+
+Bibliography  : krml301.bib
+Bib Style     : plain
+Cite Style    : numeric:nosort
+
+[INCLUDE=Zero]
+
+remark-format : **Remark\ &label;&theorem-endperiod;**
+
+Remark {
+  label: '[@remark]{.remark-label}';
+  before: clear;
+  before: '[&remark-format;]{.remark-before}&br;';
+  display: block;
+  margin: 1ex 0pt;
+  @remark: arabic0;
+  padding-left: 1em;
+  border-left: 0.25em teal solid;
+  breakable: true;
+  .para-end;
+}
+
+
+
+
+[TITLE]
+
+~ abstract
+This document defines the intermediate verification language B3.
+With a design informed by the experience and needs of prescribing verification conditions for
+Dafny, B3 aims to support the verification foundation of any similar language.
+~
+
+# Introduction
+
+Authoring an automated program verification is a complex task that can be broken up into two
+major components with separate concerns. One component is the _front end_, which prescribes the
+proof obligations for any given source program. The other component is the _back end_, which
+uses algorithms that try to discharge these proof obligations. The front end is concerned
+with _what_ the proof obligations are (for the source language at hand), whereas the back end is
+concerned with _how_ to discharge the proof obligations. The front end and back end are joined
+at an Intermediate Verification Language (IVL). For the front-end author, the IVL becomes a
+thinking tool that suggests ways to prescribe the kinds of verification conditions that commonly
+arise in a program verifier. For the back-end author, the IVL provides a primitive and precise
+foundation upon which to build its algorithms.
+
+The back end makes use of a set of cooperating decision procedures or semi-decision procedures,
+each of which is equipped to handle a particular domain (e.g., linear integer arithmetic). Such
+decision procedures are provided in off-the-shelf Satisfiability Modulo Theories (SMT) solvers.
+The back end works by turning the proof obligations prescribed by a given IVL program into
+queries posed to one or several SMT solvers (henceforth referred to as just the _solver_).
+
+In the last 25 years, IVLs have been used effectively in dozens of automated program
+verifiers. Widely used IVLs include Boogie, Why3, and Viper. For example, the verifier for the
+Dafny programming language has, since its creation 17 years ago, used the Boogie 2 IVL and
+tool. This long experience has developed several patterns of prescribing proof obligations that
+are not well supported by Boogie 2.
+
+This document describes a new IVL, named B3, which incorporates support for
+these common patterns. The semantics of B3 is defined by strongest postconditions and its
+associated proof obligations (which, equivalently, can in the opposite direction be computed as
+weakest conservative preconditions in the standard way). The semantics is presented as two operations
+on a solver state `\state`: `\state.extend(e)` records strongest postconditions and `\state.prove(e)`
+indicates proof obligations. Through these two solver operations, B3 essentially defines a script
+for automatically interacting with the solver.
+
+In contrast to the organization of a reference manual that introduces each construct with all its
+details and variations, this document aims to introduce ideas in a top-down fashion, starting with
+larger ideas and later going into further details and variations.
+
+# Overview
+
+At the top level, B3 provides declarations to introduce types, functions, axioms, and procedures.
+It builds in some primitive types, including `bool` and `int`, and operations on these.
+
+The following sections are ordered to first highlight the core features of the language. Later
+sections add variations and unsurprising features.
+
+# Statements {#sec-statements}
+
+A prominent feature of any IVL is its support for _control flow_ and _data flow_. This provides
+the front end a straightforward way to encode the statements of the source language, like `if`
+statements and assignment statements. Therefore, let's start with B3's statements.
+
+Here is the grammar of (the core) statements. In it, capitalized words denote non-terminal grammar
+productions. As suggestive alternatives to the non-terminal `Identifier`, the grammar uses the
+letters `x`, `y`, `z` (for variables and parameters), `\ell` (for labels), `F` (for functions),
+and `M` (for procedures).  Keywords are syntax highlighted. Punctuation is shown as is, except
+for the punctuation that's part of the grammar definition: `::=` (which defines its LHS grammar
+production), `|` (for choice), parentheses (for grouping), square brackets (to denote an
+optional component), a suffix `*` to denote 0 or more occurrences of what just precedes
+it, and `*,` as a variation of `*` that says the occurrences are comma-separated.
+Tokens that may be confused with such grammar components are enclosed in double quotes.
+
+```
+Stmt ::=
+  | var x: Type
+  | x := Expr
+  | Assertion
+  | [ \ell: ] Block
+  | exit \ell
+  | If
+  | [ \ell: ] Loop
+  | return
+  | Call
+  | ...
+Block ::=
+  | "{" Stmt* "}"
+If ::=
+  | if Expr Block else Block
+  | ...
+```
+
+These grammatical elements will be elaborated further later in the document.
+
+Blocks contain a sequence of statements. The variable declarations among those statements must
+use distinct names. The language allows a block to introduce a variable that shadows a variable
+with the same name in an outer block.  The scope of a variable ends at
+the end of the enclosing block.  Variables can be updated with assignment statements.
+
+The left-hand side of an assignment must be a mutable variable. Local variables, in/out-parameters,
+and out-parameters are mutable, but in-parameters are not.
+
+Some statements can be labeled. Subcomponents of such a statement can use an `exit` statement to
+exit the statement. That is, a statement `exit \ell` is allowed only inside the statement
+labeled with `\ell`.  This provides outward jumps, as provided for example in a source-language
+`break`{language=dafnyx} statement out of a loop.
+(For a variation of this statement, see section [#sec-exit-without-label].)
+
+The grammar shows the basic form of an `if` statement. For variations of it, see section [#sec-if-variations].
+There are also variations on the `var` statement and the assignment statement, see sections
+[#sec-havoc] and [#sec-var-init], respectively.
+
+Assertions are defined in sections [#sec-assertions] and [#sec-more-assertions],
+calls are defined in section [#sec-calls], and
+the loop statement is defined in section [#sec-loops].
+
+# Symbolic execution
+
+The statements are given a strongest-postcondition semantics, presented in terms of processing
+rules that strongly hint at a symbolic execution. However, note that the semantics does not
+depend on using symbolic execution. Indeed, the given `extend` and `prove` operations for a
+statement `S` are the duals of the weakest-precondition operations `wlp.S` and `wp.S.true`.
+Such a weakest-precondition semantics can be used to formulate a single verification-condition
+formula for each B3 procedure (and one can also obtain a single verification-condition formula
+straight from the `extend` and `prove` operations).  From the given semantics, it is also
+possible to define an operational semantics for B3, for example a trace semantics (analogous to
+what's in the Boogie 2 language reference manual).
+
+To describe the processing of statements, we first introduce its components.
+
+## Continuations
+
+The symbolic execution is defined for a given _continuation_, which is a sequence of statements,
+with typical names `Ss` and `Cc`.
+We denote the empty sequence by `\emptyseq` and use the operator `++` to denote sequence concatenation.
+
+## Incarnations
+
+When symbolic execution processes an assignment to a variable, it generates a new name for the
+variable and binds the new name to the value being assigned. These names thus denote _incarnations_
+of the variable. The incarnation state is a map `\sigma` from each variable to the variable's current
+incarnation.
+
+To a first order of approximation, the names used for incarnations are irrelevant, provided there are
+no name clashes. However, to make naming deterministic, we use names of the form `x` and `x%\(_n_\)`, where
+`x` is the name of the variable as declared in the B3 program and `\(_n_\)` is a sequence number. When a
+variable `x` is first declared, it has the name `x` (which can be used, but often isn't), and subsequence
+assignments will use the names `x%0`, `x%1`, ....
+
+For a variable `x`, `\sigma.new(x)` denotes the next name to be used for `x`.
+For an expression `e`, `\sigma[e]` denotes `e` in which every variable has been renamed according to
+`\sigma`.
+For a map `\sigma`, we write `\sigma[x := y]` to denote a map that is like `\sigma` except that it
+maps `x` to `y`.
+
+## Solver state
+
+Symbolic execution makes use of a solver `\state`, whose state is essentially a logical formula (but
+with additional bookkeeping information that we'll see later).
+The two main operations on a solver state `\state` are
+
+* `\state.extend(e)` returns a new solver state that also contains the constraint (boolean expression) `e`.
+    In other words, it returns a state that denotes `\state /\ e`.
+* `\state.prove(e)` attempts prove the boolean expression `e` in the state `\state`. In other words, it
+    attempts to prove the validity of the formula `\state \Imp e`.
+
+As we represent it, the solver state is immutable and the definition of symbolic execution sometimes
+uses the same solver state more than once. In practice, a solver may be incremental, so the interaction
+with the solver may use SMT Lib `PUSH` and `POP` operations to efficiently accomplish what we describe here.
+
+## Statement processing
+
+Symbolic execution is defined from
+
+* a possibly empty sequence `Ss` of statements
+* an incarnation map `\sigma`
+* a map `B` from block names to pairs `(V, Ss)` of variable sets and statement sequences
+* a solver state `\state`
+
+The translation function `Process[[ Ss, \sigma, B, \state ]]` gives a sequence a solver
+commands.  These say how the state of the symbolic execution proceeds and what needs to be
+proved when.  For example, if `\sigma` respectively maps `x` and `y` to the incarnations `x%4`
+and `y%1`, then, as we'll soon see, `Process[[ y := x + 1 ++ check x < y, \sigma, B, \state ]]`
+gives the solver commands
+
+    \state.extend(y%2 = x%4 + 1).prove(x%4 < y%2)
+
+For now, we define `Process` only for a few statements, enough to give a representative idea of how the
+symbolic execution works. Later sections will define `Process` for other statements.
+We suppose that every block has been given a label.
+
+```
+Process[[ \emptyseq, \sigma, B, \state ]] =
+
+Process[[ var x: T ++ Cc, \sigma, B, \state ]] =
+  Process[[ Cc, \sigma[x := x], B, \state ]]
+
+Process[[ x := e ++ Cc, \sigma, B, \state ]] =
+  let e' be \sigma[e]
+  let x' be \sigma.new(x)
+  Process[[ Cc, \sigma[x := x'], B, \state.extend(x' = e') ]]
+
+Process[[ \ell: { Ss } ++ Cc, \sigma, B, \state ]] =
+  let B' be B[\ell := (domain of \sigma, Cc)]
+  Process[[ Ss ++ exit \ell, \sigma, B', \state ]]
+
+Process[[ exit \ell ++ Cc, \sigma, B, \state ]] =
+  let (V, Cc') be the value of B[\ell]
+  let \sigma' be \sigma domain-restricted to V
+  Process[[ Cc', \sigma', B, \state ]]
+
+Process[[ return ++ Cc, \sigma, B, \state ]] =
+  let (V, Cc') be the value of B[return]
+  let \sigma' be \sigma domain-restricted to V
+  Process[[ Cc', \sigma', B, \state ]]
+```
+
+A general choice in symbolic execution is whether or not to join the two branches of an `if`
+before processing its continuation. Here is the version that does not do that join, but instead
+processes the branches through an `if` separately (quite possibly with some redundancy).
+
+```
+Process[[ if e S0 else S1 ++ Cc, \sigma, B, \state ]] =
+  let e' be \sigma[e]
+  Process[[ S0 ++ Cc, \sigma, B, \state.extend(e') ]]
+  Process[[ S1 ++ Cc, \sigma, B, \state.extend(\not e') ]]
+```
+
+Remark: To support joins without letting branches influence each others, names of incarnations
+should be generated in such a way that the numberings in two branches have no effect on each other.
+For example, suppose the incarnation of a variable `x` is `x%8` upon reaching an `if`. Then,
+the first new incarnation inside the _then_ branch can be `x%8.\(then\).0` and the first new incarnation
+inside the _else_ branch can be `x%8.\(else\).0`. The incarnation at the join of the two branches
+will be `x%9`.
+
+# Assertions {#sec-assertions}
+
+A core function of an IVL is to generate proof obligations. These are prescribed using
+_assertions_, of which there are two basic forms.
+The `check` statement _checks_ if a condition holds in the current state.
+Checks are forgetful, meaning that they have no effect on the solver state.
+Stated in terms of an operational semantics, program execution continues after a `check` even if its condition does not hold.
+The `assume` statement lets the solver state _learn_ a condition. This means the condition
+becomes an antecedent in discharging further proof obligations.
+Stated in terms of an operational semantics, any execution that would encounter an `assume` with a condition that does not hold
+is not considered a possible trace of the program (that is, any analysis of the program ignores such a trace).
+
+In simple settings, the property being checked is then learned, so the language offers an
+`assert` statement that combines the `check` and `assume` statements.
+Stated in terms of an operational semantics, program execution continues after an `assert` only if its condition holds.
+
+These three statements, along with a block that encloses a sequence of assertions, are
+
+```
+Assertion ::=
+  | check Expr
+  | assume Expr
+  | assert Expr
+  | ...
+ABlock ::=
+  | "{" ABlockAssertion* "}"
+ABlockAssertion ::=
+  | Assertion
+  | ...
+```
+
+The two basic assertions are processed as follows:
+
+```
+Process[[ check e ++ Cc, \sigma, B, \state ]] =
+  let e' be \sigma[e]
+  \state.prove(e')
+  Process[[ Cc, \sigma, B, \state ]]
+Process[[ assume e ++ Cc, \sigma, B, \state ]] =
+  let e' be \sigma[e]
+  let \state' be \state.extend(e')
+  Process[[ Cc, \sigma, B, \state' ]]
+```
+
+The statement `assert e` always means `check e ++ assume e`.
+
+As we go along, we will sometimes need to collect the learning that's prescribed
+by an assertion. This is done by the translation function `Learn`, which returns an
+expression.
+
+```
+Learn[[ check e, \sigma ]] =
+  true
+
+Learn[[ assume e, \sigma ]] =
+  \sigma[e]
+```
+
+# Procedures
+
+A _procedure_ is a name, a signature, a specification, and an optional implementation.
+
+```
+TopLevelDeclaration ::=
+  | procedure M "(" CParam*, ")" Spec [ Block ]
+  | ...
+CParam ::=
+  | [inout | out] x: Type
+Spec ::=
+  | PreSpecification* PostSpecification*
+PreSpecification ::=
+  | requires Expr
+  | requires ABlock
+PostSpecification ::=
+  | ensures Expr
+  | ensures ABlock
+```
+
+The comma-separated parameters of a procedure come in three kinds: in-parameters,
+in/out-parameters, and out-parameters. Although a procedure can have any number of parameters,
+subsequent declarations and uses of procedures will representatively show three parameters, one
+of each kind: `x: X, inout y: Y, out z: Z`.
+
+The specification consists of any number of preconditions and any number of postconditions, each
+of which indicates either an expression or an assertion. Postconditions are allowed to refer to
+the initial value of an in/out-parameter `y` by the expression `old(y)`. For the purpose of
+substitution in expressions, `old(y)` is treated as a variable; that is, we allow `old(y)` to
+be used as a left-hand side in the incarnation map `\sigma`.
+
+The processing of a procedure consists of three tasks. The first task _vets_ the precondition,
+the second task vets the postcondition, and the third task _enforces_ that the body, if any, establishes
+the postcondition.
+The first of these tasks precedes the other two, but the second and third tasks do not depend on each other.
+
+```
+TopLevelProcess[[ procedure M(x: X, inout y: Y, out z: Z) PreSpecs PostSpecs Body, \state ]] =
+  let \sigma be [x := x, y := y]
+  let y' be \sigma.new(y)
+  let z' be \sigma.new(z)
+  let \sigma' be [x := x, old(y) := y, y := y', z := z']
+  if there is a Body
+    let Body' be assume old(y) = y ++ Body
+    VetPre[[ PreSpecs, PostSpecs, Body', \sigma, \sigma', \state ]]
+  else
+    VetPre[[ PreSpecs, PostSpecs, \emptyseq, \sigma, \sigma', \state ]]
+```
+
+`VetPre` vets the precondition and then continues into `VetPost` and
+`EnforcePost`.
+
+```
+VetPre[[ requires e ++ PreSpecs, PostSpecs, Body, \sigma, \sigma', \state ]] =
+  let e' be \sigma[e]
+  VetPre[[ PreSpecs, PostSpecs, Body, \sigma, \sigma', \state.extend(e') ]]
+
+VetPre[[ requires A ++ PreSpecs, PostSpecs, Body, \sigma, \sigma', \state ]] =
+  Process[[ A, \sigma, \emptyseq, \state ]]
+  let L be Learn[[ A, \state ]]
+  VetPre[[ PreSpecs, PostSpecs, Body, \sigma, \sigma', \state.extend(L) ]]
+
+VetPre[[ \emptyseq, PostSpecs, Body, \sigma, \sigma', \state ]] =
+  VetPost[[ PostSpecs, \sigma', \state ]]
+  EnforcePost[[ PostSpecs, Body, \sigma', \state ]]
+```
+
+```
+VetPost[[ ensures e ++ PostSpecs, \sigma, \state ]] =
+  let e' be \sigma[e]
+  VetPost[[ PostSpecs, \sigma, \state.extend(e') ]]
+
+VetPost[[ ensures A ++ PostSpecs, \sigma, \state ]] =
+  Process[[ A, \sigma, \emptyseq, \state ]]
+  let L be Learn[[ A, \state ]]
+  VetPost[[ PostSpecs, \sigma, \state ]]
+
+VetPost[[ \emptyseq, \sigma, \state ]] =
+```
+
+To enforce that the body establishes the postconditions, and also to enforce that a caller
+establishes the precondition (see section [#sec-calls] on calls), we define two
+operations on specifications, `ConvertToLearn` and `ConvertToCheck`.  These learn from the
+assertions and either just learn or both check and learn the conditions. The operations process
+`requires` and `ensures` (and in section [#sec-loops] also `invariant` for loops) in the same
+way; the following definitions use the ficticious keyword `reqensinv` to stand for any of
+`requires`, `ensures`, or `invariant`.
+
+```
+ConvertToLearn[[ reqensinv e ++ Specs ]] =
+  let Sp be ConvertToLearn[[ Specs ]]
+  assume e ++ Sp
+
+ConvertToLearn[[ reqensinv A ++ Specs ]] =
+  let L be Learn[[ A ]]
+  let Sp be ConvertToLearn[[ Specs ]]
+  assume L ++ Sp
+
+ConvertToLearn[[ \emptyseq ]] =
+  \emptyseq
+```
+
+```
+ConvertToCheck[[ reqensinv e ++ Specs ]] =
+  let Sp be ConvertToCheck[[ Specs ]]
+  check e ++ Sp
+
+ConvertToCheck[[ reqensinv A ++ Specs ]] =
+  let L be Learn[[ A ]]
+  let Sp be ConvertToCheck[[ Specs ]]
+  assume L ++ Sp
+
+ConvertToCheck[[ \emptyseq ]] =
+  \emptyseq
+```
+
+Now, we define the third task of processing procedure declarations. It _uses_ the procedure's precondition,
+as provided in the `\state` parameter to `EnforcePost`, and it enforces the postcondition after processing
+the body.
+
+```
+EnforcePost[[ PostSpecs, Body, \sigma, \state ]] =
+  let Ens be ConvertToCheck[[ PostSpecs ]]
+  let B be [return := (domain of \sigma, Ens)]
+  Process[[ Body ++ return, \sigma, B, \state ]]
+```
+
+## Example {#sec-proc-example}
+
+Consider the following procedure declaration:
+
+```
+procedure M(x: int, inout y: int)
+  requires { check FPre(x, y) ++ assume FCanCall(x, y) }
+  requires F(x, y) < 10
+  ensures { check GPre(x, y) ++ assume GCanCall(x, y) }
+  ensures old(y) <= G(x, y)
+```
+
+Vetting this procedure declaration from a solver state `\state` involves the following checks:
+
+```
+// vet precondition
+\state.prove(FPre(x, y))
+\state' := \state.extend(FCanCall(x, y))
+\state'' := \state'.extend(F(x, y) < 10)
+// vet postcondition
+\state''.prove(GPre(x, y%0))
+\state'3 := \state''.extend(GCanCall(x, y%0))
+\state'4 := \state'3.extend(y < G(x, y%0))
+```
+
+Note that vetting learns from, but does not check, the expression forms of the pre- and postconditions.
+
+If the procedure has a body `Body`, then it will be processed by
+
+```
+Process[[ Body ++ return, ..., ..., \state'' ]]
+```
+
+When this processing reaches the `return` label, say in a solver state `\state'5` and with
+the incarnation `y%8` for `y`, then processing will enforce the postcondition by
+
+```
+\state'6 := \state'5.extend(GCanCall(x, y%8))
+\state'6.prove(y <= G(x, y%8))
+```
+
+Note that enforcement does not make use of the `check` assertions in the procedure's pre- and postcondition.
+
+# Calls {#sec-calls}
+
+A procedure can be called as a statement. This _enforces_ that the caller has established the precondition
+and in return lets the caller _use_ the procedure's postcondition.
+In a call, the in/out- and out-arguments must be distinct variables.
+(Following the good idea in C#) the arguments are syntactically tagged with the same labels as the formal
+parameters.
+
+```
+Call ::=
+  | call M "(" Argument*, ")"
+
+Argument ::=
+  | Expr
+  | ( inout | out ) x
+```
+
+It would be possible to define a call as an elaboration of the body of the called procedure (provided the
+procedure has a body). However, here, we just define the processing of a call in terms of the procedure's
+specification.
+
+Suppose `M` is a procedure
+
+```
+procedure M(x: X, inout y: Y, out z: Z) PreSpecs PostSpecs
+```
+
+Then,
+
+```
+Process[[ call M(e, inout b, out c) ++ Cc, \sigma, B, \state ]] =
+  let e' be \sigma[e]
+  let x' be \sigma.new(x%in)
+  let b' be \sigma[b]
+  let b'' be \sigma.new(b')
+  let c' be \sigma.new(c)
+  let \sigma' be [x := x', y := b']
+  let Pre be ConvertToCheck[[ PreSpecs ]]
+  let \state' be \state.extend(x' = e')
+  Process[[ Pre, \sigma', B, \state' ]]
+  let \sigma'' be \sigma[x := x', old(y) := b', y := b'', z := c']
+  let Post be ConvertToLearn[[ PostSpecs ]]
+  Process[[ Post ++ Cc, \sigma'', B, \state' ]]
+```
+
+Note that the semantics of the `call` statement does not retain any part of the precondition in
+the continuation of the call. In other words, the `call` "checks and forgets" the precondition.
+
+## Example
+
+Continuing the example from section [#sec-proc-example], consider a call
+
+```
+call M(a, inout b)
+```
+
+From a solver state `\state` and with incarnations `a%3` and `b%5` for `a` and `b`, the call is processed as follows:
+
+```
+\state' := \state.extend(x%in = a%3)
+\state'' := \state'.extend(FCanCall(x%in, b%5))
+\state''.prove(F(x%in, b%5) < 10)
+\state'3 := \state'.extend(GCanCall(x%in, b%6))
+\state'4 := \state'3.extend(b%5 <= G(x%in, b%6))
+```
+
+# Types
+
+B3 features the some built-in primitive types as well as user-defined types.
+
+```
+Type ::=
+  | bool
+  | int
+  | real
+  | bv0 | bv1 | bv2 | ...
+  | T
+```
+
+There's not much to say about type declarations. Simply, they introduce names of uninterpreted, user-defined types.
+
+```
+TopLevelDeclaration ::=
+  | ...
+  | type T
+```
+
+There's nothing to process about a type.
+
+```
+TopLevelProcess[[ type T ]] =
+```
+
+For variations of type declarations, see section [#sec-type-variations].
+
+(TODO: Consider adding record types and/or collections of variables as a type.)
+
+# Axioms {#sec-axioms}
+
+An _axiom_ declares a top-level assumption. It can be used to (fully or partially) describe properties
+of functions or relations between functions.
+
+```
+TopLevelDeclaration ::=
+  | ...
+  | axiom Explains* Expr
+```
+
+The `Explains` clauses are explained in section [#sec-dependencies] on dependency management.
+
+There's nothing to process about an axiom.
+
+```
+TopLevelProcess[[ axiom e ]] =
+```
+
+# Functions {#sec-functions}
+
+A _function_ is a name, a signature, and an optional definition.
+
+```
+TopLevelDeclaration ::=
+  | ...
+  | function F "(" FParam*, ")" ":" TypeOrPartition [ FDefinition ]
+FParam ::=
+  | FParamModifier* x: Type
+FDefinition ::=
+  | [ ForallHeader ] Trigger* FPre* "{" Expr "}"
+ForallHeader ::=
+  | forall x: Type
+FPre ::=
+  | requires Expr
+```
+
+In its simplest form, a function declaration just introduces an uninterpreted function symbol; for example:
+
+```
+function Fib(x: int): int
+```
+
+Functions live in a different name space from variables.
+
+For details of partitions, see sections [#sec-partition] and [#sec-function-with-partition]; for
+now, it suffices to think of `TypeOrPartition` as just `Type`.  The `FParamModifier` production
+is defined in section [#sec-injective] and the `ForallHeader` production is explained in section
+[#sec-function-forall].
+
+## Function definition
+
+The value of a function can be defined using an axiom. It can also be defined as part of the function
+declaration. There are two advantages of giving the definition as part of the function declaration.
+One advantage is convenience, since it eliminates the need for writing a universally quantified axiom.
+The other advantage is that, for a function that returns a boolean (aka, a _predicate_), B3 can trace
+into the body to give more detailed error information (see section [#sec-markers] on markers).
+
+Here is an example of a simple function declaration:
+
+```
+function Triple(x: int): int
+{
+  3 ** x
+}
+```
+
+The definition of this function effectively turns into the following axiom:
+
+```
+axiom forall x: int :: Triple(x) = 3 ** x
+```
+
+It frequently occurs that a function is _underspecified_, that is, that it is defined only on certain parameters.
+This can be incorporated into the axiom by using `requires` clauses. For example, to give a definition
+of `Triple` only for non-negative integers, one can write
+
+```
+function Triple(x: int): int
+  requires 0 <= x
+{
+  3 ** x
+}
+```
+
+which in effect gives the following axiom:
+
+```
+axiom forall x: int :: 0 <= x ==> Triple(x) = 3 ** x
+```
+
+(TODO: The use of the `requires` keyword here is a bad idea, since `requires` suggests enforcing the condition
+at call sites, which is not the intention. That is, a function in B3 total but possibly underspecified. The keyword
+should be replaced by something that suggests underspecification.)
+
+# Loops {#sec-loops}
+
+```
+Loop ::=
+  | loop Invariant* Block
+Invariant ::=
+  | invariant Expr
+  | invariant ABlock
+```
+
+A loop is used to denote a possibly infinite repetition of a block statement. `exit` and `return` statements
+can be used to end the repetition.
+
+It would be possible to define a loop as an elaboration of its body.  However, here, we just
+define the processing of a loop in terms of the loop's specification, its `invariant` clauses.
+
+```
+Process[[ loop Invs S ++ Cc, \sigma, B, \state ]] =
+  let CheckInv be ConvertToCheck[[ Invs ]]
+  let LearnInv be ConvertToLearn[[ Invs ]]
+  Process[[ CheckInv, \sigma, B, \state ]]
+  let x be the assignment targets (see \(section [#sec-assignment-targets]\) below) of the \(loop\) body
+  let x' be \sigma.new(x)
+  let \sigma' be \sigma[x := x']
+  VetInv[[ Invs, \sigma', \state ]]
+  Process[[ LearnInv ++ S ++ CheckInv, \sigma', B, \state ]]
+```
+
+where the vetting of the invariant is defined by
+
+```
+VetInv[[ \emptyseq, \sigma', \state ]] =
+
+VetInv[[ invariant e ++ Ii, \sigma', \state ]] =
+  let e' be \sigma'[e]
+  VetInv[[ Ii, \sigma', \state.extend(e') ]]
+
+VetInv[[ invariant A ++ Ii, \sigma', \state ]] =
+  Process[[ A, \sigma', \emptyseq, \state ]]
+  let L be Learn[[ A, \state ]]
+  VetInv[[ Ii, \sigma', \state.extend(L) ]]
+```
+
+## Assignment targets {#sec-assignment-targets}
+
+The _assignment targets_ of a loop body is the set of variables that are assigned (either directly by
+an assignment statement or as an in/out- or out-argument of a `call` statement) on some control
+path from the start of the loop body to the loop body's back-edge. For example, for the loop
+
+```
+\ell: loop {
+  v := e0
+  if A {
+    if B {
+      w := e1
+      exit \ell
+    } else {
+      x := e2
+      exit \ell'
+    }
+  } else {
+    if C {
+      call M(e3, inout y)
+    } else {
+      z := e4
+      return
+    }
+  }
+}
+```
+
+the assignment targets are `v` and `y`, but not `w`, `x`, or `z`.
+
+# Error information {#sec-markers}
+
+As presented so far, a call to `\state.prove(e)` attempts to prove `e` in the solver state `\state` and
+reports an error if no such proof is found. Each `prove` operation stems from a `check` statement, so
+an error reported by `prove` includes information that identifies the failing `check`. While `check` statements
+can be explicit in the program text, some `check` statements are generated as part of `ConvertToCheck`
+operations. In case of the latter, the `requires`, `ensures`, or `invariant` clause that uses `ConvertToCheck`
+is included in the error report.
+
+Beyond identifying the (explicit or implicit) `check` statement the proof of whose condition failed,
+`prove` does two more things to add more information to error reports.
+
+## Road post markers
+
+One thing is to include _road post markers_. A road post marker is declared by the `probe` statement:
+
+```
+Stmt ::=
+  | ...
+  | probe [ Expr ]
+```
+
+Such a `probe` statement has no effect on the evaluation of the program. Instead, the expression is
+recorded into the solver state as an _expression of interest_. In the event that an error is reported,
+the solver evaluates all expressions of interest and reports their values paired with their respective
+`probe` statements.
+
+For example, consider the following program snippet, started in a state where the value of `x` is not known:
+
+```
+if x < 10 {
+  probe x + x
+  check x < 100
+}
+```
+
+This `probe` has no effect on the output (which is that no error is reported). However, for
+
+```
+if x < 10 {
+  probe x + x
+  check 100 <= x
+}
+```
+
+the error reported will include a value for the expression `x + x` (for example, `14`).
+
+We introduce a new operation, `\state.record(e)`, which returns a solver state that additionally
+keeps track of `e` as an expression of interest.
+
+```
+Process[[ probe e ++ Cc, \sigma, B, \state ]] =
+  let e' be \sigma[e]
+  Process[[ Cc, \sigma, B, \state.record(e') ]]
+```
+
+One use of probes is to just record path information, as road post markers leading to the error.
+This can be done with `probe true` or `probe 0`, where the value of the expression is not interesting
+but the presence of information for the `probe` in the error report says that the error reported
+occurred on a control path that passed through the `probe`. Rather than forcing the user to pick an
+arbitrary expression, the language allows a `probe` statement without an argument.
+
+## Labeled expressions
+
+In its error reports, the `prove` operation also provides _auxiliary information_ that comes from
+labeled conjuncts and inlined predicates. To that avail, any expression can be labeled:
+
+```
+Expr ::=
+  | ...
+  | \ell: Expr
+```
+
+It is now time to describe the `\state.prove(e)` operation in more detail. Here is pseudo code,
+where each `yield` shows one of the return values. In the top-level `prove` operation, the values
+returned will be reported.
+
+```
+if e can be proved in \state {
+  yield Success
+} else {
+  let RoadPostMarkers be values for the expressions of interest in \state
+
+  let e0,e1,... be the top-level conjuncts e0 /\ e1 /\ ... of e
+  for each such conjunct e\(_i_\) {
+    if e\(_i_\) is a labeled expression \ell: ee {
+      for each (roadPosts, auxInfo) in \state.prove(ee) {
+        yield (RoadPostMarkers, \ell ++ auxInfo)
+      }
+    }
+  }
+
+  if nothing is yielded above {
+    if e \(is a call to a function\) P(args) \(where\) P has an FDefinition {
+      let Pre be (the conjunction of expressions in) the FDefinition's requires clauses
+      let Body be the body in the FDefinition
+      let Pre',Body' be Pre,Body \(in which the formal parameters are replaced by\) args
+      if \state.prove(Pre') returns Success {
+        for each (roadPosts, auxInfo) in \state.prove(Body') {
+          yield (RoadPostMarkers, "P" ++ auxInfo)
+        }
+      }
+    }
+  }
+
+  if nothing is yielded above {
+    yield (RoadPostMarkers, \emptyseq)
+  }
+}
+```
+
+(TODO: The above does not nothing for "opening" a quantifier.)
+
+# Dependency management {#sec-dependencies}
+
+It is important to know which function definitions and axioms get included in a verification
+condition.  There are two reasons for this.  One reason is that more antecedents makes a
+verification condition logically weaker, that is, easier to discharge.  In an extreme case,
+contradictory axioms (like the blatant `axiom false`) make everything logically provable.  A
+second reason is that experience has shown that extraneous axioms, however irrelevant to the
+proof at hand, can severely slow down solver performance.  The first reason implies we want to
+include enough axioms and the second reason implies that we don't want to include too many
+axioms, where "enough" and "too many" can be controlled by a program.
+
+We want the included antecedents to be determined from the control path leading to a proof obligation. For
+example, we'd like the statements in a _then_ branch of an `if` not to affect the set of antecedents included when
+proving the _else_ branch. Therefore, the inclusion of such antecedents is done lazily. In a nutshell,
+for any solver operation `\state.extend(e)` or `\state.prove(e)`, the solver state is first updated
+to include the axioms in the _cone of influence_ of `e`.
+
+In a little more detail, a solver operation that's given an expression `e`, say
+`\state.extend(e)`, starts by computing the cone of influence of `e`. This cone of influence,
+call it `C`, is a set of top-level declarations in the given B3 program. Then, the set of
+top-level declarations that have already been used to form the solver state `\state` are
+subtracted, given a set of declarations `\state - C`. Finally, the declarations in `\state - C`
+are added added to the solver state, _in the order in which these declarations occur in the
+program_.
+
+It remains to define the cone of influence of an expression `e`. It is the smallest set `C` of
+type, function, and axiom declarations such that
+
+* every global axiom (defined just below) is in `C`
+* every function and type mentioned in `e` is in `C`
+* every function and type mentioned in a declaration in `C` is in `C`
+* for every function `F` or type `T` in `C`, every axiom whose `explains` clauses include `F` or `T` is in `C`
+
+Each `axiom` declaration (see section [#sec-axioms]) can explicitly declare which functions and types
+depend on the axiom:
+
+```
+Explains ::=
+  | explains Identifier
+```
+
+where `Identifier` denotes either a function or a type. An axiom without any explicit `explains`
+clauses is called a _global axiom_. Global axioms and their dependencies are always included in
+every verification condition. That is, every solver state is initialized so that it includes all
+global axioms and their cones of influence.
+
+## Example
+
+Suppose a program contains the following top-level declarations:
+
+```
+function H(): bool
+
+type A
+function J(): A
+function K(x: int): A
+function L(x: int): A
+function F(x: int): A
+  requires H()
+{
+  if G(2) = G(x) then L(0) else L(1)
+}
+
+type B
+function G(): B
+
+axiom explains H
+  P
+axiom explains B explains K
+  Q
+axiom S
+axiom explains K
+  forall x: int trigger K(x) trigger F(x) :: K(x) => F(x)
+axiom explains A
+  R
+```
+
+for some boolean expressions `P`, `Q`, `R`, and `S` whose form we ignore for the purposes of this example.
+Consider the processing of the statements
+
+```
+var y := J()
+var z := F(5)
+```
+
+from a solver state `\state`. Since every solver state contains all global axioms,
+we have that `\state` contains `S`. The processing of `y := J()` performs the operation `\state.extend(y = J())`,
+which will compute the cone of influence of `J()`, namely the declarations
+
+* axiom `S`
+* function `J` (which adds `A`)
+* type `A` (which adds `R`)
+* axiom `R`
+
+Since axiom `S` is already accounted for in `\state`, the operation `\state.extend(y = J())`
+will have the effect of creating a solver state `\state'` that represents
+
+```
+\state /\ R /\ y = J()
+```
+
+(shown here are only the constraints in the state, not the associated type and function declarations).
+Then, for `\state'.extend(z = F(5))`, the cone of influence of `F(5)` is
+
+* axiom `S`
+* function `F` (which adds `A`, `H`, `G`, `L`)
+* type `A` (which adds `R`)
+* function `H` (which adds `P`)
+* function `G` (which adds `B`)
+* function `L`
+* axiom `R`
+* axiom `P`
+* type `B` (which adds `Q`)
+* axiom `Q`
+
+Since axioms `S` and `R` are already accounted for in `\state'`, the operation
+`\state'.extend(z = F(5))` will have the effect of creating a solver state that represents
+
+```
+\state' /\ P /\ Q /\ z = F(5)
+```
+
+Note the order in which `P` and `Q` are included, namely the order in which these two axioms are
+declared in the program.
+
+# Triggers {#sec-triggers}
+
+To facilitate goal-directed instantiations of universal quantifications (and negated existential
+quantifiers) in the solver, all quantified variables are given _triggers_ (aka _matching
+patterns_). These are part of assertions (section [#sec-assertions]), function definitions
+([#sec-functions]), `forall`/`exists` expressions (section [#sec-expressions]), and
+closures (section [#sec-closures]).
+
+```
+Trigger ::=
+  trigger Expr ( "," Expr)*
+```
+
+# Expressions {#sec-expressions}
+
+Expressions are pretty standard. Noteworthy here is that
+
+* `old(y)` is an expression that denotes the value of in/out-parameter `y` on entry to the enclosing procedure
+* quantifiers have `Trigger`s (see section [#sec-triggers])
+* expressions can be labeled (see section [#sec-markers])
+
+# Variations on statements
+
+## Exit without argument {#sec-exit-without-label}
+
+Common loops in source languages have predefined ways of exiting the loop. In B3, all loop exits
+use the `exit` statement (or the `return` statement). To reduce the number of labels a B3 user
+has to invent, B3 also allows `exit` to be used without an argument. It is allowed only in
+contexts that are enclosed by one or more loops. The meaning of `exit` is `exit \ell`, where
+`\ell` is the (given or by B3 generated) label of the closest enclosing loop.
+
+```
+Stmt ::=
+  | ...
+  | exit [ \ell ]
+```
+
+## Havoc {#sec-havoc}
+
+To set a variable `x` of type `T` to an arbitrary value, one can write
+
+```
+var tmp: T
+x := tmp
+```
+
+However, this puts the burden on the B3 user to come up with a new name `tmp`. Plus, since the
+assignment to `x` generates a new incarnation anyway, the resulting solver context will contain
+two extra names.
+
+To improve on these issues, B3 also supports a special assignment statement, commonly
+known as the _havoc_ statement, that assigns to arbitrary value.
+
+```
+Stmt ::=
+  | ...
+  | x := **
+```
+
+It is processed as follows:
+
+```
+Process[[ x := ** ++ Cc, \sigma, B, \state ]] =
+  let x' be \sigma.new(x)
+  Process[[ Cc, \sigma[x := x'], B, \state ]]
+```
+
+Note that the havoc statement is nondeterministic.
+
+## Initializing variable declaration {#sec-var-init}
+
+```
+Stmt ::=
+  | ...
+  | var x [: Type] := Expr
+```
+
+The statement `var x: T := e` is a shorthand for
+
+```
+var x: T
+x := e
+```
+
+However, the initializing form of the variable declaration
+
+* does not require a type, since the type can be inferred from the expression `e`
+* saves one incarnation variable, since it is not necessary for processing to name the unused, uninitialized value
+* is the only form of the `var` statement that's allowed in an `ABlock` (see section [#sec-more-assertions])
+
+```
+Process[[ var x: T := e ++ Cc, \sigma, B, \state ]] =
+  let e' be \sigma[e]
+  let x' be \sigma.new(x)
+  Process[[ Cc, \sigma[x := x'], B, \state.extend(x' = e') ]]
+```
+
+## Auto-invariants
+
+A source language typically has more fine-grained types than those provided in B3. For example,
+one way to translate a source language with classes and subclasses is to use a single type for all references
+in B3, say `type Ref`. This means that the more specific type information, say, the fact that a parameter or local
+variable `c: C` in the source language is declared to be of a specific class `C`, is instead encoded as a logical
+condition, like `IsC(c)` for some B3 function `function IsC(r: Ref): bool`.
+
+B3 supports _auto-invariants_ as a way to help maintain such conditions. This affects loops and procedures.
+
+### Auto-invariants for loops
+
+Deductive reasoning about a loop considers one arbitrary iteration of the loop, starting from a
+state where the loop body's assignment targets have arbitrary values satisfying the loop
+invariant (see section [#sec-loops]). Thus, if `c` is a variable that is assigned in the loop
+body, then we would like `IsC(c)` to be part of the loop invariant. Let's consider how a translation from a
+source language can arrange to emit such loop invariants.
+
+One way is for the translation to add a loop invariant `IsC(c)` for every mutable variable in
+scope. But that would mean a lot of invariants about variables that aren't ever changed by the
+loop.
+
+Alternatively, the translation from a source language could work out which variables are
+potentially modified by the loop and emit an invariant `IsC(c)` only if `c` may be modified by
+the loop body. But this means the translator needs to work out the loop's assignment targets, a
+task that is already provided by B3 (section [#sec-loops]).
+
+To this end, B3 allows variable
+declarations to include an _auto-invariant_. B3 adds a variable's auto-invariant to the loop
+invariant of any loop that assigns to the variable.
+
+### Auto-invariants for procedures
+
+Consider an in/out-parameter `c` of a procedure. To obtain an invariant (like `IsC(c)`) for `c`
+in any loops that modify `c`, we declare `c` with an auto-invariant. In addition, we want this
+condition to be a pre- and postcondition of the procedure. But it would be annoying to have to
+declare conditions like `IsC(c)` in three places: in a `requires` clause, in an `ensures`
+clause, and as an auto-invariant.  To avoid this redundancy, B3 incorporates parameter
+auto-invariants into procedure pre- and postconditions as well.
+
+In other words, an auto-invariant plays a role in two places: on procedure boundaries (for parameters),
+and on loop boundaries (for parameters and local variables assigned in the loop body). In other places,
+a B3 program is free to temporary violate the conditions stated in auto-invariants.
+
+### Auto-invariant declarations
+
+To support auto-invariants, variable declarations are changed to
+
+```
+Stmt ::=
+  | ...
+  | var x: Type AutoInvariant*
+  | var x [: Type] AutoInvariant* := Expr
+```
+
+and parameter declarations are changed to 
+
+```
+CParam ::=
+  | [inout | out] x: Type AutoInvariant*
+```
+
+where
+
+```
+AutoInvariant ::=
+  | invariant Expr
+  | invariant ABlock
+```
+
+The `Expr` or `ABlock` argument in an auto-invariant is allowed to mention the variable being declared.
+In addition, for a local variable, an auto-invariant is allowed to mention any of the variables in scope.
+For in/out-parameters, the auto-invariant is allowed to mention any in/out-parameter in both its ordinary form
+and in the form surround by `old`, and any in-parameter.
+For out-parameters, the auto-invariant is allowed to mention any of the parameters and also any in/out-parameter
+in its `old` form.
+
+(Note for those familiar with Boogie 2: B3's auto-invariants are similar to Boogie's `where` clauses, but
+not exactly.)
+
+### Example
+
+The auto-invariant of a variable `x` is added to the invariant of a loop if `x` is an assignment
+target (see section [#sec-assignment-targets]) of the loop body. The auto-invariant itself may
+mention additional variables, but whether or not those variables are assignment targets does not
+play a role in determining whether or not to apply the auto-invariant of `x`.
+
+For example, consider the following variable declarations:
+
+```
+var x$defined: bool
+var x: Ref invariant x$defined ==> IsC(x)
+```
+
+If a loop body assigns to `x` or to both `x` and `x$defined`, then `x$defined ==> IsC(x)` is added as
+a loop invariant. But if neither of those two variables is an assignment target or if only `x$defined`
+is, then the auto-invariant of `x` is not added to the loop invariant.
+
+# Variations on conditional statements {#sec-if-variations}
+
+## Omitted else and cascading if
+
+The `if` statement shown in section [#sec-statements] deterministically chooses between a _then_
+branch and an _else_ branch. B3 supports two familiar syntactic variations of it. Syntactically,
+the `else` branch can be omitted, which stands for `else { }`. Also, if the _else_ branch is a block
+with just an `if` statement, then the braces around it can be omitted, which makes for a cascading
+`if` statement.
+
+```
+If ::=
+  | if Expr Block [ IfTail ]
+  | ...
+IfTail ::=
+  | else Block
+  | else If
+```
+
+## If-case statement
+
+The `if` statement gives two mutually exclusive branches. If the source program wants to prescribe
+a conditional with more than two branches that it knows to be mutually exclusive, then the `if`
+statement introduces unnecessary repetition of conditions. For example, in the cascading `if`
+statement
+
+```
+if x = 0 {
+  A
+} else if x < 0 {
+  B
+} else {
+  C
+}
+```
+
+the conditions assumed at the beginning of the second and third branches are
+`\not (x = 0) /\ x < 0` and `\not (x = 0) /\ \not (x < 0)`,
+respectively, whereas just `x < 0` and `0 < x` would have sufficed.
+
+Moreover, the branches of the `if` statement are also exhaustive, meaning that execution
+always continues to some branch. To omit a continuation in an _else_ branch, one needs to
+explicitly place a `assume false` in that branch.
+
+To improve on these situations, B3 provides a nondeterministic `if`-`case` statement.
+
+```
+Stmt ::=
+  | ...
+  | IfCase
+IfCase ::=
+  | if Case Case*
+Case ::=
+  | case Expr Block
+```
+
+It is processed as follows:
+
+```
+Process[[ if case e0 S0 case e1 S1 ... ++ Cc, \sigma, B, \state ]] =
+  let e0' be \sigma[e0]
+  Process[[ S0 ++ Cc, \sigma, B, \state.extend(e0') ]]
+  let e1' be \sigma[e1]
+  Process[[ S1 ++ Cc, \sigma, B, \state.extend(e1') ]]
+  ...
+```
+
+Note that the cases need not be mutually exclusive, nor do they need to be exhaustive.
+
+# Variations on assertions {#sec-more-assertions}
+
+Going beyond the simple assertion statements in section [#sec-assertions],
+B3 offers a rich suite of ways to
+prescribe checks and learning. These assertions have been tailored around the patterns
+built up over the years in the Dafny verifier.
+
+```
+Assertion ::=
+  | ...
+  | ABlock
+  | forall x: Type Trigger* ABlock
+  | AIf
+  | AIfCase
+ABlockAssertion ::=
+  | ...
+  | var x [: Type] := Expr
+AIf ::=
+  | if Expr ABlock [ AIfTail ]
+AIfTail ::=
+  | else ABlock
+  | else AIf
+AIfCase ::=
+  | if ACase ACase*
+ACase ::=
+  | case Expr ABlock
+```
+
+There's syntactic overlap between `Assertion` and other statements. For example, in the grammar
+presented,
+
+```
+if x < y {
+  var z := x - y
+  assert z != 0
+}
+```
+
+can be both an `If` and an `AIf`. The ambiguity is broken by accepting a statement as an `Assertion`
+if possible and as other statements otherwise.
+
+We defined the processing of basic assertions in section [#sec-assertions] and defined the
+processing of `var` with an initializer in section [#sec-var-init]. Here is the definition of
+`Process` for the other assertions:
+
+```
+Process[[ { Aa } ++ Cc, \sigma, B, \state ]] =
+  let \ell be a new label
+  let L be Learn[[ { Aa }, \sigma ]]
+  let B' be B[\ell := (domain of \sigma, assume L ++ Cc)]
+  Process[[ Aa ++ exit \ell, \sigma, B', \state ]]
+
+Process[[ forall x: T A ++ Cc, \sigma, B, \state ]] =
+  Process[[ var x: T A, \sigma, B, \state ]]
+  let L be Learn[[ forall x: T A, \sigma ]]
+  Process[[ Cc, \sigma, B, \state.extend(L) ]]
+
+Process[[ if e A0 else A1 ++ Cc, \sigma, B, \state ]] =
+  let e' be \sigma[e]
+  Process[[ A0, \sigma, B, \state.extend(e)
+  Process[[ A1, \sigma, B, \state.extend(\not e)
+  let L be Learn[[ if e A0 else A1, \sigma ]]
+  Process[[ Cc, \sigma, B, \state.extend(L) ]]
+
+Process[[ if case e0 A0 case e1 A1 ... ++ Cc, \sigma, B, \state ]] =
+  let e0' be \sigma[e0]
+  Process[[ A0, \sigma, B, \state.extend(e0') ]]
+  let e1' be \sigma[e1]
+  Process[[ A1, \sigma, B, \state.extend(e1') ]]
+  ...
+  let L be Learn[[ if case e0 A0 case e1 A1 ..., \sigma ]]
+  Process[[ Cc, \sigma, B, \state.extend(L) ]]
+```
+
+Here is the definition of `Learn` for the new assertions:
+
+```
+Learn[[ { Aa }, \sigma ]] =
+  LearnSeq[[ Aa, \sigma ]]
+
+LearnSeq[[ \emptyseq, \sigma ]] =
+  true
+
+LearnSeq[[ var x: T := e ++ Aa, \sigma ]] =
+  let e' be \sigma[e]
+  let x' be \sigma.new(x)
+  let L be LearnSeq[[ Aa, \sigma[x := x'] ]]
+  x' = e' /\ L
+
+LearnSeq[[ A ++ Aa, \sigma ]] =
+  let L be Learn[[ A, \sigma ]]
+  let L' be LearnSeq[[ Aa, \sigma ]]
+  L /\ L'
+
+Learn[[ forall x: T A ++ Aa, \sigma ]] =
+  let x' be \sigma.new(x)
+  let \sigma' be \sigma[x := x']
+  let L be Learn[[ A, \sigma' ]]
+  forall x': T :: L
+
+Learn[[ if e A0 else A1, \sigma ]] =
+  let L0 be Learn[[ A0, \sigma ]]
+  let L1 be Learn[[ A1, \sigma ]]
+  let e' be \sigma[e]
+  (e /\ L0) \/ (\not e /\ Q1)
+
+Learn[[ if case e0 A0 case e1 A1 ..., \sigma ]] =
+  let e0' be \sigma[e0]
+  let L0 be Learn[[ A0, \sigma ]]
+  let e1' be \sigma[e1]
+  let L1 be Learn[[ A1, \sigma ]]
+  ...
+  (e0' /\ L0) \/ (e1' /\ Q1) \/ ...
+```
+
+## Example
+
+As an example, consider a source-language statement `y := forall x: X :: P(x) && Q(x)` where `&&` is a short-circuit
+operator. If the source language has a notion of well-formedness that needs to be checked, then this statement
+can succinctly be translated into B3 as follows:
+
+```
+forall x: X {
+  check PPre(x)
+  assume PCanCall(x)
+  if P(x) {
+    check QPre(x)
+    assume QCanCall(x)
+  }
+}
+y := forall x: X :: P(x) /\ Q(x)
+```
+
+This leads to the following interactions with the solver. (Using the definitions above, there will be three variables
+in the processed form and all of them will have the name `x`. This leads to no confusion for machine processing,
+since two of the variables are bound variables that shadow the outer variables. To more clearly show these as three
+different variables in the following, the example instead uses the names `x%0`, `x%1`, and `x%2`.)
+
+```
+// process the assertions
+\state.prove(PPre(x%0))
+\state' := \state.extend(PCanCall(x%0))
+\state'' := \state.extend(P(x%0))
+\state''.prove(QPre(x%0))
+\state'3 := \state''.extend(QCanCall(x%0))
+
+// learn from the assertions and continue processing
+\state'4 := \state.extend(forall x%1: X :: PCanCall(x%1) && (P(x%1) ==> QCanCall(x%1)))
+Process[[ y := forall x%2: X :: P(x%2) /\ Q(x%2), ..., ..., \state'4 ]]
+```
+
+Note that the well-formedness checking of the short-circuit boolean operator includes control flow (namely, the `if`
+statement that is part of the assertion block). However, what is learnt from this check (as assigned to `\state'4`)
+does not involve control flow. So, the well-formedness checking does not force an exponential explosion of control
+paths (unlike how Dafny is encoded into Boogie 2 today).
+
+# Variations on types {#sec-type-variations}
+
+## Type synonyms
+
+It is sometimes convenient to have more than one name for a type. A _type synonym_ provides that facility.
+
+```
+TopLevelDeclaration ::=
+  | type T = Type
+```
+
+A type synonym is exactly that--a synonym. There is no difference in using the name of the synonym or using the name of
+the type it stands for.
+
+Declarations of type synonyms are not allowed be cylic. For example, the declarations
+
+```
+type A = B
+type B = A
+```
+
+are illegal, as is the declaration
+
+```
+type D = D
+```
+
+## Partitions {#sec-partition}
+
+A _partition_ is a separation of the values of a type into non-overlapping subsets. A partition can be used in
+the declaration of a function, as explained in section [#sec-function-with-partition].
+
+```
+TopLevelDeclaration ::=
+  | ...
+  | partition T [ = Type ]
+```
+
+If the right-hand side type of a partition is omitted, the declaration also declares the underlying type.
+For example,
+
+```
+partition Nationality
+```
+
+is like the declarations
+
+```
+type t$Nationality
+partition p$Nationality = t$Nationality
+```
+
+except that the name `Nationality` is used for both. If the name is used in a place where a
+partition is allowed, then the name refers to the partition; otherwise, it refers to the type.
+
+# Variations on functions
+
+This section defines some variations on the declaration of functions (see section [#sec-functions]).
+
+## Injective parameters {#sec-injective}
+
+By using the modifier `injective` for a function parameter, one declares that the function is injective
+(that is, one-to-one) in that argument.
+
+```
+FParamModifier ::=
+  | injective
+```
+
+This automatically generates an inverse function
+together with (effectively) an axiom that states the injectivity property. For example,
+
+```
+type Color
+function MakeColor(injective colorId: int, injective isSaturated: bool): Color
+```
+
+declares three functions and two axioms. The two additional functions and axioms are
+
+```
+function colorId(c: Color): int
+function isSaturated(c: Color): bool
+
+axiom explains MakeColor explains colorId
+  forall colorId: int, isSaturated: bool trigger MakeColor(colorId, isSaturated) ::
+    colorId(MakeColor(colorId, isSaturated)) = colorId
+axiom explains MakeColor explains isSaturated
+  forall colorId: int, isSaturated: bool trigger MakeColor(colorId, isSaturated) ::
+    isSaturated(MakeColor(colorId, isSaturated)) = isSaturated
+```
+
+These inverse functions are available for use in the same way that `MakeColor` is.
+
+## Using partition as function result {#sec-function-with-partition}
+
+A function's result can be declared to be either a type of a partition (see `TypeOrPartition` in
+section [#sec-functions], and see section [#sec-partition] on partitions).
+If the function's result is declared to be a partition, then the declaration says that the
+values returned by the function uniquely determine the function. For example, the declarations
+
+```
+type Person
+partition Nationality = Person
+function German(x: int): Nationality
+function Italian(y: int, z: int): Nationality
+```
+
+say that the functions `German` and `Italian` return values from disjoint subsets of type `Person`.
+That is, these two function declarations effectively give rise to the declaration
+
+```
+axiom forall x: int, y: int, z: int :: German(x) != Italian(y, z)
+```
+
+The use of a partition as a function result is convenient since it saves the B3 user from
+having to declare quadratically many axioms like the one above or from having to declare some kind
+of tag function and arbitrarily assign distinct tag values.
+
+Note, the use of a partition result does not imply anything about the exhaustiveness of values.
+For example, the declarations above allow the existence of a `Person` who is neither German nor Italian.
+
+Also, the use of a partition result does not imply anything about injectivity. For example, the
+declarations above allow the possibility that `German(17)` and `German(19)` refer to the same `Person`.
+
+By combining partition results and injective parameters, one can declare algebraic datatypes. For example,
+
+```
+partition List
+function Nil(): List
+function Cons(head: int, tail: List): List
+```
+
+sets up `Nil` and `Cons` as the common constructors of an algebraic `List` type. These declarations do not
+imply exhaustiveness; that is, they do not prevent the possibility that some `List` value is neither `Nil()`
+nor some `Cons(h, t)`. The declarations also do not say which fixpoint is intended; for example, they allow
+the possibility of the usual inductive definition of `List` (where every list contains a finite number of
+elements) as well as a coinductive definition of `List` (where a list can be cyclic or infinite).
+
+## Additional bound variables for function definitions {#sec-function-forall}
+
+For triggering purposes (see section [#sec-triggers] on triggers above), it can be desirable to obtain an
+axiom that quantifies over more variables than the function parameters. For example, one might want the
+definition of a function `Elvis` to be triggered only if it is used as an argument to another
+function `Jukebox`. The desired axiom is then
+
+```
+axiom forall age: int, coin: int trigger JukeBox(Elvis(age), coin) ::
+  10 <= age && age <= 42 && 0 <= coin
+  ==>
+  Elvis(age) = FavoriteSong(1935 + age)
+```
+
+A first attempt at obtaining this axiom is
+
+```
+function Elvis(age: int)
+  requires 10 <= age && age <= 42
+  requires exists coin: int trigger JukeBox(Elvis(age), coin) :: 0 <= coin
+{
+  FavoriteSong(1935 + age)
+}
+```
+
+This gives the same logical meaning as the desired axiom above. However, the triggers are different:
+
+```
+axiom forall age: int trigger Elvis(age) ::
+  10 <= age && age <= 42 &&
+  (exists coin: int trigger JukeBox(Elvis(age), coin) :: 0 <= coin)
+  ==>
+  Elvis(age) = FavoriteSong(1935 + age)
+```
+
+This axiom does not achieve the intended purpose of limiting its instantiations to uses of `Elvis`
+as an argument to `Jukebox`.
+
+To provide a way to obtain the desired axiom, B3 allows a function to have a `forall` clause whose
+purpose it is to introduce further bound variables in the generated function-definition axiom.
+Using it, the `Elvis` function can be defined as follows:
+
+```
+function Elvis(age: int) forall coin: int
+  trigger JukeBox(Elvis(age), coin)
+  requires 10 <= age && age <= 42 && 0 <= coin
+{
+  FavoriteSong(1935 + age)
+}
+```
+
+Any additional bound variables are allowed only in the preconditions, not in the body of the function.
+
+Here is another example:
+
+```
+function FCanCall(x: int, fuel: Fuel): bool
+function F(x: int): int forall fuel: Fuel
+  trigger FCanCall(x, Succ(fuel))
+  requires FCanCall(x, Succ(fuel))
+{
+  if x = 0 then 3 else 2 * F(x - 1) + 5
+}
+```
+
+which in effect generates the axiom
+
+```
+axiom forall x: int, fuel: Fuel trigger FCanCall(x, Succ(fuel)) ::
+  FCanCall(x, Succ(fuel))
+  ==>
+  F(x) = if x = 0 then 3 else 2 * F(x - 1) + 5
+```
+
+# Closures {#sec-closures}
+
+The translation of some source expressions into B3 follows a receipe like
+
+> translate this source expression into a B3 expression that we'll call `s` and lay down some
+  axioms about the properties of `s`
+
+Usually, the
+source expression has some free variables. In order to write an axiom about those, it is necessary to
+parameterize `s`, which involves some effort.
+
+Here's a simple, concrete example. Suppose the source-language expressions `E0`, `E1`, and `E2`
+of type `int` are translated into B3 as the expressions `e0`, `e1`, and `e2`. Then, a way to
+translate the sequence display expression `[E0, E1, E2]` is `F(e0, e1, e2)` where `F` is a new
+function
+
+```
+function F(x0: int, x1: int, x2: int): Sequence
+```
+
+with the properties defined via these axioms:
+
+```
+axiom forall x0: int, x1: int, x2: int trigger SeqLength(F(x0, x1, x2)) ::
+  SeqLength(F(x0, x1, x2)) = 3
+axiom forall x0: int, x1: int, x2: int trigger F(x0, x1, x2) ::
+  SeqIndex(F(x0, x1, x2), 0) = Box(x0)
+axiom forall x0: int, x1: int, x2: int trigger F(x0, x1, x2) ::
+  SeqIndex(F(x0, x1, x2), 1) = Box(x1)
+axiom forall x0: int, x1: int, x2: int trigger F(x0, x1, x2) ::
+  SeqIndex(F(x0, x1, x2), 2) = Box(x2)
+```
+
+For functions, this process is known as _lambda lifting_. Using a _closure_, B3 performs the
+heavy lifting (pun intended) in creating such liftings.
+
+```
+Closure ::=
+  | lift ClosureBinding*, into ClosureVar : Type by "{" ClosureProperty*, "}"
+ClosureBinding ::=
+  | ClosureVar [ "(" CParam*, ")" ] := Expr
+CParam ::=
+  | x: Type
+ClosureProperty ::=
+  | [ Trigger Trigger* :: ] Expr
+```
+
+where `ClosureVar` is a variable whose name starts with `%` to visually indicate that the variable
+is like a macro that denotes an expression.
+
+Before giving the details of how to elaborate a closure into logic, it is instructive to look at some examples.
+
+## Example: display expression
+
+Continuing the example above, to obtain the function `F`, the expression `F(e0, e1, e2)`, and
+the associated axioms for the sequence expression above, one uses the B3 closure
+
+```
+lift
+  %x0 := e0,
+  %x1 := e1,
+  %x2 := e2
+into
+  %s: Sequence
+by {
+  trigger SeqLength(%s) :: SeqLength(%s) = 3,
+  SeqIndex(%s, 0) = Box(%x0),
+  SeqIndex(%s, 1) = Box(%x1),
+  SeqIndex(%s, 2) = Box(%x2)
+}
+```
+
+## Example: sequence constructor
+
+Suppose, in the source language, that expression `N` denotes a desired sequence length,
+expression `E` denotes a function from indices to elements of type `real`, and that `seq(N, E)`
+denotes a sequence constructed to have length `N` and elements described by `E`. If `N` and `E`
+are translated into B3 expression `n` and `e` (of types `int` and `Func`, say), then the
+sequence constructor can be translated into the following closure:
+
+```
+lift
+  %len := n,
+  %f := e
+into
+  %s: Sequence
+by {
+  trigger SeqLength(%s) :: 0 <= %len ==> SeqLength(%s) = %len,
+  forall j: int trigger SeqIndex(%s, j) ::
+    0 <= j && j < %len ==> SeqIndex(%s, j) = Apply(%f, Box(j))
+}
+```
+
+B3 turns this closure into
+
+```
+function F(len: int, f: Func): Sequence
+axiom forall len: int, f: Func trigger SeqLength(F(len, f)) ::
+  0 <= len ==> SeqLength(F(len, f)) = len
+axiom forall len: int, f: Func, j: int trigger SeqIndex(F(len, f), j) ::
+  0 <= j && j < len ==> SeqIndex(F(len, f), j) = Apply(f, Box(j))
+```
+
+for some new function `F`. If further axiomatization says that `SeqLength` always returns a
+non-negative integer, then it is important to remember the antecedents `0 <= %len` in the
+closure, or else the resulting axiomatization would be unsound.
+
+## Example: set comprehension
+
+Consider a source-language set comprehension `set x | Constraint` (representing "the set of
+every `x` satisfying `Constraint`), where `x` has type `int` and `Constraint` (which may mention
+`x` and other free variables) translates into B3 as `constraint`. The set comprehension can then
+be translated using the following closure:
+
+```
+lift
+  %body(x: int) := constraint
+into
+  %s: Set
+by {
+  forall bx: Box trigger SetContains(%s, bx) ::
+    SetContains(%s, bx) <==> %body(Unbox(bx))
+}
+```
+
+Suppose `constraint` is the expression `Abs(x - e0) + e1`. Then, B3 turns the closure into
+
+```
+function F(body0: int, body1: int): Set
+axiom forall body0: int, body1: int, bx: Box
+  trigger SetContains(F(body0, body1), bx) ::
+  SetContains(F(body0, body1), bx) <==> Abs(Unbox(bx) - body0) + body1)
+```
+
+for some new function `F`. Note how the closure automatically decomposes `Abs(x - e0) + e1`
+into pieces that do not mention `x`.
+
+## Example: sequence constructor with an initializing lambda expression
+
+As a variation of the sequence constructor above, a translation may want to optimize the case where
+the expression `E` is a lambda expression, like `i => Body`. If `N` and `Body` translate into `n`
+and `body`, then a translation of `seq(N, i => Body)` into a closure is
+
+```
+lift
+  %len := n,
+  %elements(i: int) := body
+into
+  %s: Sequence
+by {
+  trigger SeqLength(%s) :: 0 <= %len ==> SeqLength(%s) = %len,
+  forall j: int trigger SeqIndex(%s, j) ::
+    0 <= j && j < %len ==> SeqIndex(%s, j) = Box(%elements(j))
+}
+```
+
+Suppose `body` is `Abs(i - e0) + e1`. Then, B3 turns this closure into:
+
+```
+function F(len: int, elements0: int, elements1: int): Sequence
+axiom forall len: int, elements0: int, elements1: int
+  trigger SeqLength(F(len, elements0, elements1)) ::
+  0 <= len ==> SeqLength(F(len, elements0, elements1)) = len
+axiom forall len: int, elements0: int, elements1: int, j: int
+  trigger SeqIndex(F(len, elements0, elements1), j) ::
+  0 <= j && j < len ==>
+    SeqIndex(F(len, elements0, elements1), j) = Box(Abs(j - elements0) + elements1)
+```
+
+## Elaboration
+
+It's time for the full details of elaboration. As a concrete representative of a general closure, consider
+
+```
+lift %b(x: X) := e into %s: S by { p }
+```
+
+#### Function name
+
+Elaboration first creates a name for the resulting function, say `F`. This function's result type is the
+given type `S`. The parameters of `F` are going to be determined as part of processing the closure bindings.
+
+#### Holes
+
+Then, for each binding `%b(x: X) := e`, elaboration finds non-overlapping subexpressions `e0`, `e1`, ... of `e`
+such that `x` is not a free variable of any `e\(_i_\)` and every occurrence of a non-`x` variable in `e` is
+contained in one of the `e\(_i_\)`. In the literature, the places where these `e\(_i_\)` appear in `e` can be
+considered to be _holes_, often denoted by `\hole`.
+
+For example, suppose `e` is the expression `1 + y + Abs(x - G(u))`. There are several ways to carve out holes for
+this expression. One way is
+
+    1 + \hole + Abs(x - G(\hole))
+
+The subexpressions removed to make these holes are `y` and `u`, each one a non-`x` free variable of the expression.
+Another way to carve out holes is
+
+    \hole + Abs(x - \hole)
+
+Here, the subexpressions removed to make these holes are `1 + y` and `G(u)`, and the strategy used to define these
+holes is to make each hole as large as possible (but not so large as to include an occurrence of `x`).
+Note that if the closure binding `%b(x: X)` doesn't have any parameters (in other words, it is just `%b`), then
+the as-large-as-possible strategy can always carve out the entire expression as a hole.
+
+Any way of defining the holes works. For the purpose of continuing the description of elaboration, we'll use
+the as-large-as-possible strategy.
+
+#### Function parameters
+
+For each hole, introduce a parameter to the closure function. One way to do this is to use the name of the
+closure variable (in the example, `%b`) if there's just one hole, and otherwise to append  `%\(_i_\)` to this
+name, where `\(_i_\)` is the number of holes preceding it. (In the motivating examples above, the names used
+were these, but without the `%`'s.)
+
+For `\hole + Abs(x - \hole)`, we thus introduce parameters `%b%0` and `%b%1`. The types of these parameters is
+the type of the expression removed to make the hole (in the example, `int` and `int`). Note that these are just
+variable names, not function (even though the closure declares `%b(x: X)` to look like a function).
+
+#### Closure function
+
+These "Holes" and "Function parameters" steps above are followed for all closure bindings. Concatenating all
+the function parameters, the closure function is declared. In the example, it is
+
+```
+function F(%b%0: int, %b%1: int): S
+```
+
+#### Lifting
+
+The closure is now replaced by the closure function applied to the subexpressions that were carved out for each
+hole. In our example, this function application thus becomes
+
+```
+F(1 + y, G(u))
+```
+
+#### Lifting axioms
+
+The final step in elaborating the closure is to generate axioms, one for each given closure property.
+
+In the closure property, replace the closure variable `%s` by the closure function applied to its formal
+parameters (or, more precisely, to new bound variables that are like the parameters of the function).
+In the example, `%s` is thus replaced by the function application `F(%b%0, %b%1)`.
+
+Next, replace each application `%b(e0)` of a closure binding by the corresponding expression with holes,
+where each hole is replaced by the corresponding function parameter (again, more precisely, to the bound
+variable that is like the function parameter) and replace each occurrence of the binding parameter (in the
+example, `x: X`) with `e0`. In the example, `%b(e)` is thus replaced by the expression
+`%b%0 + Abs(e0 - %b%1)`.
+
+Finally, wrap a universal quantifier around the resulting closure property. The quantifier has the
+function parameters as its bound variable (these are the bound variables that were alluded to by "more precisely"
+in the previous two paragraphs). The trigger for the quantifier is the application of the closure function,
+that is, the expansion of `%s`.
+
+There are two plot twists involved in wrapping the universal quantifier as just described. One plot twist
+is that if the the closure property has the form `trigger tr ... :: p0`, then the generated quantifier
+uses the specified triggers instead of the default trigger `%s`. The other plot twist is if the closure
+property is a universal quantifier, say `Q`, by itself. In that case, the generated quantifier is merged
+with the quantifier `Q` and the triggers used are the those given in `Q`.
+
+Note that, since the bound variables of the universal quantifer are generated automatically during the
+elaboration of a closure, the only way to mention those variables in a trigger is to make use of `%s`.
+
+# Macros
+
+Some expressions and statement lists are used in custom patterns. To facilitate simpler generation and reading
+of B3 programs, there are macros. The macros come in three forms, one for expressions, one for statements, and
+one for the special case of the statements being assertions:
+
+```
+TopLevelDeclaration ::=
+  | ...
+  | define Identifier "(" Identifier*, ")" Expr
+  | define Identifier "(" Identifier*, ")" Block
+  | define Identifier "(" Identifier*, ")" ABlock
+```
+
+Following Viper, the parameters are given names, but no types. Typing is done after the macros have been
+elaborated. Macros are not allowed to be recursive.
+
+Since the macro parameters have no types, it is not possible to type check the bodies of the macros independently
+of their usage sites. However, two things are done with the variable names used inside the macro body.
+One is that the free names in the macro body must be parameters of the macro. The other is that all names
+that are bound inside the macro body are uniquely renamed. This automatic renaming can be done by prefixing
+each bound variable name with `m%`, where `m` is the name of the macro.
+
+# Attributes
+
+All top-level declarations and some statements can be marked with custom _attributes_. These are
+not given any semantics by the B3 language but are useful for third-party tools that operate on B3 programs.
