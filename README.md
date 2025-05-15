@@ -1,2 +1,2 @@
-# b3
+# B3
 An intermediate verification language
