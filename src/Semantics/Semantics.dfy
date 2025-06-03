@@ -1,4 +1,4 @@
-// TODO: calls, enclosing procedures, auto-invariants
+// TODO: enclosing procedures, auto-invariants
 
 module Semantics {
   import opened Basics
@@ -51,15 +51,7 @@ module Semantics {
     case Block(lbl, stmts) =>
       exists mid :: BigStepList(stmts, b3, st, mid) && st' == mid.Lower(lbl).RestoreScope(st)
     case Call(name, args) =>
-      exists proc <- b3.procedures | proc.name == name ::
-        FollowsFromWellFormedness(Stmt.MatchingParameters(proc.parameters, args) && Variable.UniqueNames(proc.parameters)) &&
-        exists entry | ProcEntryParameters(st.m, entry, proc.parameters, args) ::
-          exists st0 | BigStepList(proc.pre.Map((ae: AExpr) => ae.ToCheckStmt()), b3, State(entry), st0) ::
-            || (!st0.State? && st' == st0)
-            || (st0.State? &&
-                exists exit | ProcExitParameters(entry, exit, proc.parameters, args) ::
-                  exists st1 | BigStepList(proc.post.Map((ae: AExpr) => ae.ToAssumeStmt()), b3, State(exit), st1) ::
-                    WriteBackOutgoingParameters(st, st1, st', proc.parameters, args))
+      BigStepCall(stmt, b3, st, st')
     case Check(cond) =>
       if cond.Eval(st.m) == True then st' == st else st' == Error
     case Assume(cond) =>
@@ -100,6 +92,22 @@ module Semantics {
       st' == st
   }
 
+  greatest predicate BigStepCall(stmt: Stmt, b3: Program, st: State, st': State)
+    requires stmt.Call? && st.State?
+  {
+    var Call(name, args) := stmt;
+    exists proc <- b3.procedures | proc.name == name ::
+      FollowsFromWellFormedness(Stmt.MatchingParameters(proc.parameters, args) && Variable.UniqueNames(proc.parameters)) &&
+      exists entry | ProcEntryParameters(st.m, entry, proc.parameters, args) ::
+        exists st0 | BigStepList(proc.pre.Map((ae: AExpr) => ae.ToCheckStmt()), b3, State(entry), st0) ::
+          || (!st0.State? && st' == st0)
+          || (st0.State? &&
+              exists exit | ProcExitParameters(entry, exit, proc.parameters, args) ::
+                exists st1 | BigStepList(proc.post.Map((ae: AExpr) => ae.ToAssumeStmt()), b3, State(exit), st1) ::
+                  st1.State? && st1 == State(exit) && // this line follows from the definitions of BigStepList and ToAssumeStmt
+                  WriteBackOutgoingParameters(st.m, exit, st', proc.parameters, args))
+  }
+
   ghost predicate ProcEntryParameters(callState: Valuation, entry: Valuation, parameters: seq<Variable>, args: seq<CallArgument>)
     requires Stmt.MatchingParameters(parameters, args) && Variable.UniqueNames(parameters)
   {
@@ -108,7 +116,9 @@ module Semantics {
   }
 
   ghost predicate ProcExitParameters(entry: Valuation, exit: Valuation, parameters: seq<Variable>, args: seq<CallArgument>)
-    requires Variable.UniqueNames(parameters)
+    requires Stmt.MatchingParameters(parameters, args) && Variable.UniqueNames(parameters)
+    ensures ProcExitParameters(entry, exit, parameters, args) ==>
+      forall formal <- parameters | formal.kind.IsOutgoingParameter() :: formal.name in exit
   {
     var inOuts := set formal <- parameters | formal.kind == InOut;
     var outgoing := set formal <- parameters | formal.kind.IsOutgoingParameter();
@@ -116,13 +126,17 @@ module Semantics {
       outValues.Keys == (set formal: Variable <- outgoing :: formal.name) &&
       (forall formal: Variable <- outgoing :: HasType(outValues[formal.name], formal.typ)) &&
       (UniqueNamesImpliesUniqueOldNames(inOuts);
-        FollowsFromWellFormedness(forall formal <- inOuts :: formal.name in entry) &&
-        var oldValues := map formal <- inOuts :: OldName(formal.name) := entry[formal.name];
-        exit == entry + oldValues + outValues)
+         FollowsFromWellFormedness(forall formal <- inOuts :: formal.name in entry) &&
+         var oldValues := map formal <- inOuts :: OldName(formal.name) := entry[formal.name];
+         exit == entry + oldValues + outValues)
   }
 
-  predicate WriteBackOutgoingParameters(st: State, exit: State, st': State, parameters: seq<Variable>, args: seq<CallArgument>) {
-    true // TODO
+  predicate WriteBackOutgoingParameters(entry: Valuation, exit: Valuation, st': State, parameters: seq<Variable>, args: seq<CallArgument>)
+    requires Stmt.MatchingParameters(parameters, args)
+    requires forall formal <- parameters | formal.kind.IsOutgoingParameter() :: formal.name in exit
+  {
+    var actualOutgoing := map i | 0 <= i < |parameters| && parameters[i].kind.IsOutgoingParameter() :: args[i].name := exit[parameters[i].name];
+    st' == State(entry + actualOutgoing)
   }
 
   greatest predicate BigStepList(stmts: List<Stmt>, b3: Program, st: State, st': State)

@@ -205,6 +205,7 @@ module Ast {
     static predicate MatchingParameters(parameters: seq<Variable>, args: seq<CallArgument>) {
       && (forall i, j :: 0 <= i < j < |args| && args[i].ArgLValue? && args[j].ArgLValue? ==> args[i].name != args[j].name)
       && |args| == |parameters|
+      && forall i | 0 <= i < |parameters| && parameters[i].kind.IsOutgoingParameter() :: args[i].ArgLValue?
     }
   }
 
