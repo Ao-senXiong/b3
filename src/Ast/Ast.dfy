@@ -89,7 +89,7 @@ module Ast {
     | VarDecl(v: Variable)
     | ValDecl(v: Variable, rhs: Expr)
     | Assign(lhs: string, rhs: Expr)
-    | Block(lbl: string, stmts: List<Stmt>)
+    | Block(lbl: string, stmts: seq<Stmt>)
     | Call(name: string, args: seq<CallArgument>)
     // assertions
     | Check(cond: Expr)
@@ -107,8 +107,8 @@ module Ast {
   {
     predicate ContainsAssertions() {
       match this
-      case Block(_, stmts: List<Stmt>) =>
-        stmts.Exists((s: Stmt) requires s < this => s.ContainsAssertions())
+      case Block(_, stmts) =>
+        exists s <- stmts :: s.ContainsAssertions()
       case Check(_) => true
       case Assume(_) => true
       case Assert(_) => true
@@ -127,7 +127,7 @@ module Ast {
       case VarDecl(_) => true
       case Assign(_, _) => true
       case Block(_, stmts) =>
-        stmts.Exists((s: Stmt) requires s < this => s.ContainsNonAssertions())
+        exists s <- stmts :: s.ContainsNonAssertions()
       case Call(_, _) => true
       case If(_, thn, els) =>
         thn.ContainsNonAssertions() || els.ContainsNonAssertions()
@@ -152,7 +152,7 @@ module Ast {
         && var v := scope[lhs];
         && v.kind.IsAssignable() && rhs.Type(b3, scope) == Some(v.typ)
       case Block(lbl, stmts) =>
-        LegalLabel(lbl, labels) && WellFormedStmtList(stmts, b3, scope, {}, labels + {lbl})
+        LegalLabel(lbl, labels) && WellFormedStmtSeq(stmts, b3, scope, {}, labels + {lbl})
       case Call(name, args) =>
         exists proc <- b3.procedures ::
           && name == proc.name
@@ -189,17 +189,18 @@ module Ast {
         e.Type(b3, scope).Some?
     }
 
-    static predicate WellFormedStmtList(stmts: List<Stmt>, b3: Program, scope: Scope, localNames: set<string>, labels: set<string>) {
-      match stmts
-      case Nil => true
-      case Cons(stmt, cont) =>
+    static predicate WellFormedStmtSeq(stmts: seq<Stmt>, b3: Program, scope: Scope, localNames: set<string>, labels: set<string>) {
+      if stmts == [] then
+        true
+      else
+        var stmt, cont := stmts[0], stmts[1..];
         && stmt.WellFormed(b3, scope, localNames, labels)
         && var (scope', localNames') :=
             match stmt
             case VarDecl(v) => (scope[stmt.v.name := stmt.v], localNames + {stmt.v.name})
             case ValDecl(v, _) => (scope[stmt.v.name := stmt.v], localNames + {stmt.v.name})
             case _ => (scope, localNames);
-          WellFormedStmtList(cont, b3, scope', localNames', labels)
+          WellFormedStmtSeq(cont, b3, scope', localNames', labels)
     }
 
     static predicate MatchingParameters(parameters: seq<Variable>, args: seq<CallArgument>) {
@@ -262,7 +263,7 @@ module Ast {
     case AForall(v, body) =>
       ValidAssertionStatement(body)
     case Block(_, stmts) =>
-      stmts.Forall(ss requires ss < stmts => ValidAssertionStatement(ss))
+      forall s <- stmts :: ValidAssertionStatement(s)
     case If(cond, thn, els) =>
       ValidAssertionStatement(thn) && ValidAssertionStatement(els)
     case IfCase(cases) =>
@@ -287,29 +288,29 @@ module Ast {
     case AForall(v, body) =>
       Expr.CreateForall(v, Learn(body))
     case Block(_, stmts) =>
-      LearnList(stmts, stmts)
+      LearnSeq(stmts)
     case If(cond, thn, els) =>
       Expr.CreateAnd(
         Expr.CreateImplies(cond, Learn(thn)),
         Expr.CreateImplies(Expr.CreateNegation(cond), Learn(els))
       )
     case IfCase(cases) =>
-      Expr.CreateBigAnd(seq(|cases|, i requires 0 <= i < |cases| => var c := cases[i]; Expr.CreateImplies(c.cond, Learn(c.body))))
+     Expr.CreateBigAnd(SeqMap(cases, (c: Case) requires c in cases => Expr.CreateImplies(c.cond, Learn(c.body))))
   }
 
-  function LearnList(stmts: List<Stmt>, ghost entireList: List<Stmt>): Expr
-    requires stmts == entireList || stmts < entireList
-    requires stmts.Forall(ss requires ss < entireList => ValidAssertionStatement(ss))
+  function LearnSeq(stmts: seq<Stmt>): Expr
+    requires forall s <- stmts :: ValidAssertionStatement(s)
   {
-    match stmts
-    case Nil => Expr.CreateTrue()
-    case Cons(ValDecl(v, rhs), tail) =>
-      Expr.CreateLet(v, rhs, LearnList(tail, entireList))
-    case Cons(s, tail) =>
-      assert ValidAssertionStatement(s) by {
-
-      }
-      Expr.CreateAnd(Learn(s), LearnList(tail, entireList))
+    if stmts == [] then
+      Expr.CreateTrue()
+    else
+      var s, tail := stmts[0], stmts[1..];
+      match s
+      case ValDecl(v, rhs) =>
+        Expr.CreateLet(v, rhs, LearnSeq(tail))
+      case _ =>
+        assert ValidAssertionStatement(s);
+        Expr.CreateAnd(Learn(s), LearnSeq(tail))
   }
 
   datatype CallArgument =

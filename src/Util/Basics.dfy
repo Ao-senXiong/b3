@@ -41,6 +41,16 @@ module Basics {
     }
   }
 
+  function SeqMap<X, Y>(s: seq<X>, f: X --> Y): seq<Y>
+    requires forall x <- s :: f.requires(x)
+  {
+    seq(|s|, i requires 0 <= i < |s| => f(s[i]))
+  }
+
+  function SeqFlatten<X>(ss: seq<seq<X>>): seq<X> {
+    if ss == [] then [] else ss[0] + SeqFlatten(ss[1..])
+  }
+
   function MapProject<X, Y>(m: map<X, Y>, s: set<X>): map<X, Y> {
     map x | x in m && x in s :: m[x]
   }

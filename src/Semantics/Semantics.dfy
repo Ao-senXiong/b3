@@ -49,7 +49,7 @@ module Semantics {
     case Assign(lhs, rhs) =>
       st' == st.Update(lhs, rhs.Eval(st.m))
     case Block(lbl, stmts) =>
-      exists mid :: BigStepList(stmts, b3, st, mid) && st' == mid.Lower(lbl).RestoreScope(st)
+      exists mid :: BigStepSeq(stmts, b3, st, mid) && st' == mid.Lower(lbl).RestoreScope(st)
     case Call(name, args) =>
       BigStepCall(stmt, b3, st, st')
     case Check(cond) =>
@@ -142,6 +142,21 @@ module Semantics {
   {
     var actualOutgoing := map i | 0 <= i < |parameters| && parameters[i].kind.IsOutgoingParameter() :: args[i].name := exit[parameters[i].name];
     st' == State(entry + actualOutgoing)
+  }
+
+  greatest predicate BigStepSeq(stmts: seq<Stmt>, b3: Program, st: State, st': State)
+    requires st.State?
+  {
+    if stmts == [] then
+      st' == st
+    else
+      var stmt, cont := stmts[0], stmts[1..];
+      exists mid ::
+        BigStep(stmt, b3, st, mid) &&
+        if !mid.State? then
+          st' == mid
+        else
+          BigStepSeq(cont, b3, mid, st')
   }
 
   greatest predicate BigStepList(stmts: List<Stmt>, b3: Program, st: State, st': State)
