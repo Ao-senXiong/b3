@@ -59,15 +59,8 @@ module Semantics {
     case Assert(cond) =>
       if cond.Eval(st.m) == True then st' == st else st' == Error
     case AForall(v, body) =>
-      true
-      /*
-      // TODO: This needs to be revised. For example, `forall x: int { assume x == 2 }` should have the effect of `assume false`.
-      //       So, need to `assume forall v :: Learn[[ body ]]`.
-      //       Also, the `end` is wrong, because of it is `Error`, then `st'` should also be `Error`.
-      // It seems the whole AForall statement needs to be converted into a sequences of quantified check/assume/assert's.
-      && (exists end :: BigStep(body, b3, st, end))
-      && st' == st
-      */
+      FollowsFromWellFormedness(ValidAssertionStatement(stmt)) &&
+      BigStepSeq(SeparateAssertion(stmt, AContextEmpty), b3, st, st')
     case If(cond, thn, els) =>
       BigStep(if cond.Eval(st.m) == True then thn else els, b3, st, st')
     case IfCase(cases) =>
@@ -171,6 +164,65 @@ module Semantics {
           st' == mid
         else
           BigStepList(cont, b3, mid, st')
+  }
+
+  function SeparateAssertion(stmt: Stmt, context: AssertionContext): seq<Stmt>
+    requires ValidAssertionStatement(stmt)
+    decreases stmt
+  {
+    match stmt
+    case ValDecl(_, _) =>
+      []
+    case Check(e) =>
+      [Check(context.Build(e))]
+    case Assume(e) =>
+      [Assume(context.Build(e))]
+    case Assert(e) =>
+      [Assert(context.Build(e))]
+    case AForall(v, body) =>
+      SeparateAssertion(body, AContextForall(v, context))
+    case Block(_, stmts) =>
+      SeparateAssertionSeq(stmt, stmts, context)
+    case If(cond, thn, els) =>
+      var s0 := SeparateAssertion(thn, AContextCondition(cond, context));
+      var s1 := SeparateAssertion(els, AContextCondition(Expr.CreateNegation(cond), context));
+      s0 + s1
+    case IfCase(cases) =>
+      var separatedCases := SeqMap(cases, (c: Case) requires c in cases => SeparateAssertion(c.body, AContextCondition(c.cond, context)));
+      SeqFlatten(separatedCases)
+  }
+
+  function SeparateAssertionSeq(ghost stmt: Stmt, stmts: seq<Stmt>, context: AssertionContext): seq<Stmt>
+    requires forall s <- stmts :: s < stmt && ValidAssertionStatement(s)
+  {
+    if stmts == [] then
+      []
+    else
+      var s, tail := stmts[0], stmts[1..];
+      match s
+      case ValDecl(v, rhs) =>
+        SeparateAssertionSeq(stmt, tail, AContextVal(v, rhs, context))
+      case _ =>
+        assert forall s <- tail :: s in stmts;
+        SeparateAssertion(s, context) + SeparateAssertionSeq(stmt, tail, context)
+  }
+
+  datatype AssertionContext =
+    | AContextEmpty
+    | AContextForall(v: Variable, tail: AssertionContext)
+    | AContextVal(v: Variable, rhs: Expr, tail: AssertionContext)
+    | AContextCondition(cond: Expr, tail: AssertionContext)
+  {
+    function Build(e: Expr): Expr {
+      match this
+      case AContextEmpty => e
+      case AContextForall(v, tail) =>
+        tail.Build(Expr.CreateForall(v, e))
+      case AContextVal(v, rhs, tail) =>
+        tail.Build(Expr.CreateLet(v, rhs, e))
+      case AContextCondition(cond, tail) =>
+        tail.Build(Expr.CreateImplies(cond, e))
+    }
   }
 
   // Some properties of the AST that are needed for the semantic definition are checked by well-formedness checks.
