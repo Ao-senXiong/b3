@@ -16,7 +16,7 @@ module Basics {
     {
       match this
       case Nil => false
-      case Cons(x, tail) => p(x) || tail.Forall(p)
+      case Cons(x, tail) => p(x) || tail.Exists(p)
     }
 
     function Map<Y>(f: X -> Y): List<Y> {
