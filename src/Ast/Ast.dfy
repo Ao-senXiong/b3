@@ -229,17 +229,87 @@ module Ast {
         s.WellFormed(b3, scope, {}, labels) && !s.ContainsNonAssertions()
     }
 
+    ghost predicate Valid() {
+      AAssertion? ==> ValidAssertionStatement(s)
+    }
+
     function ToCheckStmt(): Stmt {
       match this
       case AExpr(e) => Assert(e)
       case AAssertion(s) => s
     }
 
-    function ToAssumeStmt(): Stmt {
+    function ToAssumeStmt(): Stmt
+      requires Valid()
+    {
       match this
       case AExpr(e) => Assume(e)
-      case AAssertion(s) => s // TODO: need to convert these statements, too
+      case AAssertion(s) => Assume(Learn(s))
     }
+  }
+
+  // ValidAssertionStatement(s) is a deep version of !s.ContainsNonAssertions()
+  ghost predicate ValidAssertionStatement(s: Stmt) {
+    match s
+    case ValDecl(_, _) =>
+      true
+    case Check(_) =>
+      true
+    case Assume(e) =>
+      true
+    case Assert(e) =>
+      true
+    case AForall(v, body) =>
+      ValidAssertionStatement(body)
+    case Block(_, stmts) =>
+      stmts.Forall(ss requires ss < stmts => ValidAssertionStatement(ss))
+    case If(cond, thn, els) =>
+      ValidAssertionStatement(thn) && ValidAssertionStatement(els)
+    case IfCase(cases) =>
+      forall c <- cases :: ValidAssertionStatement(c.body)
+    case _ =>
+      false
+  }
+
+  function Learn(s: Stmt): Expr
+    requires ValidAssertionStatement(s)
+  {
+    match s
+    case ValDecl(_, _) =>
+      // this is a degenerate case, where the let binding is not used anywhere
+      Expr.CreateTrue()
+    case Check(_) =>
+      Expr.CreateTrue()
+    case Assume(e) =>
+      e
+    case Assert(e) =>
+      e
+    case AForall(v, body) =>
+      Expr.CreateForall(v, Learn(body))
+    case Block(_, stmts) =>
+      LearnList(stmts, stmts)
+    case If(cond, thn, els) =>
+      Expr.CreateAnd(
+        Expr.CreateImplies(cond, Learn(thn)),
+        Expr.CreateImplies(Expr.CreateNegation(cond), Learn(els))
+      )
+    case IfCase(cases) =>
+      Expr.CreateBigAnd(seq(|cases|, i requires 0 <= i < |cases| => var c := cases[i]; Expr.CreateImplies(c.cond, Learn(c.body))))
+  }
+
+  function LearnList(stmts: List<Stmt>, ghost entireList: List<Stmt>): Expr
+    requires stmts == entireList || stmts < entireList
+    requires stmts.Forall(ss requires ss < entireList => ValidAssertionStatement(ss))
+  {
+    match stmts
+    case Nil => Expr.CreateTrue()
+    case Cons(ValDecl(v, rhs), tail) =>
+      Expr.CreateLet(v, rhs, LearnList(tail, entireList))
+    case Cons(s, tail) =>
+      assert ValidAssertionStatement(s) by {
+
+      }
+      Expr.CreateAnd(Learn(s), LearnList(tail, entireList))
   }
 
   datatype CallArgument =
@@ -271,5 +341,15 @@ module Ast {
   {
     function Type(b3: Program, scope: Scope): Option<string>
     function Eval(vals: Valuation): Value // TODO: either make Option<Value> or require Type(...).Some?
+
+    static function CreateTrue(): Expr
+    static function CreateNegation(e: Expr): Expr
+    static function CreateAnd(e0: Expr, e1: Expr): Expr
+    static function CreateBigAnd(ee: seq<Expr>): Expr {
+      if |ee| == 0 then CreateTrue() else CreateAnd(ee[0], CreateBigAnd(ee[1..]))
+    }
+    static function CreateImplies(e0: Expr, e1: Expr): Expr
+    static function CreateLet(v: Variable, rhs: Expr, body: Expr): Expr
+    static function CreateForall(v: Variable, body: Expr): Expr
   }
 }

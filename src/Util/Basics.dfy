@@ -24,6 +24,21 @@ module Basics {
       case Nil => Nil
       case Cons(x, tail) => Cons(f(x), tail.Map(f))
     }
+
+    function MapPartial<Y>(f: X --> Y): List<Y>
+      requires Forall(x => f.requires(x))
+    {
+      match this
+      case Nil => Nil
+      case Cons(x, tail) => Cons(f(x), tail.MapPartial(f))
+    }
+
+    lemma ForallToPartialPre<Y>(p: X -> bool, f: X --> Y)
+      requires Forall(p)
+      requires forall x :: p(x) ==> f.requires(x)
+      ensures Forall(x => f.requires(x))
+    {
+    }
   }
 
   function MapProject<X, Y>(m: map<X, Y>, s: set<X>): map<X, Y> {

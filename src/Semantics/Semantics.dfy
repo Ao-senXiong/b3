@@ -103,7 +103,12 @@ module Semantics {
           || (!st0.State? && st' == st0)
           || (st0.State? &&
               exists exit | ProcExitParameters(entry, exit, proc.parameters, args) ::
-                exists st1 | BigStepList(proc.post.Map((ae: AExpr) => ae.ToAssumeStmt()), b3, State(exit), st1) ::
+                var toAssumeStmt := (ae: AExpr) requires ae.Valid() => ae.ToAssumeStmt();
+                var toAssumeStmtPre := (ae: AExpr) => ae.Valid();
+                FollowsFromWellFormedness(proc.post.Forall(toAssumeStmtPre)) &&
+                exists st1 | BigStepList(
+                    proc.post.ForallToPartialPre(toAssumeStmtPre, toAssumeStmt); proc.post.MapPartial(toAssumeStmt),
+                    b3, State(exit), st1) ::
                   st1.State? && st1 == State(exit) && // this line follows from the definitions of BigStepList and ToAssumeStmt
                   WriteBackOutgoingParameters(st.m, exit, st', proc.parameters, args))
   }
