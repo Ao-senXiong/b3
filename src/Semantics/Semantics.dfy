@@ -7,35 +7,54 @@ module Semantics {
 
   // Big-step semantics
 
+  // The big-step semantics is defined as a relation on State, relating an initial valuation contained where the initial state is a
+  // valuation contained in the State(_) variant and the final state is such a valuation, possibly augmented with a target label,
+  // or an error.
   datatype State =
-    | State(m: Valuation)
-    | AbruptExit(lbl: string, m: Valuation)
+    | State(m: Valuation, shadowedVariables: Valuation)
+    | AbruptExit(lbl: string, m: Valuation, shadowedVariables: Valuation)
     | Error
   {
+    function ClearShadows(): State
+      requires State?
+    {
+      this.(shadowedVariables := map[])
+    }
+    function SaveAsShadow(name: string): State
+      requires State?
+    {
+      if name in m then State(m, shadowedVariables[name := m[name]]) else this
+    }
     function Update(name: string, val: Value): State
       requires State?
     {
-      State(m[name := val])
+      State(m[name := val], shadowedVariables)
     }
     function Raise(lbl: string): State
       requires State?
     {
-      AbruptExit(lbl, m)
+      AbruptExit(lbl, m, shadowedVariables)
     }
     function Lower(lbl: string): State {
-      if AbruptExit? && lbl == this.lbl then State(m) else this
+      if AbruptExit? && lbl == this.lbl then State(m, shadowedVariables) else this
     }
     function RestoreScope(orig: State): State
       requires orig.State?
     {
       match this
-      case State(m) => this.(m := MapProject(m, orig.m.Keys))
-      case AbruptExit(_, m) => this.(m := MapProject(m, orig.m.Keys))
-      case Error => Error
+      case State(m, shadowedVariables) =>
+        this.(m := RestoreValuationByScope(m, orig.m.Keys, shadowedVariables), shadowedVariables := orig.shadowedVariables)
+      case AbruptExit(_, m, shadowedVariables) =>
+        this.(m := RestoreValuationByScope(m, orig.m.Keys, shadowedVariables), shadowedVariables := orig.shadowedVariables)
+      case Error =>
+        Error
+    }
+    static function RestoreValuationByScope(m: Valuation, desiredKeys: set<string>, shadowedMap: Valuation): Valuation {
+      map x | x in m && x in desiredKeys :: if x in shadowedMap then shadowedMap[x] else m[x]
     }
   }
 
-  // In a program `b3`, the judgement `BigStep(stmt, b3, st, st')` says that it's
+  // In a program `b3`, the judgment `BigStep(stmt, b3, st, st')` says that it's
   // possible to start `stmt` is state `st` and either not terminate at all or terminate
   // in state `st'`.
   greatest predicate BigStep(stmt: Stmt, b3: Program, st: State, st': State)
@@ -43,13 +62,13 @@ module Semantics {
   {
     match stmt
     case VarDecl(v) =>
-      exists val :: HasType(val, v.typ) && st' == st.Update(v.name, val)
+      exists val :: HasType(val, v.typ) && st' == st.SaveAsShadow(v.name).Update(v.name, val)
     case ValDecl(v, rhs) =>
-      st' == st.Update(v.name, rhs.Eval(st.m))
+      st' == st.SaveAsShadow(v.name).Update(v.name, rhs.Eval(st.m))
     case Assign(lhs, rhs) =>
       st' == st.Update(lhs, rhs.Eval(st.m))
     case Block(lbl, stmts) =>
-      exists mid :: BigStepSeq(stmts, b3, st, mid) && st' == mid.Lower(lbl).RestoreScope(st)
+      exists mid :: BigStepSeq(stmts, b3, st.ClearShadows(), mid) && st' == mid.Lower(lbl).RestoreScope(st)
     case Call(name, args) =>
       BigStepCall(stmt, b3, st, st')
     case Check(cond) =>
@@ -89,10 +108,11 @@ module Semantics {
     requires stmt.Call? && st.State?
   {
     var Call(name, args) := stmt;
+    var sh := st.shadowedVariables;
     exists proc <- b3.procedures | proc.name == name ::
       FollowsFromWellFormedness(Stmt.MatchingParameters(proc.parameters, args) && Variable.UniqueNames(proc.parameters)) &&
       exists entry | ProcEntryParameters(st.m, entry, proc.parameters, args) ::
-        exists st0 | BigStepList(proc.pre.Map((ae: AExpr) => ae.ToCheckStmt()), b3, State(entry), st0) ::
+        exists st0 | BigStepList(proc.pre.Map((ae: AExpr) => ae.ToCheckStmt()), b3, State(entry, sh), st0) ::
           || (!st0.State? && st' == st0)
           || (st0.State? &&
               exists exit | ProcExitParameters(entry, exit, proc.parameters, args) ::
@@ -101,9 +121,9 @@ module Semantics {
                 FollowsFromWellFormedness(proc.post.Forall(toAssumeStmtPre)) &&
                 exists st1 | BigStepList(
                     proc.post.ForallToPartialPre(toAssumeStmtPre, toAssumeStmt); proc.post.MapPartial(toAssumeStmt),
-                    b3, State(exit), st1) ::
-                  st1.State? && st1 == State(exit) && // this line follows from the definitions of BigStepList and ToAssumeStmt
-                  WriteBackOutgoingParameters(st.m, exit, st', proc.parameters, args))
+                    b3, State(exit, sh), st1) ::
+                  st1.State? && st1 == State(exit, sh) && // this line follows from the definitions of BigStepList and ToAssumeStmt
+                  WriteBackOutgoingParameters(st.m, sh, exit, st', proc.parameters, args))
   }
 
   ghost predicate ProcEntryParameters(callState: Valuation, entry: Valuation, parameters: seq<Variable>, args: seq<CallArgument>)
@@ -129,12 +149,12 @@ module Semantics {
          exit == entry + oldValues + outValues)
   }
 
-  predicate WriteBackOutgoingParameters(entry: Valuation, exit: Valuation, st': State, parameters: seq<Variable>, args: seq<CallArgument>)
+  predicate WriteBackOutgoingParameters(entry: Valuation, shadowedVariables: Valuation, exit: Valuation, st': State, parameters: seq<Variable>, args: seq<CallArgument>)
     requires Stmt.MatchingParameters(parameters, args)
     requires forall formal <- parameters | formal.kind.IsOutgoingParameter() :: formal.name in exit
   {
     var actualOutgoing := map i | 0 <= i < |parameters| && parameters[i].kind.IsOutgoingParameter() :: args[i].name := exit[parameters[i].name];
-    st' == State(entry + actualOutgoing)
+    st' == State(entry + actualOutgoing, shadowedVariables)
   }
 
   greatest predicate BigStepSeq(stmts: seq<Stmt>, b3: Program, st: State, st': State)
