@@ -4,6 +4,7 @@ module Semantics {
   import opened Basics
   import opened Ast
   import opened Values
+  import WF = WellFormednessConsequences
 
   // Big-step semantics
 
@@ -58,6 +59,7 @@ module Semantics {
   // possible to start `stmt` is state `st` and either not terminate at all or terminate
   // in state `st'`.
   greatest predicate BigStep(stmt: Stmt, b3: Program, st: State, st': State)
+    requires WF.Stmt(stmt, b3)
     requires st.State?
   {
     match stmt
@@ -68,6 +70,7 @@ module Semantics {
     case Assign(lhs, rhs) =>
       st' == st.Update(lhs, rhs.Eval(st.m))
     case Block(lbl, stmts) =>
+      WF.AboutBlock(stmt, b3);
       exists mid :: BigStepSeq(stmts, b3, st.ClearShadows(), mid) && st' == mid.Lower(lbl).RestoreScope(st)
     case Call(name, args) =>
       BigStepCall(stmt, b3, st, st')
@@ -79,14 +82,21 @@ module Semantics {
       if cond.Eval(st.m) == True then st' == st else st' == Error
     case AForall(v, body) =>
       FollowsFromWellFormedness(ValidAssertionStatement(stmt)) &&
-      BigStepSeq(SeparateAssertion(stmt, AContextEmpty), b3, st, st')
+      var assertions := SeparateAssertion(stmt, AContextEmpty);
+      WF.StmtSeq(assertions, b3) && // TODO: follows from SeparateAssertion
+      BigStepSeq(assertions, b3, st, st')
     case If(cond, thn, els) =>
+      WF.AboutIf(stmt, b3);
       BigStep(if cond.Eval(st.m) == True then thn else els, b3, st, st')
     case IfCase(cases) =>
+      WF.AboutIfCase(stmt, b3);
       exists cs <- cases :: cs.cond.Eval(st.m) == True && BigStep(cs.body, b3, st, st')
     case Loop(lbl, invariants, body) =>
+      WF.AboutLoop(stmt, b3);
       exists st0 ::
-        BigStepList(invariants.Map((ae: AExpr) => ae.ToCheckStmt()), b3, st, st0) &&
+        var checks := invariants.Map((ae: AExpr) => ae.ToCheckStmt());
+        WF.StmtList(checks, b3) && // TODO: follows from ToCheckStmt()
+        BigStepList(checks, b3, st, st0) &&
         if !st0.State? then
           st' == st0
         else
@@ -105,6 +115,7 @@ module Semantics {
   }
 
   greatest predicate BigStepCall(stmt: Stmt, b3: Program, st: State, st': State)
+    requires WF.Stmt(stmt, b3)
     requires stmt.Call? && st.State?
   {
     var Call(name, args) := stmt;
@@ -112,16 +123,18 @@ module Semantics {
     exists proc <- b3.procedures | proc.name == name ::
       FollowsFromWellFormedness(Stmt.MatchingParameters(proc.parameters, args) && Variable.UniqueNames(proc.parameters)) &&
       exists entry | ProcEntryParameters(st.m, entry, proc.parameters, args) ::
-        exists st0 | BigStepList(proc.pre.Map((ae: AExpr) => ae.ToCheckStmt()), b3, State(entry, sh), st0) ::
+        var checks := proc.pre.Map((ae: AExpr) => ae.ToCheckStmt());
+        WF.StmtList(checks, b3) && // TODO: follows from ToCheckStmt()
+        exists st0 | BigStepList(checks, b3, State(entry, sh), st0) ::
           || (!st0.State? && st' == st0)
           || (st0.State? &&
               exists exit | ProcExitParameters(entry, exit, proc.parameters, args) ::
                 var toAssumeStmt := (ae: AExpr) requires ae.Valid() => ae.ToAssumeStmt();
                 var toAssumeStmtPre := (ae: AExpr) => ae.Valid();
                 FollowsFromWellFormedness(proc.post.Forall(toAssumeStmtPre)) &&
-                exists st1 | BigStepList(
-                    proc.post.ForallToPartialPre(toAssumeStmtPre, toAssumeStmt); proc.post.MapPartial(toAssumeStmt),
-                    b3, State(exit, sh), st1) ::
+                var assumes := (proc.post.ForallToPartialPre(toAssumeStmtPre, toAssumeStmt); proc.post.MapPartial(toAssumeStmt));
+                WF.StmtList(assumes, b3) && // TODO: follows from ToAssumeStmt()
+                exists st1 | BigStepList(assumes, b3, State(exit, sh), st1) ::
                   st1.State? && st1 == State(exit, sh) && // this line follows from the definitions of BigStepList and ToAssumeStmt
                   WriteBackOutgoingParameters(st.m, sh, exit, st', proc.parameters, args))
   }
@@ -158,6 +171,7 @@ module Semantics {
   }
 
   greatest predicate BigStepSeq(stmts: seq<Stmt>, b3: Program, st: State, st': State)
+    requires WF.StmtSeq(stmts, b3)
     requires st.State?
   {
     if stmts == [] then
@@ -173,6 +187,7 @@ module Semantics {
   }
 
   greatest predicate BigStepList(stmts: List<Stmt>, b3: Program, st: State, st': State)
+    requires WF.StmtList(stmts, b3)
     requires st.State?
   {
     match stmts
