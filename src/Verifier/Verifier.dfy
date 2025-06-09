@@ -27,13 +27,14 @@ module Verifier {
   datatype Continuation = Continuation(V: set<Variable>, continuation: seq<Stmt>)
 
   method Process(stmts: seq<Stmt>, incarnations: Incarnations, B: BlockContinuations, o: Solver)
-    decreases |stmts|
+    decreases StmtListMeasure(stmts) + ContinuationsMeasure(B)
   {
     if |stmts| == 0 {
       return;
     }
 
     var s0, cont := stmts[0], stmts[1..];
+    assert StmtListMeasure(stmts) == StmtMeasure(s0) + StmtListMeasure(cont);
     match s0
     case VarDecl(v) =>
       var x := incarnations.New(v);
@@ -47,9 +48,29 @@ module Verifier {
       var x' := incarnations.New(x);
       var o' := o.Extend(CreateEq(IdExpr(x'), e'));
       Process(cont, incarnations[x := x'], B, o');
-    case Block(lbl, stmts) =>
+    case Block(lbl, bodyStmts) =>
       var B' := B[lbl := Continuation(incarnations.Keys, cont)];
-      Process(stmts + [Exit(lbl)], incarnations, B', o); // TODO: termination
+      assert StmtListMeasure(stmts) + ContinuationsMeasure(B) > StmtListMeasure(bodyStmts + [Exit(lbl)]) + ContinuationsMeasure(B') by {
+        assert StmtMeasure(s0) > StmtListMeasure(bodyStmts + [Exit(lbl)]) by {
+          assert StmtMeasure(s0) == 2 + StmtListMeasure(bodyStmts);
+          AboutStmtListMeasureSingleton(Exit(lbl));
+          AboutStmtListMeasureConcat(bodyStmts, [Exit(lbl)]);
+        }
+        assert ContinuationsMeasure(B) + StmtListMeasure(cont) >= ContinuationsMeasure(B') by {
+          AboutContinuationsMeasureUpdate(B, lbl, incarnations.Keys, cont);
+        }
+
+        calc {
+          StmtListMeasure(stmts) + ContinuationsMeasure(B);
+        ==  // by assertion before `match`
+          StmtMeasure(s0) + StmtListMeasure(cont) + ContinuationsMeasure(B);
+        >  // by first assertion-by above
+          StmtListMeasure(bodyStmts + [Exit(lbl)]) + StmtListMeasure(cont) + ContinuationsMeasure(B);
+        >=  // by second assert-by above
+          StmtListMeasure(bodyStmts + [Exit(lbl)]) + ContinuationsMeasure(B');
+        }
+      }
+      Process(bodyStmts + [Exit(lbl)], incarnations, B', o);
     case Call(name, args) =>
       // TODO
     case Check(cond) =>
@@ -63,32 +84,165 @@ module Verifier {
     case If(cond, thn, els) =>
       var e' := incarnations.Eval(cond);
       var oThen := o.Extend(e');
-      Process([thn] + cont, incarnations, B, oThen); // TODO: termination
+      Process([thn] + cont, incarnations, B, oThen);
       var oElse := o.Extend(CreateNegation(e'));
-      Process([els] + cont, incarnations, B, oElse); // TODO: termination
+      Process([els] + cont, incarnations, B, oElse);
     case IfCase(cases) =>
-      for i := 0 to |cases| {
+      for i := 0 to |cases|
+        invariant CaseMeasure(s0, cases[i..]) < StmtMeasure(s0)
+      {
         var cs := cases[i];
         var e' := incarnations.Eval(cs.cond);
         var o' := o.Extend(e');
-        Process([cs.body] + cont, incarnations, B, o'); // TODO: termination
+        Process([cs.body] + cont, incarnations, B, o');
       }
     case Loop(lbl, invariants, body) =>
       // TODO
     case Exit(lbl) =>
       expect lbl in B;
-      var Continuation(V, cont') := B[lbl];
-      var incarnations' := incarnations.DomainRestrict(V);
-      Process(cont', incarnations', B, o); // TODO: termination
+      ProcessExit(lbl, incarnations, B, o);
     case Return =>
-      var lbl := ReturnLabel;
-      expect lbl in B;
-      var Continuation(V, cont') := B[lbl];
-      var incarnations' := incarnations.DomainRestrict(V);
-      Process(cont', incarnations', B, o); // TODO: termination
+      expect ReturnLabel in B;
+      ProcessExit(ReturnLabel, incarnations, B, o);
     case Probe(e) =>
       var e' := incarnations.Eval(e);
       var o' := o.Record(e');
       Process(cont, incarnations, B, o');
+  }
+
+  method ProcessExit(lbl: string, incarnations: Incarnations, B: BlockContinuations, o: Solver)
+    requires lbl in B
+    decreases 1 + ContinuationsMeasure(B), 0
+  {
+      var Continuation(V, cont) := B[lbl];
+      var incarnations' := incarnations.DomainRestrict(V);
+      var B0 := B - {lbl};
+      assert B == B0[lbl := Continuation(V, cont)];
+      assert ContinuationsMeasure(B) >= StmtListMeasure(cont) + ContinuationsMeasure(B0) by {
+        AboutContinuationsMeasure(B0, lbl, V, cont);
+      }
+      Process(cont, incarnations', B0, o);
+  }
+
+  ghost function StmtListMeasure(stmts: seq<Stmt>): nat {
+    if stmts == [] then 0 else StmtMeasure(stmts[0]) + StmtListMeasure(stmts[1..])
+  }
+  ghost function StmtMeasure(stmt: Stmt): nat
+    ensures 0 < StmtMeasure(stmt)
+  {
+    match stmt
+    case VarDecl(_) => 1
+    case ValDecl(_, _) => 1
+    case Assign(_, _) => 1
+    case Block(_, stmts) => 2 + StmtListMeasure(stmts)
+    case Call(name, args) => 1 // TODO
+    case Check(cond) => 1
+    case Assume(cond) => 1
+    case Assert(cond) => 2
+    case AForall(v, body) => 1 // TODO
+    case If(cond, thn, els) => 1 + StmtMeasure(thn) + StmtMeasure(els)
+    case IfCase(cases) => 1 + CaseMeasure(stmt, cases)
+    case Loop(lbl, invariants, body) => 1 + StmtMeasure(body) // TODO
+    case Exit(lbl) => 1
+    case Return => 1
+    case Probe(e) => 1
+  }
+  ghost function CaseMeasure(stmt: Stmt, cases: seq<Case>): nat
+    requires forall cs <- cases :: cs < stmt
+  {
+    if cases == [] then 0 else
+      assert cases[0] in cases && forall cs <- cases[1..] :: cs in cases;
+      StmtMeasure(cases[0].body) + CaseMeasure(stmt, cases[1..])
+  }
+
+  lemma AboutStmtListMeasureSingleton(s: Stmt)
+    ensures StmtListMeasure([s]) == StmtMeasure(s)
+  {}
+
+  lemma AboutStmtListMeasureConcat(a: seq<Stmt>, b: seq<Stmt>)
+    ensures StmtListMeasure(a + b) == StmtListMeasure(a) + StmtListMeasure(b)
+  {
+    if a == [] {
+      assert a + b == b;
+    } else {
+      assert (a + b)[0] == a[0];
+      assert (a + b)[1..] == a[1..] + b;
+    }
+  }
+
+  ghost function ContinuationsMeasure(B: BlockContinuations): nat {
+    if |B| == 0 then 0 else
+      var lbl := Pick(B.Keys);
+      StmtListMeasure(B[lbl].continuation) + ContinuationsMeasure(B - {lbl})
+  }
+  ghost function Pick<X>(s: set<X>): X
+    requires |s| != 0
+  {
+    var x :| x in s; x
+  }
+  lemma AboutContinuationsMeasure(B: BlockContinuations, x: string, V: set<Variable>, cont: seq<Stmt>)
+    requires x !in B
+    ensures ContinuationsMeasure(B[x := Continuation(V, cont)]) == StmtListMeasure(cont) + ContinuationsMeasure(B)
+  {
+    var B' := B[x := Continuation(V, cont)];
+    assert B'[x].continuation == cont;
+    assert B' - {x} == B;
+    var y := Pick(B'.Keys);
+    if y == x {
+      assert ContinuationsMeasure(B') == StmtListMeasure(B'[x].continuation) + ContinuationsMeasure(B);
+    } else {
+      var Bxy, Bx, By, B0 := B', B' - {y}, B' - {x}, B' - {x, y};
+      assert By == B;
+      assert Bx - {x} == B0 == By - {y};
+      assert Bx == B0[x := Continuation(V, cont)];
+      assert By == B0[y := B'[y]];
+
+      var V', cont' := B'[y].V, B'[y].continuation;
+      calc {
+        ContinuationsMeasure(Bxy);
+      ==
+        StmtListMeasure(cont') + ContinuationsMeasure(Bx);
+      ==  { AboutContinuationsMeasure(B0, x, V, cont); }
+        StmtListMeasure(cont') + StmtListMeasure(cont) + ContinuationsMeasure(B0);
+      ==
+        StmtListMeasure(cont) + StmtListMeasure(cont') + ContinuationsMeasure(B0);
+      ==  { AboutContinuationsMeasure(B0, y, V', cont'); }
+        StmtListMeasure(cont) + ContinuationsMeasure(By);
+      }
+    }
+  }
+
+  lemma AboutContinuationsMeasureRemove(B: BlockContinuations, lbl: string)
+    ensures ContinuationsMeasure(B) >= ContinuationsMeasure(B - {lbl})
+  {
+    if lbl in B {
+      var B0 := B - {lbl};
+      var V, cont := B[lbl].V, B[lbl].continuation;
+      assert B == B0[lbl := Continuation(V, cont)];
+      AboutContinuationsMeasure(B0, lbl, B[lbl].V, B[lbl].continuation);
+      assert ContinuationsMeasure(B0[lbl := Continuation(V, cont)]) == StmtListMeasure(cont) + ContinuationsMeasure(B0);
+    } else {
+      assert B == B - {lbl};
+    }
+  }
+
+  lemma AboutContinuationsMeasureUpdate(B: BlockContinuations, lbl: string, V: set<Variable>, cont: seq<Stmt>)
+    ensures ContinuationsMeasure(B) + StmtListMeasure(cont) >= ContinuationsMeasure(B[lbl := Continuation(V, cont)])
+  {
+    var B' := B[lbl := Continuation(V, cont)];
+    if lbl in B {
+      var B0 := B - {lbl};
+      calc {
+        ContinuationsMeasure(B) + StmtListMeasure(cont);
+      >=  { AboutContinuationsMeasureRemove(B, lbl); }
+        ContinuationsMeasure(B0) + StmtListMeasure(cont);
+      >=  { AboutContinuationsMeasure(B0, lbl, V, cont); }
+        ContinuationsMeasure(B0[lbl := Continuation(V, cont)]);
+      ==  { assert B' == B0[lbl := Continuation(V, cont)] == B'; }
+        ContinuationsMeasure(B');
+      }
+    } else {
+      AboutContinuationsMeasure(B, lbl, V, cont);
+    }
   }
 }
