@@ -1,7 +1,7 @@
 module WellFormednessConsequences {
   export
     provides Stmt
-    provides AboutBlock, AboutIf, AboutIfCase, AboutLoop
+    provides AboutBlock, AboutBlockStmts, AboutIf, AboutIfCase, AboutLoop, AboutAForall
     reveals StmtList, StmtSeq
     provides Ast, Basics
 
@@ -40,6 +40,21 @@ module WellFormednessConsequences {
         scope, localNames := scope[s.v.name := s.v], localNames + {s.v.name};
       }
     }
+
+  }
+
+  lemma AboutBlockStmts(stmt: Stmt, b3: Program)
+    requires Stmt(stmt, b3) && stmt.Block?
+    ensures StmtSeq(stmt.stmts + [Exit(stmt.lbl)], b3)
+  {
+    assert StmtSeq(stmt.stmts, b3) by {
+      AboutBlock(stmt, b3);
+    }
+
+    var exit := Exit(stmt.lbl);
+    assert Stmt(exit, b3) by {
+      assert exit.WellFormed(b3, map[], {}, {});
+    }    
   }
 
   lemma AboutIf(stmt: Stmt, b3: Program)
@@ -65,5 +80,39 @@ module WellFormednessConsequences {
   {
     var scope, localNames, labels :| stmt.WellFormed(b3, scope, localNames, labels);
     assert stmt.body.WellFormed(b3, scope, localNames, labels + {stmt.lbl});
+  }
+
+  lemma AboutAForall(stmt: Stmt, b3: Program)
+    requires Stmt(stmt, b3) && stmt.AForall?
+    ensures ValidAssertionStatement(stmt) && Stmt(stmt.body, b3)
+  {
+    WellFormedAForallImpliesValidAssertionStatement(stmt, b3);
+    var scope, localNames, labels :| stmt.WellFormed(b3, scope, localNames, labels);
+    var AForall(v, body) := stmt;
+    assert body.WellFormed(b3, scope[v.name := v], localNames, labels);
+  }
+
+  lemma WellFormedAForallImpliesValidAssertionStatement(stmt: Stmt, b3: Program)
+    requires Stmt(stmt, b3) && !stmt.ContainsNonAssertions()
+    ensures ValidAssertionStatement(stmt)
+  {
+    match stmt
+    case ValDecl(_, _) =>
+    case Check(_) =>
+    case Assume(_) =>
+    case Assert(_) =>
+    case Block(_, stmts) =>
+      AboutBlock(stmt, b3);
+    case If(_, thn, els) =>
+      AboutIf(stmt, b3);
+    case IfCase(cases) =>
+      AboutIfCase(stmt, b3);
+    case AForall(v, body) =>
+      var scope, localNames, labels :| stmt.WellFormed(b3, scope, localNames, labels);
+      assert !body.ContainsNonAssertions();
+      assert ValidAssertionStatement(body) by {
+        assert body.WellFormed(b3, scope[v.name := v], localNames, labels);
+        WellFormedAForallImpliesValidAssertionStatement(body, b3);
+      }
   }
 }
