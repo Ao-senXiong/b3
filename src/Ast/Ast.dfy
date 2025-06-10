@@ -295,7 +295,7 @@ module Ast {
         Expr.CreateImplies(Expr.CreateNegation(cond), Learn(els))
       )
     case IfCase(cases) =>
-     Expr.CreateBigAnd(SeqMap(cases, (c: Case) requires c in cases => Expr.CreateImplies(c.cond, Learn(c.body))))
+     Expr.CreateBigOr(SeqMap(cases, (c: Case) requires c in cases => Expr.CreateAnd(c.cond, Learn(c.body))))
   }
 
   function LearnSeq(stmts: seq<Stmt>): Expr
@@ -344,10 +344,15 @@ module Ast {
     function Eval(vals: Valuation): Value // TODO: either make Option<Value> or require Type(...).Some?
 
     static function CreateTrue(): Expr
+    static function CreateFalse(): Expr
     static function CreateNegation(e: Expr): Expr
     static function CreateAnd(e0: Expr, e1: Expr): Expr
     static function CreateBigAnd(ee: seq<Expr>): Expr {
       if |ee| == 0 then CreateTrue() else CreateAnd(ee[0], CreateBigAnd(ee[1..]))
+    }
+    static function CreateOr(e0: Expr, e1: Expr): Expr
+    static function CreateBigOr(ee: seq<Expr>): Expr {
+      if |ee| == 0 then CreateFalse() else CreateOr(ee[0], CreateBigOr(ee[1..]))
     }
     static function CreateImplies(e0: Expr, e1: Expr): Expr
     static function CreateLet(v: Variable, rhs: Expr, body: Expr): Expr
