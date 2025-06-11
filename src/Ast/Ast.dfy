@@ -12,6 +12,13 @@ module Ast {
       && (forall proc <- procedures, proc' <- procedures :: proc.name == proc'.name ==> proc == proc')
       && forall proc <- procedures :: proc.WellFormed(this)
     }
+
+    function FindProcedure(name: string): Option<Procedure> {
+      if proc :| proc in procedures && proc.name == name then
+        Some(proc)
+      else
+        None
+    }
   }
 
   // Procedures

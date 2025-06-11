@@ -10,6 +10,9 @@ module Verifier {
     method New(v: Variable) returns (x: Var) {
       x := new Var(v.name);
     }
+    method NewWithSuffix(v: Variable, suffix: string) returns (x: Var) {
+      x := new Var(v.name + suffix);
+    }
     function Eval(e: Expr): SExpr
     function DomainRestrict(s: set<Variable>): Incarnations {
       map v | v in this && v in s :: this[v]
@@ -80,7 +83,7 @@ module Verifier {
       assert WF.StmtSeq(bodyStmts + [Exit(lbl)], b3);
       Process(bodyStmts + [Exit(lbl)], incarnations, B', o, b3);
     case Call(name, args) =>
-      // TODO
+      ProcessCall(name, args, cont, incarnations, B, o, b3);
     case Check(cond) =>
       var e' := incarnations.Eval(cond);
       o.Prove(e');
@@ -150,6 +153,73 @@ module Verifier {
         AboutContinuationsMeasure(B0, lbl, V, cont);
       }
       Process(cont, incarnations', B0, o, b3);
+  }
+
+  method ProcessCall(name: string, args: seq<CallArgument>, cont: seq<Stmt>, incarnations: Incarnations, B: BlockContinuations, o: Solver, b3: Program)
+  {
+    var maybeProc := b3.FindProcedure(name);
+    if maybeProc == None {
+      return;
+    }
+    var proc := maybeProc.value;
+
+    var formalIns, actualIns, formalInOuts, oldInOuts, actualInOuts, formalOuts, actualOuts := CollateParameters(proc, args, b3);
+
+    var e := SeqMap(actualIns, actualIn => incarnations.Eval(actualIn));
+    /* TODO
+    var x' := NewVars(formalIns, incarnations, "%in");
+    var b' := NewVars(oldInOuts, incarnations);
+    var b'' := NewVars(actualInOuts, incarnations);
+    var c' := NewVars(actualOuts, incarnations);
+    var incarnations' :=
+      (map i | 0 <= i < |formalIns| :: formalIns[i] := x'[i]) +
+      (map i | 0 <= i < |formalInOuts| :: formalInOuts[i] := b'[i]);
+
+    var Pre := ConvertToChecks(proc.pre);
+    var o' := o.Extend(CreateBigAnd(seq(|x'|, i requires 0 <= i < |x'| => CreateEq(x'[i], e[i]))));
+    Process(Pre, incarnations', B, o');
+
+    incarnations' :=
+      (map i | 0 <= i < |formalIns| :: formalIns[i] := x'[i]) +
+      (map i | 0 <= i < |formalInOuts| :: OldName(formalInOuts[i]) := b'[i]) +
+      (map i | 0 <= i < |formalInOuts| :: formalInOuts[i] := b''[i]) +
+      (map i | 0 <= i < |formalOuts| :: formalOuts[i] := c'[i]);
+    var Post := ConvertToLearn(proc.post);
+    Process(Post + cont, incarnations', B, o');
+    */
+  }
+
+  method NewVars(vars: seq<Variable>, incarnations: Incarnations, suffix: string := "") returns (newVars: seq<Var>)
+    ensures |newVars| == |vars|
+  {
+    newVars := [];
+    for i := 0 to |vars|
+      invariant |newVars| == i
+    {
+      var y := incarnations.NewWithSuffix(vars[i], suffix);
+      newVars := newVars + [y];
+    }
+  }
+
+  method CollateParameters(proc: Procedure, args: seq<CallArgument>, b3: Program) returns (
+      formalIns: seq<Variable>, actualIns: seq<Expr>,
+      formalInOuts: seq<Variable>, oldInOuts: seq<Variable>, actualInOuts: seq<Variable>,
+      formalOuts: seq<Variable>, actualOuts: seq<Variable>)
+    ensures |formalIns| == |actualIns|
+    ensures |formalInOuts| == |oldInOuts| == |actualInOuts|
+    ensures |formalOuts| == |actualOuts|
+    ensures Variable.UniqueNames(formalIns)
+    ensures Variable.UniqueNames(formalInOuts)
+  {
+    formalIns, actualIns := [], [];
+    formalInOuts, oldInOuts, actualInOuts := [], [], [];
+    formalOuts, actualOuts := [], [];
+    /* TODO
+    for i := 0 to |proc.parameters|
+    {
+      match proc.parameters[i].kind
+    }
+    */
   }
 
   ghost function StmtListMeasure(stmts: seq<Stmt>): nat {

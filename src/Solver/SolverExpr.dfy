@@ -2,7 +2,7 @@ module SolverExpr {
   export
     reveals Var, Var.name
     provides SExpr
-    provides CreateIdExpr, CreateEq, CreateNegation
+    provides CreateIdExpr, CreateEq, CreateNegation, CreateBigAnd
 
   class Var {
     const name: string
@@ -16,4 +16,5 @@ module SolverExpr {
   function CreateIdExpr(x: Var): SExpr
   function CreateEq(e0: SExpr, e1: SExpr): SExpr
   function CreateNegation(e: SExpr): SExpr
+  function CreateBigAnd(ee: seq<SExpr>): SExpr
 }
