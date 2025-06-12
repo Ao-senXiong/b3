@@ -5,10 +5,23 @@ module Solvers {
 
   import opened SolverExpr
 
-  datatype Solver = Solver()
+  datatype Solver =
+    // TODO
+    Solver(assumptions: seq<SExpr>)
   {
-    method Extend(e: SExpr) returns (solver: Solver)
-    method Prove(e: SExpr)
+    method Extend(e: SExpr) returns (solver: Solver) {
+      solver := Solver(assumptions + [e]);
+    }
+    method Prove(e: SExpr) {
+      // TODO
+      print "----- Proof obligation:\n";
+      for i := 0 to |assumptions| {
+        print "  ", assumptions[i], "\n";
+      }
+      print "  |-\n";
+      print "  ", e, "\n";
+    }
     method Record(e: SExpr) returns (solver: Solver)
+    { solver := this; } // TODO
   }
 }

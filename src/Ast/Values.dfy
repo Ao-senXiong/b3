@@ -3,10 +3,12 @@ module Values {
 
   // Values
 
-  type Value(0,!new)
+  type Value(0,!new) = int // TODO
   const True: Value
 
-  predicate HasType(val: Value, typ: Type)
+  predicate HasType(val: Value, typ: Type) {
+    true // TODO
+  }
 
   type Valuation = map<string, Value>
 }

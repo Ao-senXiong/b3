@@ -234,11 +234,11 @@ module Semantics {
       []
     else
       var s, tail := stmts[0], stmts[1..];
+      assert forall s <- tail :: s in stmts;
       match s
       case ValDecl(v, rhs) =>
         SeparateAssertionSeq(stmt, tail, AContextVal(v, rhs, context))
       case _ =>
-        assert forall s <- tail :: s in stmts;
         SeparateAssertion(s, context) + SeparateAssertionSeq(stmt, tail, context)
   }
 

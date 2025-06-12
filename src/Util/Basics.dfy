@@ -3,6 +3,10 @@ module Basics {
 
   datatype List<X> = Nil | Cons(head: X, tail: List<X>)
   {
+    function Length(): nat {
+      if this == Nil then 0 else 1 + tail.Length()
+    }
+
     predicate Forall(p: X --> bool)
       requires forall x: X :: x < this ==> p.requires(x)
     {
@@ -49,6 +53,16 @@ module Basics {
 
   function SeqFlatten<X>(ss: seq<seq<X>>): seq<X> {
     if ss == [] then [] else ss[0] + SeqFlatten(ss[1..])
+  }
+
+  method SetToSeq<X>(s: set<X>) returns (r: seq<X>) {
+    r := [];
+    var t := s;
+    while t != {} {
+      var x :| x in t;
+      t := t - {x};
+      r := r + [x];
+    }
   }
 
   function MapProject<X, Y>(m: map<X, Y>, s: set<X>): map<X, Y> {

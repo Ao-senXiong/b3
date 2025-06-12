@@ -13,11 +13,11 @@ module Ast {
       && forall proc <- procedures :: proc.WellFormed(this)
     }
 
-    function FindProcedure(name: string): Option<Procedure> {
-      if proc :| proc in procedures && proc.name == name then
-        Some(proc)
-      else
-        None
+    method FindProcedure(name: string) returns (r: Option<Procedure>) {
+      if proc :| proc in procedures && proc.name == name {
+        return Some(proc);
+      }
+      return None;
     }
   }
 
@@ -345,24 +345,36 @@ module Ast {
   
   // Expressions
 
-  type Expr
+  // TODO
+  datatype Expr =
+    | Const(value: int)
   {
     function Type(b3: Program, scope: Scope): Option<string>
+    { Some(IntType) } // TODO
     function Eval(vals: Valuation): Value // TODO: either make Option<Value> or require Type(...).Some?
+    { 3 } // TODO
 
     static function CreateTrue(): Expr
+    { Const(10) } // TODO
     static function CreateFalse(): Expr
+    { Const(-10) } // TODO
     static function CreateNegation(e: Expr): Expr
+    { Const(- e.value) } // TODO
     static function CreateAnd(e0: Expr, e1: Expr): Expr
+    { Const(e0.value * e1.value) } // TODO
     static function CreateBigAnd(ee: seq<Expr>): Expr {
       if |ee| == 0 then CreateTrue() else CreateAnd(ee[0], CreateBigAnd(ee[1..]))
     }
     static function CreateOr(e0: Expr, e1: Expr): Expr
+    { Const(e0.value + e1.value) } // TODO
     static function CreateBigOr(ee: seq<Expr>): Expr {
       if |ee| == 0 then CreateFalse() else CreateOr(ee[0], CreateBigOr(ee[1..]))
     }
     static function CreateImplies(e0: Expr, e1: Expr): Expr
+    { Const(-e0.value + e1.value) } // TODO
     static function CreateLet(v: Variable, rhs: Expr, body: Expr): Expr
+    { Const(100 * body.value) } // TODO
     static function CreateForall(v: Variable, body: Expr): Expr
+    { Const(1000 * body.value) } // TODO
   }
 }

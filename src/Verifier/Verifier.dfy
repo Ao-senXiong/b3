@@ -14,6 +14,7 @@ module Verifier {
       x := new Var(v.name + suffix);
     }
     function Eval(e: Expr): SExpr
+    { CreateTrue() } // TODO
     function DomainRestrict(s: set<Variable>): Incarnations {
       map v | v in this && v in s :: this[v]
     }
@@ -25,6 +26,7 @@ module Verifier {
 
   // TODO: we should really start from a resolved AST
   function NameToResolvedVariable(name: string): Variable
+  { Variable(name, Types.IntType, VariableKind.Local) } // TODO
 
   // map from block names to pairs (V, Ss) of variable sets and statement sequences
   type BlockContinuations = map<string, Continuation>
