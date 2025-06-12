@@ -96,7 +96,7 @@ module Ast {
     | VarDecl(v: Variable)
     | ValDecl(v: Variable, rhs: Expr)
     | Assign(lhs: string, rhs: Expr)
-    | Block(lbl: string, stmts: seq<Stmt>)
+    | Block(lbl: Label, stmts: seq<Stmt>)
     | Call(name: string, args: seq<CallArgument>)
     // assertions
     | Check(cond: Expr)
@@ -106,8 +106,8 @@ module Ast {
     // Control flow
     | If(cond: Expr, thn: Stmt, els: Stmt)
     | IfCase(cases: seq<Case>)
-    | Loop(lbl: string, invariants: List<AExpr>, body: Stmt)
-    | Exit(lbl: string)
+    | Loop(lbl: Label, invariants: List<AExpr>, body: Stmt)
+    | Exit(lbl: Label)
     | Return
     // Error reporting
     | Probe(e: Expr)
@@ -159,7 +159,7 @@ module Ast {
         && var v := scope[lhs];
         && v.kind.IsAssignable() && rhs.Type(b3, scope) == Some(v.typ)
       case Block(lbl, stmts) =>
-        LegalLabel(lbl, labels) && WellFormedStmtSeq(stmts, b3, scope, {}, labels + {lbl})
+        lbl.IsLegalIn(labels) && WellFormedStmtSeq(stmts, b3, scope, {}, lbl.AddTo(labels))
       case Call(name, args) =>
         exists proc <- b3.procedures ::
           && name == proc.name
@@ -185,11 +185,15 @@ module Ast {
             && cs.cond.Type(b3, scope) == Some(BoolType)
             && cs.body.WellFormed(b3, scope, localNames, labels)
       case Loop(lbl, invariants, body) =>
-        && LegalLabel(lbl, labels)
+        && lbl.IsLegalIn(labels)
         && invariants.Forall((ae: AExpr) requires ae < this => ae.WellFormed(b3, scope, labels))
-        && body.WellFormed(b3, scope, localNames, labels + {lbl})
+        && body.WellFormed(b3, scope, localNames, lbl.AddTo(labels))
       case Exit(lbl) =>
-        LegalLabel(lbl, labels)
+        match lbl {
+          case NamedLabel(name) => name in labels
+          case AnonymousLabel => true
+          case ReturnLabel => false
+        }
       case Return =>
         true
       case Probe(e) =>
@@ -217,10 +221,23 @@ module Ast {
     }
   }
 
-  const ReturnLabel: string := "_return"
+  datatype Label =
+    | NamedLabel(name: string)
+    | AnonymousLabel
+    | ReturnLabel
+  {
+    predicate IsLegalIn(labels: set<string>) {
+      match this
+      case NamedLabel(name) => name !in labels
+      case AnonymousLabel => true
+      case ReturnLabel => false
+    }
 
-  predicate LegalLabel(lbl: string, labels: set<string>) {
-    lbl != ReturnLabel && lbl !in labels
+    function AddTo(labels: set<string>): set<string> {
+      match this
+      case NamedLabel(name) => labels + {name}
+      case _ => labels
+    }
   }
 
   datatype Case = Case(cond: Expr, body: Stmt)

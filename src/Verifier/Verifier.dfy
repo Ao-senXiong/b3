@@ -29,7 +29,7 @@ module Verifier {
   { Variable(name, Types.IntType, VariableKind.Local) } // TODO
 
   // map from block names to pairs (V, Ss) of variable sets and statement sequences
-  type BlockContinuations = map<string, Continuation>
+  type BlockContinuations = map<Label, Continuation>
   datatype Continuation = Continuation(V: set<Variable>, continuation: seq<Stmt>)
 
   ghost predicate BValid(B: BlockContinuations, b3: Program) {
@@ -143,7 +143,7 @@ module Verifier {
       Process(cont, incarnations, B, o', b3);
   }
 
-  method ProcessExit(lbl: string, incarnations: Incarnations, B: BlockContinuations, o: Solver, b3: Program)
+  method ProcessExit(lbl: Label, incarnations: Incarnations, B: BlockContinuations, o: Solver, b3: Program)
     requires BValid(B, b3) && lbl in B
     decreases 1 + ContinuationsMeasure(B), 0
   {
@@ -280,7 +280,7 @@ module Verifier {
   {
     var x :| x in s; x
   }
-  lemma AboutContinuationsMeasure(B: BlockContinuations, x: string, V: set<Variable>, cont: seq<Stmt>)
+  lemma AboutContinuationsMeasure(B: BlockContinuations, x: Label, V: set<Variable>, cont: seq<Stmt>)
     requires x !in B
     ensures ContinuationsMeasure(B[x := Continuation(V, cont)]) == StmtListMeasure(cont) + ContinuationsMeasure(B)
   {
@@ -312,7 +312,7 @@ module Verifier {
     }
   }
 
-  lemma AboutContinuationsMeasureRemove(B: BlockContinuations, lbl: string)
+  lemma AboutContinuationsMeasureRemove(B: BlockContinuations, lbl: Label)
     ensures ContinuationsMeasure(B) >= ContinuationsMeasure(B - {lbl})
   {
     if lbl in B {
@@ -326,7 +326,7 @@ module Verifier {
     }
   }
 
-  lemma AboutContinuationsMeasureUpdate(B: BlockContinuations, lbl: string, V: set<Variable>, cont: seq<Stmt>)
+  lemma AboutContinuationsMeasureUpdate(B: BlockContinuations, lbl: Label, V: set<Variable>, cont: seq<Stmt>)
     ensures ContinuationsMeasure(B) + StmtListMeasure(cont) >= ContinuationsMeasure(B[lbl := Continuation(V, cont)])
   {
     var B' := B[lbl := Continuation(V, cont)];

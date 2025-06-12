@@ -13,7 +13,7 @@ module Semantics {
   // or an error.
   datatype State =
     | State(m: Valuation, shadowedVariables: Valuation)
-    | AbruptExit(lbl: string, m: Valuation, shadowedVariables: Valuation)
+    | AbruptExit(lbl: Label, m: Valuation, shadowedVariables: Valuation)
     | Error
   {
     function ClearShadows(): State
@@ -31,12 +31,12 @@ module Semantics {
     {
       State(m[name := val], shadowedVariables)
     }
-    function Raise(lbl: string): State
+    function Raise(lbl: Label): State
       requires State?
     {
       AbruptExit(lbl, m, shadowedVariables)
     }
-    function Lower(lbl: string): State {
+    function Lower(lbl: Label): State {
       if AbruptExit? && lbl == this.lbl then State(m, shadowedVariables) else this
     }
     function RestoreScope(orig: State): State

@@ -28,7 +28,7 @@ module WellFormednessConsequences {
     ensures StmtSeq(stmt.stmts, b3)
   {
     var scope, localNames, labels :| stmt.WellFormed(b3, scope, localNames, labels);
-    localNames, labels := {}, labels + {stmt.lbl};
+    localNames, labels := {}, stmt.lbl.AddTo(labels);
     for i := 0 to |stmt.stmts|
       invariant Ast.Stmt.WellFormedStmtSeq(stmt.stmts[i..], b3, scope, localNames, labels)
       invariant forall s <- stmt.stmts[..i] :: Stmt(s, b3)
@@ -53,7 +53,7 @@ module WellFormednessConsequences {
 
     var exit := Exit(stmt.lbl);
     assert Stmt(exit, b3) by {
-      assert exit.WellFormed(b3, map[], {}, {});
+      assert exit.WellFormed(b3, map[], {}, stmt.lbl.AddTo({}));
     }    
   }
 
@@ -79,7 +79,7 @@ module WellFormednessConsequences {
     ensures Stmt(stmt.body, b3)
   {
     var scope, localNames, labels :| stmt.WellFormed(b3, scope, localNames, labels);
-    assert stmt.body.WellFormed(b3, scope, localNames, labels + {stmt.lbl});
+    assert stmt.body.WellFormed(b3, scope, localNames, stmt.lbl.AddTo(labels));
   }
 
   lemma AboutAForall(stmt: Stmt, b3: Program)

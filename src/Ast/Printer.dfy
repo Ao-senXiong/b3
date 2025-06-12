@@ -53,15 +53,16 @@ module Printer {
 
   const IndentAmount := 2
 
-  method Label(lbl: string) {
-    if lbl != "" {
-      print lbl, ": ";
-    }
+  method Label(lbl: Label) {
+    match lbl
+    case NamedLabel(name) =>
+      print name, ": ";
+    case _ =>
   }
 
 
   method Statement(stmt: Stmt, indent: nat)
-    decreases stmt
+    decreases stmt, 0
   {
     Indent(indent);
 
@@ -114,21 +115,15 @@ module Printer {
     case AForall(v, body) =>
       print "forall ";
       VariableDecl(v);
-      print " {\n";
-      Statement(body, indent + IndentAmount);
-      Indent(indent);
-      print "}\n";
+      print " ";
+      StmtAsBlock(body, indent);
 
     case If(cond, thn, els) =>
       print "if ";
       Expression(cond);
-      print " {\n";
-      Statement(thn, indent + IndentAmount);
-      Indent(indent);
-      print "} else {\n";
-      Statement(els, indent + IndentAmount);
-      Indent(indent);
-      print "}\n";
+      print " ";
+      StmtAsBlock(thn, indent, " else ");
+      StmtAsBlock(els, indent);
 
     case IfCase(cases) =>
       Indent(indent);
@@ -146,14 +141,15 @@ module Printer {
     case Loop(lbl, invariants, body) =>
       Indent(indent);
       Label(lbl);
+      print "loop";
       if invariants == Nil {
-        print "loop {\n";
+        print " ";
       } else {
+        print "\n";
         PrintAExprs(indent + IndentAmount, "invariant", invariants);
         Indent(indent);
-        print "{\n";
       }
-      Statement(body, indent);
+      StmtAsBlock(body, indent);
 
     case Exit(lbl) =>
       print "exit ", lbl, "\n";
@@ -163,6 +159,23 @@ module Printer {
 
     case Probe(e) =>
       ExpressionStmt("probe", e);
+  }
+
+  method StmtAsBlock(stmt: Stmt, indent: nat, suffix: string := "\n")
+    decreases stmt
+  {
+    print "{\n";
+    match stmt {
+      case Block(None, stmts) =>
+        // omit the braces of the Block itself, since we're already printing braces
+        for i := 0 to |stmts| {
+          Statement(stmts[i], indent + IndentAmount);
+        }
+      case _ =>
+        Statement(stmt, indent + IndentAmount);
+    }
+    Indent(indent);
+    print "}", suffix;
   }
 
   method VariableDecl(v: Variable) {
