@@ -1,4 +1,5 @@
 module B3 {
+  import opened Std.Wrappers
   import opened Basics
   import opened Ast
   import Types

@@ -1,6 +1,4 @@
 module Basics {
-  datatype Option<X> = None | Some(value: X)
-
   datatype List<X> = Nil | Cons(head: X, tail: List<X>)
   {
     function Length(): nat {
