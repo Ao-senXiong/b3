@@ -29,31 +29,47 @@ module Parser {
 
   const canStartIdentifierChar := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-  const parseIdentifier: B<string> :=
+  const parseIdentifierRaw: B<string> :=
     CharTest((c: char) => c in canStartIdentifierChar, "[" + canStartIdentifierChar + "]").Then((c: char) =>
       CharTest((c: char) => c in canStartIdentifierChar || c in "_?$", "Identifier character").Rep().M((s: string) => [c] + s))
+  const parseId: B<string> := parseIdentifierRaw.I_e(W)
 
   // T = token, that is, the string `s` followed by some non-identifier character
   function T(s: string): B<string> {
     S(s).I_e(W.If(Except(canStartIdentifierChar)))
   }
 
-  function parseParentheses<X>(parser: B<X>): B<X> {
+  function parseParenthesized<X>(parser: B<X>): B<X> {
     S("(").I_e(W).e_I(parser).I_e(S(")")).I_e(W)
   }
 
   function parseCommaDelimitedList<X>(parser: B<X>): B<seq<X>> {
     parser.RepSep(S(",").I_e(W))
-//    parser.I_I(S(",").I_e(W).e_I(parser).Rep()).M2(MId, (head, tail) => [head] + tail)
+  }
+
+  function Unfold3<X, Y, Z>(r: ((X, Y), Z)): (X, Y, Z) {
+    (r.0.0, r.0.1, r.1)
   }
 
   // ----- Top-level declarations
 
   const parseProcDecl: B<Procedure> :=
     T("procedure")
-    .e_I(parseIdentifier).I_e(W)
-    .I_I( parseParentheses( parseCommaDelimitedList(parseFormal ) ))
+    .e_I(parseId)
+    .I_I(parseParenthesized(parseCommaDelimitedList(parseFormal)))
     .M2(MId, (name, formals) => Procedure(name, formals, Nil, Nil, None))
   
-  const parseFormal: B<Variable> := parseIdentifier.I_e(W).M(s => Variable(s, Types.IntType, VariableKind.In))
+  const parseFormal: B<Variable> :=
+    Or([
+      T("inout").M(_ => VariableKind.InOut),
+      T("out").M(_ => VariableKind.Out)
+    ]).Option().M(opt => if opt == None then VariableKind.In else opt.value)
+    .I_I(parseId)
+    .I_e(T(":")).I_I(parseId)
+    .M3(Unfold3, (kind, name, typ) => Variable(name, typ, kind))
+
+  // ----- Statements
+
+//  const parseStmt: B
+
 }
