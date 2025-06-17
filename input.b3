@@ -2,10 +2,22 @@
 // here is a comment
 
 procedure Test(x:int)   procedure // another comment alright
-Mote() { return return }
+Mote() { return return
+var x: string
+val y: int := 200
+exit MyLabel
+  check 99
+  assume 98
+  assert 97
+  probe 96
+}
 
   procedure Egon( test  :bool, inout test :  int,abc: bool,out xyz: string)
 
 procedure   MyProc   (     )
+  requires 10
+  requires 20
+  requires 30
+  ensures 55
 { }
 

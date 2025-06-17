@@ -47,8 +47,16 @@ module Parser {
     parser.RepSep(S(",").I_e(W))
   }
 
-  function Unfold3<X, Y, Z>(r: ((X, Y), Z)): (X, Y, Z) {
+  function Unfold3l<X, Y, Z>(r: ((X, Y), Z)): (X, Y, Z) {
     (r.0.0, r.0.1, r.1)
+  }
+
+  function Unfold3r<X, Y, Z>(r: (X, (Y, Z))): (X, Y, Z) {
+    (r.0, r.1.0, r.1.1)
+  }
+
+  function Unfold5l<A, B, C, D, E>(r: ((((A, B), C), D), E)): (A, B, C, D, E) {
+    (r.0.0.0.0, r.0.0.0.1, r.0.0.1, r.0.1, r.1)
   }
 
   // ----- Top-level declarations
@@ -57,9 +65,13 @@ module Parser {
     T("procedure")
     .e_I(parseId)
     .I_I(parseParenthesized(parseCommaDelimitedList(parseFormal)))
-    // TODO: procedure specification
+    .I_I(parseAExprList("requires"))
+    .I_I(parseAExprList("ensures"))
     .I_I(parseUnlabeledBlockStmt.Option())
-    .M3(Unfold3, (name, formals, optBody) => Procedure(name, formals, Nil, Nil, optBody))
+    .M(r =>
+      var (name, formals, pre, post, optBody) := Unfold5l(r);
+      Procedure(name, formals, pre, post, optBody)
+    )
   
   const parseFormal: B<Variable> :=
     Or([
@@ -67,9 +79,11 @@ module Parser {
       T("out").M(_ => VariableKind.Out),
       Nothing.M(_ => VariableKind.In)
     ])
-    .I_I(parseId)
-    .I_e(T(":")).I_I(parseId)
-    .M3(Unfold3, (kind, name, typ) => Variable(name, typ, kind))
+    .I_I(parseIdType)
+    .M3(Unfold3r, (kind, name, typ) => Variable(name, typ, kind))
+
+  const parseIdType: B<(string, string)> :=
+    parseId.I_e(T(":")).I_I(parseId)
 
   // ----- Statements
 
@@ -77,6 +91,49 @@ module Parser {
     T("{").e_I(parseStmt.Rep()).I_e(T("}")).M(stmts => Block(AnonymousLabel, stmts))
 
   const parseStmt: B<Stmt> :=
-    T("return").M(_ => Return) // TODO
+    Or([
+      T("var").e_I(parseIdType).M2(MId, (name, typ) => VarDecl(Variable(name, typ, VariableKind.Local))),
+      T("val").e_I(parseIdType).I_e(T(":=")).I_I(parseExpr).M3(Unfold3l, (name, typ, rhs) => ValDecl(Variable(name, typ, VariableKind.Let), rhs)),
+      T("exit").e_I(parseId).M(name => Exit(NamedLabel(name))),
+      T("return").M(_ => Return),
+      T("{").M(_ => Return), // TODO (also remember to consider label)
+      T("call").M(_ => Return), // TODO
+      T("check").e_I(parseExpr).M(e => Check(e)),
+      T("assume").e_I(parseExpr).M(e => Assume(e)),
+      T("assert").e_I(parseExpr).M(e => Assert(e)),
+      T("probe").e_I(parseExpr).M(e => Probe(e)),
+//Rec:      T("forall").e_I(parseIdType).I_I(parseUnlabeledBlockStmt).M3(Unfold3l, (name, typ, body) => AForall(Variable(name, typ, VariableKind.Bound), body)),
+//Rec:      T("if").e_I(parseIfContinuation),
+//Rec:      T("loop").e_I(parseAExprList("invariant")).I_I(parseUnlabeledBlockStmt).M2(MId, (invariants, body) => Loop(AnonymousLabel, invariants, body)), // TODO: label
+      Nothing.M(_ => Return) // TODO (assign)
+    ])
+  
+  const parseIfContinuation: B<Stmt> :=
+    Or([
+      parseCase.Rep().If(T("case")).M(cases => IfCase(cases)),
+      parseExpr.I_I(parseUnlabeledBlockStmt).I_e(T("else")).I_I(Or([
+//Rec:        T("if").e_I(parseIfContinuation),
+        parseUnlabeledBlockStmt
+      ]))
+      .M3(Unfold3l, (cond, thn, els) => If(cond, thn, els)) // TODO: variations of `else`
+    ])
 
+  const parseCase: B<Case> :=
+    T("case").e_I(parseExpr).I_e(T("=>")).I_I(parseUnlabeledBlockStmt).M2(MId, (cond, body) => Case(cond, body))
+
+  // ----- Expressions
+
+  function parseAExprList(keyword: string): B<List<AExpr>> {
+    parseAExpr(keyword).Rep().M(aexprs => List.FromSeq(aexprs))
+  }
+
+  function parseAExpr(keyword: string): B<AExpr> {
+    T(keyword).e_I(Or([
+//Rec:      parseUnlabeledBlockStmt.M(stmt => AAssertion(stmt)),
+      parseExpr.M(e => AExpr(e))
+    ]))
+  }
+
+  const parseExpr: B<Expr> :=
+    Nat.I_e(W).M(n => Const(n)) // TODO
 }

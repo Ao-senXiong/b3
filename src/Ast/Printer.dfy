@@ -39,6 +39,7 @@ module Printer {
     print ")\n";
 
     PrintAExprs(IndentAmount, "requires", proc.pre);
+    PrintAExprs(IndentAmount, "ensures", proc.post);
 
     match proc.body
     case None =>
@@ -152,7 +153,13 @@ module Printer {
       StmtAsBlock(body, indent);
 
     case Exit(lbl) =>
-      print "exit ", lbl, "\n";
+      print "exit";
+      match lbl {
+        case NamedLabel(name) => print " ", name;
+        case AnonymousLabel =>
+        case ReturnLabel => print " <return>"; // this never happens for a parsed program; ReturnLabel is only used internally
+      }
+      print "\n";
 
     case Return =>
       print "return\n";
@@ -184,7 +191,7 @@ module Printer {
       case Out => print "out ";
       case _ =>
     }
-    print v.name, " ", v.typ;
+    print v.name, ": ", v.typ;
   }
 
   method CallArgument(arg: CallArgument) {
@@ -201,11 +208,13 @@ module Printer {
       invariant aexprs nonincreases to a
       decreases a.Length()
     {
+      Indent(indent);
       print prefix;
       match a.head {
         case AExpr(e) =>
           print " ";
           Expression(e);
+          print "\n";
         case AAssertion(s) =>
           print "\n";
           Statement(s, indent + IndentAmount);
@@ -221,6 +230,7 @@ module Printer {
   }
 
   method Expression(e: Expr) {
-    print "<expr>";
+    match e
+    case Const(value) => print value;
   }
 }

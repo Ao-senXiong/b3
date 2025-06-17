@@ -41,6 +41,10 @@ module Basics {
       ensures Forall(x => f.requires(x))
     {
     }
+
+    static function FromSeq(s: seq<X>): List<X> {
+      if s == [] then Nil else Cons(s[0], FromSeq(s[1..]))
+    }
   }
 
   function SeqMap<X, Y>(s: seq<X>, f: X --> Y): seq<Y>
