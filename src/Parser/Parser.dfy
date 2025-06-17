@@ -57,19 +57,26 @@ module Parser {
     T("procedure")
     .e_I(parseId)
     .I_I(parseParenthesized(parseCommaDelimitedList(parseFormal)))
-    .M2(MId, (name, formals) => Procedure(name, formals, Nil, Nil, None))
+    // TODO: procedure specification
+    .I_I(parseUnlabeledBlockStmt.Option())
+    .M3(Unfold3, (name, formals, optBody) => Procedure(name, formals, Nil, Nil, optBody))
   
   const parseFormal: B<Variable> :=
     Or([
       T("inout").M(_ => VariableKind.InOut),
-      T("out").M(_ => VariableKind.Out)
-    ]).Option().M(opt => if opt == None then VariableKind.In else opt.value)
+      T("out").M(_ => VariableKind.Out),
+      Nothing.M(_ => VariableKind.In)
+    ])
     .I_I(parseId)
     .I_e(T(":")).I_I(parseId)
     .M3(Unfold3, (kind, name, typ) => Variable(name, typ, kind))
 
   // ----- Statements
 
-//  const parseStmt: B
+  const parseUnlabeledBlockStmt: B<Stmt> :=
+    T("{").e_I(parseStmt.Rep()).I_e(T("}")).M(stmts => Block(AnonymousLabel, stmts))
+
+  const parseStmt: B<Stmt> :=
+    T("return").M(_ => Return) // TODO
 
 }
