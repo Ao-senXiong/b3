@@ -65,9 +65,9 @@ module Parser {
     T("procedure")
     .e_I(parseId)
     .I_I(parseParenthesized(parseCommaDelimitedList(parseFormal)))
-    .I_I(parseAExprList("requires"))
-    .I_I(parseAExprList("ensures"))
-    .I_I(parseUnlabeledBlockStmt.Option())
+    .I_I(RecMapAExprs("requires"))
+    .I_I(RecMapAExprs("ensures"))
+    .I_I(RecMapStmt("block").Option())
     .M(r =>
       var (name, formals, pre, post, optBody) := Unfold5l(r);
       Procedure(name, formals, pre, post, optBody)
@@ -85,12 +85,62 @@ module Parser {
   const parseIdType: B<(string, string)> :=
     parseId.I_e(T(":")).I_I(parseId)
 
+  // ----- Parsing gallery
+
+  datatype RecUnion = UStmt(stmt: Stmt) | UAExprs(aexprs: List<AExpr>) | UExpr(expr: Expr)
+  type RecSel = RecMapSel<RecUnion>
+
+  function BMap<T, U>(b: B<T>, f: T -> Option<U>): B<U> {
+    B(YMap(b.apply, f))
+  }
+
+  opaque function YMap<R, U>(underlying: P.Parser<R>, mappingFunc: R -> Option<U>): P.Parser<U> {
+    (input: Input) =>
+      var (result, remaining) :- underlying(input);
+      match mappingFunc(result)
+      case None => P.ParseFailure(FailureLevel.Fatal, P.FailureData("mismatched type of parser production", remaining, None))
+      case Some(u) => P.ParseSuccess(u, remaining)
+  }
+
+  function parseSelStmt(c: RecSel, productionName: string): B<Stmt> {
+    BMap(c(productionName), (ru: RecUnion) => if ru.UStmt? then Some(ru.stmt) else None)
+  }
+
+  function parseSelAExprs(c: RecSel, productionName: string): B<List<AExpr>> {
+    BMap(c(productionName), (ru: RecUnion) => if ru.UAExprs? then Some(ru.aexprs) else None)
+  }
+
+  function parseSelExpr(c: RecSel, productionName: string): B<Expr> {
+    BMap(c(productionName), (ru: RecUnion) => if ru.UExpr? then Some(ru.expr) else None)
+  }
+
+  const gallery: map<string, RecMapDef<RecUnion>> := map[
+      "block" := RecMapDef(0, (c: RecSel) => parseUnlabeledBlockStmt(c).M(s => UStmt(s))),
+      "if-tail" := RecMapDef(0, (c: RecSel) => parseIfTail(c).M(s => UStmt(s))),
+      "requires" := RecMapDef(0, (c: RecSel) => parseAExprList("requires", c).M(aexprs => UAExprs(aexprs))),
+      "ensures" := RecMapDef(0, (c: RecSel) => parseAExprList("ensures", c).M(aexprs => UAExprs(aexprs))),
+      "invariant" := RecMapDef(0, (c: RecSel) => parseAExprList("invariant", c).M(aexprs => UAExprs(aexprs)))
+    ]
+
+  function RecMapStmt(productionName: string): B<Stmt> {
+    BMap(RecMap(gallery, productionName), (ru: RecUnion) => if ru.UStmt? then Some(ru.stmt) else None)
+  }
+
+  function RecMapAExprs(productionName: string): B<List<AExpr>> {
+    BMap(RecMap(gallery, productionName), (ru: RecUnion) => if ru.UAExprs? then Some(ru.aexprs) else None)
+  }
+
+  function RecMapExpr(productionName: string): B<Expr> {
+    BMap(RecMap(gallery, productionName), (ru: RecUnion) => if ru.UExpr? then Some(ru.expr) else None)
+  }
+
   // ----- Statements
 
-  const parseUnlabeledBlockStmt: B<Stmt> :=
-    T("{").e_I(parseStmt.Rep()).I_e(T("}")).M(stmts => Block(AnonymousLabel, stmts))
+  function parseUnlabeledBlockStmt(c: RecSel): B<Stmt> {
+    T("{").e_I(parseStmt(c).Rep()).I_e(T("}")).M(stmts => Block(AnonymousLabel, stmts))
+  }
 
-  const parseStmt: B<Stmt> :=
+  function parseStmt(c: RecSel): B<Stmt> {
     Or([
       T("var").e_I(parseIdType).M2(MId, (name, typ) => VarDecl(Variable(name, typ, VariableKind.Local))),
       T("val").e_I(parseIdType).I_e(T(":=")).I_I(parseExpr).M3(Unfold3l, (name, typ, rhs) => ValDecl(Variable(name, typ, VariableKind.Let), rhs)),
@@ -102,34 +152,37 @@ module Parser {
       T("assume").e_I(parseExpr).M(e => Assume(e)),
       T("assert").e_I(parseExpr).M(e => Assert(e)),
       T("probe").e_I(parseExpr).M(e => Probe(e)),
-//Rec:      T("forall").e_I(parseIdType).I_I(parseUnlabeledBlockStmt).M3(Unfold3l, (name, typ, body) => AForall(Variable(name, typ, VariableKind.Bound), body)),
-//Rec:      T("if").e_I(parseIfContinuation),
-//Rec:      T("loop").e_I(parseAExprList("invariant")).I_I(parseUnlabeledBlockStmt).M2(MId, (invariants, body) => Loop(AnonymousLabel, invariants, body)), // TODO: label
+      T("forall").e_I(parseIdType).I_I(parseSelStmt(c, "block")).M3(Unfold3l, (name, typ, body) => AForall(Variable(name, typ, VariableKind.Bound), body)),
+      T("if").e_I(parseIfTail(c)),
+      T("loop").e_I(parseSelAExprs(c, "invariant")).I_I(parseSelStmt(c, "block")).M2(MId, (invariants, body) => Loop(AnonymousLabel, invariants, body)), // TODO: label
       Nothing.M(_ => Return) // TODO (assign)
     ])
-  
-  const parseIfContinuation: B<Stmt> :=
-    Or([
-      parseCase.Rep().If(T("case")).M(cases => IfCase(cases)),
-      parseExpr.I_I(parseUnlabeledBlockStmt).I_e(T("else")).I_I(Or([
-//Rec:        T("if").e_I(parseIfContinuation),
-        parseUnlabeledBlockStmt
-      ]))
-      .M3(Unfold3l, (cond, thn, els) => If(cond, thn, els)) // TODO: variations of `else`
-    ])
+  }
 
-  const parseCase: B<Case> :=
-    T("case").e_I(parseExpr).I_e(T("=>")).I_I(parseUnlabeledBlockStmt).M2(MId, (cond, body) => Case(cond, body))
+  function parseIfTail(c: RecSel): B<Stmt> {
+    Or([
+      T("{").e_I(parseCase(c).Rep()).I_e(T("}")).M(cases => IfCase(cases)),
+      parseExpr.I_I(parseSelStmt(c, "block")).I_e(T("else")).I_I(Or([
+        T("if").e_I(parseSelStmt(c, "if-tail")),
+        parseSelStmt(c, "block")
+      ]))
+      .M3(Unfold3l, (cond, thn, els) => If(cond, thn, els)) // TODO: optional `else`
+    ])
+  }
+
+  function parseCase(c: RecSel): B<Case> {
+    T("case").e_I(parseExpr).I_e(T("=>")).I_I(parseSelStmt(c, "block")).M2(MId, (cond, body) => Case(cond, body))
+  }
 
   // ----- Expressions
 
-  function parseAExprList(keyword: string): B<List<AExpr>> {
-    parseAExpr(keyword).Rep().M(aexprs => List.FromSeq(aexprs))
+  function parseAExprList(keyword: string, c: RecSel): B<List<AExpr>> {
+    parseAExpr(keyword, c).Rep().M(aexprs => List.FromSeq(aexprs))
   }
 
-  function parseAExpr(keyword: string): B<AExpr> {
+  function parseAExpr(keyword: string, c: RecSel): B<AExpr> {
     T(keyword).e_I(Or([
-//Rec:      parseUnlabeledBlockStmt.M(stmt => AAssertion(stmt)),
+      parseSelStmt(c, "block").M(stmt => AAssertion(stmt)),
       parseExpr.M(e => AExpr(e))
     ]))
   }
