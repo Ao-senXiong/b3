@@ -2,14 +2,6 @@
 Dafny program verifier did not attempt verification
 // B3 program
 
-procedure MyProc()
-  requires 10
-  requires 20
-  requires 30
-  ensures 55
-{
-}
-
 procedure Egon(test: bool, inout test: int, abc: bool, out xyz: string)
 
 procedure Test(x: int)
@@ -73,7 +65,37 @@ procedure Mote()
   asap: loop
     invariant 619
     invariant 620
+    invariant {
+      check 8
+      assume 7
+      if 2 {
+        assume 9
+      }
+    }
+    invariant 622
   {
     exit asap
   }
+}
+
+procedure MyProc()
+  requires 10
+  requires 20
+  requires 30
+  requires {
+    check 8
+    assume 7
+    if 2 {
+      assume 9
+    }
+  }
+  ensures {
+    check 8
+    assume 7
+    if 2 {
+      assume 9
+    }
+  }
+  ensures 55
+{
 }

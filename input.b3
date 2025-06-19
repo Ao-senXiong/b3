@@ -45,6 +45,8 @@ exit MyLabel
   asap :loop
     invariant 619
     invariant 620
+    invariant { check 8 assume 7 if 2 { assume 9 }}
+    invariant 622
   { exit asap }
 }
 
@@ -54,6 +56,8 @@ procedure   MyProc   (     )
   requires 10
   requires 20
   requires 30
+  requires { check 8 assume 7 if 2 { assume 9 }}
+  ensures { check 8 assume 7 if 2 { assume 9 }}
   ensures 55
 { }
 

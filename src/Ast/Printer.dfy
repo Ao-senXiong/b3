@@ -230,15 +230,13 @@ module Printer {
       decreases a.Length()
     {
       Indent(indent);
-      print prefix;
+      print prefix, " ";
       match a.head {
         case AExpr(e) =>
-          print " ";
           Expression(e);
           print "\n";
         case AAssertion(s) =>
-          print "\n";
-          Statement(s, indent + IndentAmount);
+          Statement(s, indent, true);
       }
       a := a.tail;
     }
