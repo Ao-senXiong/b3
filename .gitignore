@@ -1,4 +1,5 @@
-doc/out/*
-**/.DS_Store
 **/*~
+**/\#*
+**/.DS_Store
+doc/out/*
 /build
