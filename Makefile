@@ -5,7 +5,7 @@ INPUT = "input.b3"
 all:
 	dafny run $(PROJECT_FILE) --build $(TARGET) -- $(INPUT)
 
-build:
+bld:
 	dafny build $(PROJECT_FILE) --output $(TARGET)
 
 run:
@@ -19,3 +19,6 @@ resolve:
 
 test:
 	dafny run --no-verify $(PROJECT_FILE) --build $(TARGET) -- $(INPUT) | diff output.expect -
+
+b3:
+	$(TARGET) $(INPUT)

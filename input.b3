@@ -35,6 +35,9 @@ exit MyLabel
 
   if 600 { exit yes }
   else if { case 601 => case 602 => case 603 => check 9 }
+
+  x := 800
+  y := 801
 }
 
   procedure Egon( test  :bool, inout test :  int,abc: bool,out xyz: string)

@@ -150,7 +150,6 @@ module Printer {
       print "}\n";
 
     case Loop(lbl, invariants, body) =>
-      Indent(indent);
       Label(lbl);
       print "loop";
       if invariants == Nil {

@@ -10,19 +10,23 @@ module Parser {
   import Std.Collections.Seq
 
   const TopLevel: B<Program> :=
+    // TODO: also parse other top-level declarations
     W.e_I(parseProcDecl.I_e(W).Rep()).End().M(procedures => Program({}, set proc <- procedures))
 
   // ----- Parser helpers
 
+  // Parse `b`. If it succeeds, wrap `Some(_)`, reset the input, and return success.
+  // If it fails with a recoverable error, return `None` and reset the input.
+  // If it fails fatally, return the failure.
   function Lookahead<R>(b: B<R>): B<Option<R>> {
     B((input: Input) =>
       var p := b.apply(input);
-      if !p.IsFailure() then
-        P.ParseSuccess(Some(p.result), input) // don't consume any input
-      else if !p.IsFatal() then
+      if p.IsFatalFailure() then
+        P.ParseFailure(p.level, p.data)
+      else if p.IsFailure() then
         P.ParseSuccess(None, input) // don't consume any input
       else
-        P.ParseFailure(p.level, p.data)
+        P.ParseSuccess(Some(p.result), input) // don't consume any input
     )
   }
 
@@ -32,12 +36,24 @@ module Parser {
   function Try<R>(b: B<R>): B<Option<R>> {
     B((input: Input) =>
       var p := b.apply(input);
-      if !p.IsFailure() then
-        P.ParseSuccess(Some(p.result), p.remaining) // consume input
-      else if !p.IsFatal() then
+      if p.IsFatalFailure() then
+        P.ParseFailure(p.level, p.data)
+      else if p.IsFailure() then
         P.ParseSuccess(None, input) // don't consume any input
       else
-        P.ParseFailure(p.level, p.data)
+        P.ParseSuccess(Some(p.result), p.remaining) // consume input
+    )
+  }
+
+  // Unless there's a fatal error in trying `b`, either perform all of `b` successfully
+  // or return its failure without consuming input.
+  function Atomic<R>(b: B<R>): B<R> {
+    B((input: Input) =>
+      var p := b.apply(input);
+      if p.IsFailure() && !p.IsFatal() then
+        P.ParseFailure(p.level, p.data.(remaining := input)) // reset input
+      else
+        p
     )
   }
 
@@ -192,7 +208,7 @@ module Parser {
       T("probe").e_I(parseExpr).M(e => Probe(e)),
       T("forall").e_I(parseIdType).I_I(parseSelStmt(c, "block")).M3(Unfold3l, (name, typ, body) => AForall(Variable(name, typ, VariableKind.Bound), body)),
       T("if").e_I(parseIfCont(c)),
-      parseOptionalLabel.Then((optLbl: Option<string>) =>
+      parseOptionalLabel(Sym("{")).Then((optLbl: Option<string>) =>
         parseSelStmt(c, "block").M((s: Stmt) =>
           if optLbl.Some? && s.Block? then
             Block(NamedLabel(optLbl.value), s.stmts)
@@ -200,16 +216,30 @@ module Parser {
             s
         )
       ),
-      parseOptionalLabel.Then((optLbl: Option<string>) =>
+      parseOptionalLabel(T("loop")).Then((optLbl: Option<string>) =>
         T("loop").e_I(parseSelAExprs(c, "invariant")).I_I(parseSelStmt(c, "block"))
         .M2(MId, (invariants, body) => Loop(match optLbl case Some(name) => NamedLabel(name) case _ => AnonymousLabel, invariants, body))
       ),
-      Nothing.M(_ => Return) // TODO (assign)
+      Atomic(parseId.I_e(Sym(":="))).I_I(parseExpr).M2(MId, (lhs, rhs) => Assign(lhs, rhs))
     ])
   }
 
-  const parseOptionalLabel: B<Option<string>> :=
-    Try(parseId.I_e(Sym(":")))
+  function parseOptionalLabel<R>(next: B<R>): B<Option<string>> {
+    B((input: Input) =>
+      var p := Try(parseId.I_e(Sym(":"))).apply(input);
+      if p.IsFailure() || p.result == None then
+        p
+      else
+        // look ahead to parse `next`
+        var q := next.apply(p.remaining);
+        if q.IsFatalFailure() then
+          P.ParseFailure(q.level, q.data)
+        else if q.IsFailure() then
+          P.ParseSuccess(None, input)
+        else
+          p // return the state after parsing `id :`
+    )
+  }
 
   function parseIfCont(c: RecSel): B<Stmt> {
     Or([
