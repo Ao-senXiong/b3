@@ -38,6 +38,14 @@ exit MyLabel
 
   x := 800
   y := 801
+
+  loop { a := 1 }
+  loop
+    invariant 618 { }
+  asap :loop
+    invariant 619
+    invariant 620
+  { exit asap }
 }
 
   procedure Egon( test  :bool, inout test :  int,abc: bool,out xyz: string)

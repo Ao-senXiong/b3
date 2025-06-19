@@ -61,4 +61,19 @@ procedure Mote()
     case 603 =>
       check 9
   }
+  x := 800
+  y := 801
+  loop {
+    a := 1
+  }
+  loop
+    invariant 618
+  {
+  }
+  asap: loop
+    invariant 619
+    invariant 620
+  {
+    exit asap
+  }
 }
