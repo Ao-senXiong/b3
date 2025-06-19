@@ -220,6 +220,10 @@ module Ast {
       && |args| == |parameters|
       && forall i | 0 <= i < |parameters| && parameters[i].kind.IsOutgoingParameter() :: args[i].ArgLValue?
     }
+
+    predicate IsEmptyBlock() {
+      Block? && lbl == AnonymousLabel && stmts == []
+    }
   }
 
   datatype Label =

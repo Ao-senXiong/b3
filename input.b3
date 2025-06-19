@@ -14,7 +14,6 @@ exit MyLabel
   if 100 {
     return return
   }
-else { } // TODO: should not be needed
 
   if 200 { } else {
     exit hello
@@ -23,15 +22,14 @@ else { } // TODO: should not be needed
   if 300 {}
   else if 400 {}
   else if 500 {}
-else { } // TODO: should not be needed
 
   if {
-    case 3 => { return } // TODO: cases should not need block stmt
-    case 4 => { exit four } // TODO: cases should not need block stmt
+    case 3 => return
+    case 4 => exit four
   }
 
   if 600 { exit yes }
-  else if { case 601 => {} case 602 => { check 9 }} // TODO (x2): cases should not need block stmt
+  else if { case 601 => case 602 => case 603 => check 9 }
 }
 
   procedure Egon( test  :bool, inout test :  int,abc: bool,out xyz: string)

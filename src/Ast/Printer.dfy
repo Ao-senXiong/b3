@@ -62,10 +62,12 @@ module Printer {
   }
 
 
-  method Statement(stmt: Stmt, indent: nat)
+  method Statement(stmt: Stmt, indent: nat, omitInitialIndent: bool := false)
     decreases stmt, 0
   {
-    Indent(indent);
+    if !omitInitialIndent {
+      Indent(indent);
+    }
 
     match stmt
     case VarDecl(v) =>
@@ -123,11 +125,18 @@ module Printer {
       print "if ";
       Expression(cond);
       print " ";
-      StmtAsBlock(thn, indent, " else ");
-      StmtAsBlock(els, indent);
+      if els.IsEmptyBlock() {
+        StmtAsBlock(thn, indent);
+      } else {
+        StmtAsBlock(thn, indent, " else ");
+        if els.If? || els.IfCase? {
+          Statement(els, indent, true);
+        } else {
+          StmtAsBlock(els, indent);
+        }
+      }
 
     case IfCase(cases) =>
-      Indent(indent);
       print "if {\n";
       for i := 0 to |cases| {
         var cs := cases[i];
@@ -135,8 +144,9 @@ module Printer {
         print "case ";
         Expression(cs.cond);
         print " =>\n";
-        Statement(cs.body, indent + IndentAmount + IndentAmount);
+        BlockAsStmts(cs.body, indent + IndentAmount + IndentAmount);
       }
+      Indent(indent);
       print "}\n";
 
     case Loop(lbl, invariants, body) =>
@@ -183,6 +193,18 @@ module Printer {
     }
     Indent(indent);
     print "}", suffix;
+  }
+
+  method BlockAsStmts(stmt: Stmt, indent: nat)
+    decreases stmt
+  {
+    match stmt
+    case Block(AnonynousLabel, stmts) =>
+      for i := 0 to |stmts| {
+        Statement(stmts[i], indent);
+      }
+    case _ =>
+      Statement(stmt, indent);
   }
 
   method VariableDecl(v: Variable) {

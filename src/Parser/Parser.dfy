@@ -116,6 +116,7 @@ module Parser {
 
   const gallery: map<string, RecMapDef<RecUnion>> := map[
       "block" := RecMapDef(0, (c: RecSel) => parseUnlabeledBlockStmt(c).M(s => UStmt(s))),
+      "stmt" := RecMapDef(0, (c: RecSel) => parseStmt(c).M(s => UStmt(s))),
       "if-tail" := RecMapDef(0, (c: RecSel) => parseIfTail(c).M(s => UStmt(s))),
       "requires" := RecMapDef(0, (c: RecSel) => parseAExprList("requires", c).M(aexprs => UAExprs(aexprs))),
       "ensures" := RecMapDef(0, (c: RecSel) => parseAExprList("ensures", c).M(aexprs => UAExprs(aexprs))),
@@ -162,16 +163,20 @@ module Parser {
   function parseIfTail(c: RecSel): B<Stmt> {
     Or([
       T("{").e_I(parseCase(c).Rep()).I_e(T("}")).M(cases => IfCase(cases)),
-      parseExpr.I_I(parseSelStmt(c, "block")).I_e(T("else")).I_I(Or([
-        T("if").e_I(parseSelStmt(c, "if-tail")),
-        parseSelStmt(c, "block")
-      ]))
-      .M3(Unfold3l, (cond, thn, els) => If(cond, thn, els)) // TODO: optional `else`
+      parseExpr.I_I(parseSelStmt(c, "block")).I_I(Or([
+        T("else").e_I(Or([
+          T("if").e_I(parseSelStmt(c, "if-tail")),
+          parseSelStmt(c, "block")
+        ])),
+        Nothing.M(_ => Block(AnonymousLabel, []))
+      ])).M3(Unfold3l, (cond, thn, els) => If(cond, thn, els))
     ])
   }
 
   function parseCase(c: RecSel): B<Case> {
-    T("case").e_I(parseExpr).I_e(T("=>")).I_I(parseSelStmt(c, "block")).M2(MId, (cond, body) => Case(cond, body))
+    T("case").e_I(parseExpr).I_e(T("=>")).I_I(
+      parseSelStmt(c, "stmt").Rep().M(stmts => Block(AnonymousLabel, stmts))
+    ).M2(MId, (cond, body) => Case(cond, body))
   }
 
   // ----- Expressions
