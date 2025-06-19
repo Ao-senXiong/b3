@@ -26,6 +26,21 @@ module Parser {
     )
   }
 
+  // Parse `b`. If it succeeds, wrap `Some(_)` and return success.
+  // If it fails with a recoverable error, return the failure, but reset the input.
+  // If it fails fatally, return the failure.
+  function Try<R>(b: B<R>): B<Option<R>> {
+    B((input: Input) =>
+      var p := b.apply(input);
+      if !p.IsFailure() then
+        P.ParseSuccess(Some(p.result), p.remaining) // consume input
+      else if !p.IsFatal() then
+        P.ParseSuccess(None, input) // don't consume any input
+      else
+        P.ParseFailure(p.level, p.data)
+    )
+  }
+
   const notNewline :=
     CharTest((c: char) => c !in "\n", "anything except newline")
 
@@ -194,7 +209,7 @@ module Parser {
   }
 
   const parseOptionalLabel: B<Option<string>> :=
-    parseId.I_e(Sym(":")).Option()
+    Try(parseId.I_e(Sym(":")))
 
   function parseIfCont(c: RecSel): B<Stmt> {
     Or([
@@ -229,5 +244,5 @@ module Parser {
   }
 
   const parseExpr: B<Expr> :=
-    Nat.I_e(W).M(n => Const(n)) // TODO
+    Nat.I_e(W).M(n => Const(n))
 }
