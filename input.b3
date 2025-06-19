@@ -5,7 +5,12 @@ procedure Test(x:int)   procedure // another comment alright
 Mote() {var x: string
 val y: int := 200
 exit MyLabel
-              return
+              return return
+  { return }
+  {}{  }
+
+  myLabel: { check 62 }
+
   check 99
   assume 98
   assert 97

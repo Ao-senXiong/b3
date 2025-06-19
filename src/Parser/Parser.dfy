@@ -12,7 +12,19 @@ module Parser {
   const TopLevel: B<Program> :=
     W.e_I(parseProcDecl.I_e(W).Rep()).End().M(procedures => Program({}, set proc <- procedures))
 
-  // ----- Whitespace
+  // ----- Parser helpers
+
+  function Lookahead<R>(b: B<R>): B<Option<R>> {
+    B((input: Input) =>
+      var p := b.apply(input);
+      if !p.IsFailure() then
+        P.ParseSuccess(Some(p.result), input) // don't consume any input
+      else if !p.IsFatal() then
+        P.ParseSuccess(None, input) // don't consume any input
+      else
+        P.ParseFailure(p.level, p.data)
+    )
+  }
 
   const notNewline :=
     CharTest((c: char) => c !in "\n", "anything except newline")
@@ -28,15 +40,26 @@ module Parser {
     ).M((wsMore: (string, seq<string>)) => wsMore.0 + Seq.Join(Seq.Map(MId, wsMore.1), ""))
 
   const canStartIdentifierChar := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  const identifierChar := canStartIdentifierChar + "_?$"
 
+  const parseIdentifierChar: B<char> := CharTest((c: char) => c in identifierChar, "identifier character")
   const parseIdentifierRaw: B<string> :=
-    CharTest((c: char) => c in canStartIdentifierChar, "[" + canStartIdentifierChar + "]").Then((c: char) =>
-      CharTest((c: char) => c in canStartIdentifierChar || c in "_?$", "Identifier character").Rep().M((s: string) => [c] + s))
+    CharTest((c: char) => c in canStartIdentifierChar, "identifier start character").Then((c: char) =>
+      parseIdentifierChar.Rep().M((s: string) => [c] + s))
   const parseId: B<string> := parseIdentifierRaw.I_e(W)
 
-  // T = token, that is, the string `s` followed by some non-identifier character
+  // T = token, that is, the string `s` followed by some non-identifier character (the non-identifier character is not consumed)
+  // The characters in `s` are expected to be identifier characters
   function T(s: string): B<string> {
-    S(s).I_e(W.If(Except(canStartIdentifierChar)))
+    S(s).I_e(
+      Lookahead(parseIdentifierChar).Then((opt: Option<char>) =>
+        if opt.Some? then FailWith<()>("keyword followed by identifier character", FailureLevel.Recoverable) else Nothing)
+    )
+    .I_e(W)
+  }
+
+  function Sym(s: string): B<string> {
+    S(s).I_e(W)
   }
 
   function parseParenthesized<X>(parser: B<X>): B<X> {
@@ -83,7 +106,7 @@ module Parser {
     .M3(Unfold3r, (kind, name, typ) => Variable(name, typ, kind))
 
   const parseIdType: B<(string, string)> :=
-    parseId.I_e(T(":")).I_I(parseId)
+    parseId.I_e(Sym(":")).I_I(parseId)
 
   // ----- Parsing gallery
 
@@ -117,7 +140,7 @@ module Parser {
   const gallery: map<string, RecMapDef<RecUnion>> := map[
       "block" := RecMapDef(0, (c: RecSel) => parseUnlabeledBlockStmt(c).M(s => UStmt(s))),
       "stmt" := RecMapDef(0, (c: RecSel) => parseStmt(c).M(s => UStmt(s))),
-      "if-tail" := RecMapDef(0, (c: RecSel) => parseIfTail(c).M(s => UStmt(s))),
+      "if-cont" := RecMapDef(0, (c: RecSel) => parseIfCont(c).M(s => UStmt(s))),
       "requires" := RecMapDef(0, (c: RecSel) => parseAExprList("requires", c).M(aexprs => UAExprs(aexprs))),
       "ensures" := RecMapDef(0, (c: RecSel) => parseAExprList("ensures", c).M(aexprs => UAExprs(aexprs))),
       "invariant" := RecMapDef(0, (c: RecSel) => parseAExprList("invariant", c).M(aexprs => UAExprs(aexprs)))
@@ -138,34 +161,47 @@ module Parser {
   // ----- Statements
 
   function parseUnlabeledBlockStmt(c: RecSel): B<Stmt> {
-    T("{").e_I(parseStmt(c).Rep()).I_e(T("}")).M(stmts => Block(AnonymousLabel, stmts))
+    Sym("{").e_I(parseStmt(c).Rep()).I_e(Sym("}")).M(stmts => Block(AnonymousLabel, stmts))
   }
 
   function parseStmt(c: RecSel): B<Stmt> {
     Or([
       T("var").e_I(parseIdType).M2(MId, (name, typ) => VarDecl(Variable(name, typ, VariableKind.Local))),
-      T("val").e_I(parseIdType).I_e(T(":=")).I_I(parseExpr).M3(Unfold3l, (name, typ, rhs) => ValDecl(Variable(name, typ, VariableKind.Let), rhs)),
+      T("val").e_I(parseIdType).I_e(Sym(":=")).I_I(parseExpr).M3(Unfold3l, (name, typ, rhs) => ValDecl(Variable(name, typ, VariableKind.Let), rhs)),
       T("exit").e_I(parseId).M(name => Exit(NamedLabel(name))),
       T("return").M(_ => Return),
-      T("{").M(_ => Return), // TODO (also remember to consider label)
       T("call").M(_ => Return), // TODO
       T("check").e_I(parseExpr).M(e => Check(e)),
       T("assume").e_I(parseExpr).M(e => Assume(e)),
       T("assert").e_I(parseExpr).M(e => Assert(e)),
       T("probe").e_I(parseExpr).M(e => Probe(e)),
       T("forall").e_I(parseIdType).I_I(parseSelStmt(c, "block")).M3(Unfold3l, (name, typ, body) => AForall(Variable(name, typ, VariableKind.Bound), body)),
-      T("if").e_I(parseIfTail(c)),
-      T("loop").e_I(parseSelAExprs(c, "invariant")).I_I(parseSelStmt(c, "block")).M2(MId, (invariants, body) => Loop(AnonymousLabel, invariants, body)), // TODO: label
+      T("if").e_I(parseIfCont(c)),
+      parseOptionalLabel.Then((optLbl: Option<string>) =>
+        parseSelStmt(c, "block").M((s: Stmt) =>
+          if optLbl.Some? && s.Block? then
+            Block(NamedLabel(optLbl.value), s.stmts)
+          else
+            s
+        )
+      ),
+      parseOptionalLabel.Then((optLbl: Option<string>) =>
+        T("loop").e_I(parseSelAExprs(c, "invariant")).I_I(parseSelStmt(c, "block"))
+        .M2(MId, (invariants, body) => Loop(match optLbl case Some(name) => NamedLabel(name) case _ => AnonymousLabel, invariants, body))
+      ),
       Nothing.M(_ => Return) // TODO (assign)
     ])
   }
 
-  function parseIfTail(c: RecSel): B<Stmt> {
+  const parseOptionalLabel: B<Option<string>> :=
+    parseId.I_e(Sym(":")).Option()
+
+  function parseIfCont(c: RecSel): B<Stmt> {
     Or([
-      T("{").e_I(parseCase(c).Rep()).I_e(T("}")).M(cases => IfCase(cases)),
+      Sym("{").e_I(parseCase(c).Rep()).I_e(Sym("}")).M(cases => IfCase(cases)),
       parseExpr.I_I(parseSelStmt(c, "block")).I_I(Or([
         T("else").e_I(Or([
-          T("if").e_I(parseSelStmt(c, "if-tail")),
+          T("if").e_I(parseSelStmt(c, "if-cont")),
           parseSelStmt(c, "block")
         ])),
         Nothing.M(_ => Block(AnonymousLabel, []))
@@ -174,7 +210,7 @@ module Parser {
   }
 
   function parseCase(c: RecSel): B<Case> {
-    T("case").e_I(parseExpr).I_e(T("=>")).I_I(
+    T("case").e_I(parseExpr).I_e(Sym("=>")).I_I(
       parseSelStmt(c, "stmt").Rep().M(stmts => Block(AnonymousLabel, stmts))
     ).M2(MId, (cond, body) => Case(cond, body))
   }
