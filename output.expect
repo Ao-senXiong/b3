@@ -1,0 +1,64 @@
+
+Dafny program verifier did not attempt verification
+// B3 program
+
+procedure MyProc()
+  requires 10
+  requires 20
+  requires 30
+  ensures 55
+{
+}
+
+procedure Egon(test: bool, inout test: int, abc: bool, out xyz: string)
+
+procedure Test(x: int)
+
+procedure Mote()
+{
+  var x: string
+  val y: int := 200
+  exit MyLabel
+  return
+  return
+  {
+    return
+  }
+  {
+  }
+  {
+  }
+  myLabel: {
+    check 62
+  }
+  check 99
+  assume 98
+  assert 97
+  probe 96
+  if 100 {
+    return
+    return
+  }
+  if 200 {
+  } else {
+    exit hello
+  }
+  if 300 {
+  } else if 400 {
+  } else if 500 {
+  }
+  if {
+    case 3 =>
+      return
+    case 4 =>
+      exit four
+  }
+  if 600 {
+    exit yes
+  } else if {
+    case 601 =>
+    case 602 =>
+    case 603 =>
+      check 9
+  }
+}

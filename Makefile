@@ -16,3 +16,6 @@ verify:
 
 resolve:
 	dafny resolve $(PROJECT_FILE)
+
+test:
+	dafny run --no-verify $(PROJECT_FILE) --build $(TARGET) -- $(INPUT) | diff output.expect -
