@@ -251,5 +251,6 @@ module Printer {
   method Expression(e: Expr) {
     match e
     case Const(value) => print value;
+    case IdExpr(name) => print name;
   }
 }

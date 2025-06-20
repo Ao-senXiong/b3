@@ -274,5 +274,8 @@ module Parser {
   }
 
   const parseExpr: B<Expr> :=
-    Nat.I_e(W).M(n => Const(n))
+    Or([
+      Nat.I_e(W).M(n => Const(n)),
+      parseId.M(name => IdExpr(name))
+    ])
 }

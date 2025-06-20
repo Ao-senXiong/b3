@@ -24,9 +24,9 @@ exit MyLabel
     exit hello
   }
 
-  if 300 {}
-  else if 400 {}
-  else if 500 {}
+  if AaA {}
+  else if BbB {}
+  else if CcC {}
 
   if {
     case 3 => return

@@ -370,6 +370,7 @@ module Ast {
   // TODO
   datatype Expr =
     | Const(value: int)
+    | IdExpr(name: string)
   {
     function Type(b3: Program, scope: Scope): Option<string>
     { Some(IntType) } // TODO
@@ -381,22 +382,22 @@ module Ast {
     static function CreateFalse(): Expr
     { Const(-10) } // TODO
     static function CreateNegation(e: Expr): Expr
-    { Const(- e.value) } // TODO
+    { if e.Const? then Const(- e.value) else e } // TODO
     static function CreateAnd(e0: Expr, e1: Expr): Expr
-    { Const(e0.value * e1.value) } // TODO
+    { if e0.Const? && e1.Const? then Const(e0.value * e1.value) else e0 } // TODO
     static function CreateBigAnd(ee: seq<Expr>): Expr {
       if |ee| == 0 then CreateTrue() else CreateAnd(ee[0], CreateBigAnd(ee[1..]))
     }
     static function CreateOr(e0: Expr, e1: Expr): Expr
-    { Const(e0.value + e1.value) } // TODO
+    { if e0.Const? && e1.Const? then Const(e0.value + e1.value) else e0 } // TODO
     static function CreateBigOr(ee: seq<Expr>): Expr {
       if |ee| == 0 then CreateFalse() else CreateOr(ee[0], CreateBigOr(ee[1..]))
     }
     static function CreateImplies(e0: Expr, e1: Expr): Expr
-    { Const(-e0.value + e1.value) } // TODO
+    { if e0.Const? && e1.Const? then Const(-e0.value + e1.value) else e0 } // TODO
     static function CreateLet(v: Variable, rhs: Expr, body: Expr): Expr
-    { Const(100 * body.value) } // TODO
+    { if body.Const? then Const(100 * body.value) else body } // TODO
     static function CreateForall(v: Variable, body: Expr): Expr
-    { Const(1000 * body.value) } // TODO
+    { if body.Const? then Const(1000 * body.value) else body } // TODO
   }
 }
