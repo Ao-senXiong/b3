@@ -50,6 +50,9 @@ exit MyLabel
   { exit asap }
 }
 
+type string type
+MyClass
+
   procedure Egon( test  :bool, inout test :  int,abc: bool,out xyz: string)
 
 procedure   MyProc   (     )

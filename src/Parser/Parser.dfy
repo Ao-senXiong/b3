@@ -7,11 +7,13 @@ module Parser {
   import opened Std.Wrappers
   import opened Basics
   import opened Ast
+  import Types
   import Std.Collections.Seq
 
   const TopLevel: B<Program> :=
-    // TODO: also parse other top-level declarations
-    W.e_I(parseProcDecl.I_e(W).Rep()).End().M(procedures => Program({}, set proc <- procedures))
+    W.e_I(parseTopLevelDecl.I_e(W).Rep()).End().M(decls =>
+      var (tt, pp) := DeclsToSets(decls);
+      Program(tt, pp))
 
   // ----- Parser helpers
 
@@ -114,6 +116,25 @@ module Parser {
   }
 
   // ----- Top-level declarations
+
+  datatype TopLevelDecl = TType(typeDecl: Types.Type) | TProc(procDecl: Procedure)
+
+  const parseTopLevelDecl: B<TopLevelDecl> :=
+    Or([
+      parseTypeDecl.M(decl => TType(decl)),
+      parseProcDecl.M(decl => TProc(decl))
+    ])
+  
+  function DeclsToSets(decls: seq<TopLevelDecl>): (set<Types.Type>, set<Procedure>) {
+    if decls == [] then ({}, {}) else
+      var (tt, pp) := DeclsToSets(decls[1..]);
+      match decls[0]
+      case TType(typeDecl) => ({typeDecl} + tt, pp)
+      case TProc(procDecl) => (tt, {procDecl} + pp)
+  }
+
+  const parseTypeDecl: B<Types.Type> :=
+    T("type").e_I(parseId)
 
   const parseProcDecl: B<Procedure> :=
     T("procedure")
