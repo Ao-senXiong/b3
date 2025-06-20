@@ -104,7 +104,7 @@ module Printer {
         CallArgument(args[i]);
         sep := ", ";
       }
-      print ");\n";
+      print ")\n";
 
     case Check(e) =>
       ExpressionStmt("check", e);
@@ -206,19 +206,21 @@ module Printer {
       Statement(stmt, indent);
   }
 
+  function InOutPrefix(kind: VariableKind): string {
+    match kind
+    case InOut => "inout "
+    case Out => "out "
+    case _ => ""
+  }
+
   method VariableDecl(v: Variable) {
-    match v.kind {
-      case InOut => print "inout ";
-      case Out => print "out ";
-      case _ =>
-    }
-    print v.name, ": ", v.typ;
+    print InOutPrefix(v.kind), v.name, ": ", v.typ;
   }
 
   method CallArgument(arg: CallArgument) {
     match arg
     case ArgExpr(e) => Expression(e);
-    case ArgLValue(name) => print name;
+    case ArgLValue(kind, name) => print InOutPrefix(kind), name;
   }
 
   method PrintAExprs(indent: nat, prefix: string, aexprs: List<AExpr>)

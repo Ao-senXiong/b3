@@ -48,6 +48,14 @@ exit MyLabel
     invariant { check 8 assume 7 if 2 { assume 9 }}
     invariant 622
   { exit asap }
+
+  M0()
+  M1(1000)
+  M2(out x, 1000)
+  M3(out x, 1000, inout y)
+  M4(1000, out a, out b, out c)
+  M5(1000, 2000, inout x, inout y, inout z)
+  M6(1000, 2000, inout m, inout n, out x, out z)
 }
 
 type string type

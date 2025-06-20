@@ -344,13 +344,13 @@ module Ast {
 
   datatype CallArgument =
     | ArgExpr(e: Expr)
-    | ArgLValue(name: string)
+    | ArgLValue(kind: VariableKind /* TODO: .kind not yet used in semantics/verifier */, name: string)
   {
     predicate WellFormed(formal: Variable, b3: Program, scope: Scope) {
       match this
       case ArgExpr(e) =>
         formal.kind == In && e.Type(b3, scope) == Some(formal.typ)
-      case ArgLValue(name) =>
+      case ArgLValue(_, name) =>
         && formal.kind.IsOutgoingParameter()
         && name in scope && var v := scope[name];
         && v.kind.IsAssignable() && v.typ == formal.typ
@@ -361,7 +361,7 @@ module Ast {
     {
       match this
       case ArgExpr(e) => e.Eval(vals)
-      case ArgLValue(name) => vals[name]
+      case ArgLValue(_, name) => vals[name]
     }
   }
   

@@ -73,7 +73,7 @@ module Parser {
     ).M((wsMore: (string, seq<string>)) => wsMore.0 + Seq.Join(Seq.Map(MId, wsMore.1), ""))
 
   const canStartIdentifierChar := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-  const identifierChar := canStartIdentifierChar + "_?$"
+  const identifierChar := canStartIdentifierChar + "0123456789_$."
 
   const parseIdentifierChar: B<char> := CharTest((c: char) => c in identifierChar, "identifier character")
   const parseIdentifierRaw: B<string> :=
@@ -99,7 +99,7 @@ module Parser {
     S("(").I_e(W).e_I(parser).I_e(S(")")).I_e(W)
   }
 
-  function parseCommaDelimitedList<X>(parser: B<X>): B<seq<X>> {
+  function parseCommaDelimitedSeq<X>(parser: B<X>): B<seq<X>> {
     parser.RepSep(S(",").I_e(W))
   }
 
@@ -139,7 +139,7 @@ module Parser {
   const parseProcDecl: B<Procedure> :=
     T("procedure")
     .e_I(parseId)
-    .I_I(parseParenthesized(parseCommaDelimitedList(parseFormal)))
+    .I_I(parseParenthesized(parseCommaDelimitedSeq(parseFormal)))
     .I_I(RecMapAExprs("requires"))
     .I_I(RecMapAExprs("ensures"))
     .I_I(RecMapStmt("block").Option())
@@ -148,13 +148,15 @@ module Parser {
       Procedure(name, formals, pre, post, optBody)
     )
   
-  const parseFormal: B<Variable> :=
+  const parseInOutKind: B<VariableKind> :=
     Or([
       T("inout").M(_ => VariableKind.InOut),
       T("out").M(_ => VariableKind.Out),
       Nothing.M(_ => VariableKind.In)
     ])
-    .I_I(parseIdType)
+    
+  const parseFormal: B<Variable> :=
+    parseInOutKind.I_I(parseIdType)
     .M3(Unfold3r, (kind, name, typ) => Variable(name, typ, kind))
 
   const parseIdType: B<(string, string)> :=
@@ -222,7 +224,6 @@ module Parser {
       T("val").e_I(parseIdType).I_e(Sym(":=")).I_I(parseExpr).M3(Unfold3l, (name, typ, rhs) => ValDecl(Variable(name, typ, VariableKind.Let), rhs)),
       T("exit").e_I(parseId).M(name => Exit(NamedLabel(name))),
       T("return").M(_ => Return),
-      T("call").M(_ => Return), // TODO
       T("check").e_I(parseExpr).M(e => Check(e)),
       T("assume").e_I(parseExpr).M(e => Assume(e)),
       T("assert").e_I(parseExpr).M(e => Assert(e)),
@@ -241,7 +242,8 @@ module Parser {
         T("loop").e_I(parseSelAExprs(c, "invariant")).I_I(parseSelStmt(c, "block"))
         .M2(MId, (invariants, body) => Loop(match optLbl case Some(name) => NamedLabel(name) case _ => AnonymousLabel, invariants, body))
       ),
-      Atomic(parseId.I_e(Sym(":="))).I_I(parseExpr).M2(MId, (lhs, rhs) => Assign(lhs, rhs))
+      Atomic(parseId.I_e(Sym(":="))).I_I(parseExpr).M2(MId, (lhs, rhs) => Assign(lhs, rhs)),
+      Atomic(parseId.I_e(Sym("("))).I_I(parseCommaDelimitedSeq(parseCallArgument)).I_e(Sym(")")).M2(MId, (name, args) => Call(name, args))
     ])
   }
 
@@ -280,6 +282,13 @@ module Parser {
       parseSelStmt(c, "stmt").Rep().M(stmts => Block(AnonymousLabel, stmts))
     ).M2(MId, (cond, body) => Case(cond, body))
   }
+
+  const parseCallArgument: B<CallArgument> :=
+    Or([
+      T("out").e_I(parseId).M(name => ArgLValue(VariableKind.Out, name)),
+      T("inout").e_I(parseId).M(name => ArgLValue(VariableKind.InOut, name)),
+      parseExpr.M(e => ArgExpr(e))
+    ])
 
   // ----- Expressions
 

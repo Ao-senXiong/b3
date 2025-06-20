@@ -3,11 +3,13 @@ TARGET = build/b3
 INPUT = "input.b3"
 EXPECTED_OUTPUT = "input.expect"
 
-all:
-	dafny run $(PROJECT_FILE) --build $(TARGET) -- $(INPUT)
+all: bld test
 
 bld:
 	dafny build $(PROJECT_FILE) --output $(TARGET)
+
+quick:
+	dafny build --no-verify $(PROJECT_FILE) --output $(TARGET)
 
 run:
 	dafny run --no-verify $(PROJECT_FILE) --build $(TARGET) -- $(INPUT)
