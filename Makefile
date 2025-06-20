@@ -1,11 +1,11 @@
 PROJECT_FILE=src/dfyconfig.toml
-TARGET = build/b3
+TARGET = "bin/b3"
 INPUT = "input.b3"
 EXPECTED_OUTPUT = "input.expect"
 
-all: bld test
+all: build test
 
-bld:
+build:
 	dafny build $(PROJECT_FILE) --output $(TARGET)
 
 quick:
