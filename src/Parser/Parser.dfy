@@ -117,7 +117,7 @@ module Parser {
 
   // ----- Top-level declarations
 
-  datatype TopLevelDecl = TType(typeDecl: Types.Type) | TProc(procDecl: Procedure)
+  datatype TopLevelDecl = TType(typeDecl: Types.TypeName) | TProc(procDecl: Procedure)
 
   const parseTopLevelDecl: B<TopLevelDecl> :=
     Or([
@@ -125,15 +125,15 @@ module Parser {
       parseProcDecl.M(decl => TProc(decl))
     ])
   
-  function DeclsToSets(decls: seq<TopLevelDecl>): (set<Types.Type>, set<Procedure>) {
-    if decls == [] then ({}, {}) else
+  function DeclsToSets(decls: seq<TopLevelDecl>): (seq<Types.TypeName>, set<Procedure>) {
+    if decls == [] then ([], {}) else
       var (tt, pp) := DeclsToSets(decls[1..]);
       match decls[0]
-      case TType(typeDecl) => ({typeDecl} + tt, pp)
+      case TType(typeDecl) => ([typeDecl] + tt, pp)
       case TProc(procDecl) => (tt, {procDecl} + pp)
   }
 
-  const parseTypeDecl: B<Types.Type> :=
+  const parseTypeDecl: B<Types.TypeName> :=
     T("type").e_I(parseId)
 
   const parseProcDecl: B<Procedure> :=

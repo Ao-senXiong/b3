@@ -27,7 +27,7 @@ module Verifier {
 
   // TODO: we should really start from a resolved AST
   function NameToResolvedVariable(name: string): Variable
-  { Variable(name, Types.IntType, VariableKind.Local) } // TODO
+  { Variable(name, Types.IntTypeName, VariableKind.Local) } // TODO
 
   // map from block names to pairs (V, Ss) of variable sets and statement sequences
   type BlockContinuations = map<Label, Continuation>
