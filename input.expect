@@ -29,6 +29,11 @@ procedure Mote()
   assume 98
   assert 97
   probe 96
+  forall x: int {
+    check 5050
+    val y: bool := 12
+    assume y
+  }
   if 100 {
     return
     return
