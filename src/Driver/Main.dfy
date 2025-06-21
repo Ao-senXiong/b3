@@ -7,6 +7,7 @@ module B3 {
   import Std.FileIO
   import SB = Std.Parsers.StringBuilders
   import Parser
+  import Resolver
 
   method Main(args: seq<string>) {
     if |args| != 2 {
@@ -16,12 +17,21 @@ module B3 {
 
     var r := ReadAndParseProgram(args[1]);
     if r.IsFailure() {
-      print r.error;
+      print r.error, "\n";
       return;
     }
-    var b3 := r.value;
+    var rawb3 := r.value;
 
-    Printer.Program(b3);
+    Printer.Program(rawb3);
+
+    print "The program ", if rawb3.WellFormed() then "IS" else "is NOT", " well-formed\n";
+    var resultResolver := Resolver.Resolve(rawb3);
+    if resultResolver.IsFailure() {
+      print resultResolver.error, "\n";
+      return;
+    }
+    var b3 := resultResolver.value;
+
    }
 
   method PrintUsage() {
