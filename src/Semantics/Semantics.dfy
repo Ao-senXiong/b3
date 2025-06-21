@@ -2,7 +2,7 @@
 
 module Semantics {
   import opened Basics
-  import opened Ast
+  import opened RawAst
   import opened Values
   import WF = WellFormednessConsequences
 

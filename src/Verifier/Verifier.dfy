@@ -1,7 +1,7 @@
 module Verifier {
   import opened Std.Wrappers
   import opened Basics
-  import opened Ast
+  import opened RawAst
   import opened Solvers
   import opened SolverExpr
   import WF = WellFormednessConsequences

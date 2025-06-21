@@ -1,4 +1,4 @@
-module Ast {
+module RawAst {
   import opened Std.Wrappers
   import opened Basics
   import opened Types
@@ -6,7 +6,7 @@ module Ast {
 
   // Top-level program
 
-  datatype Program = Program(types: set<Type>, procedures: set<Procedure>)
+  datatype Program = Program(types: seq<TypeName>, procedures: set<Procedure>)
   {
     predicate WellFormed() {
       && (forall typ <- types :: typ !in BuiltInTypes)
@@ -40,7 +40,7 @@ module Ast {
 
   type Scope = map<string, Variable>
 
-  datatype Variable = Variable(name: string, typ: Type, kind: VariableKind) // TODO: add auto-invariant
+  datatype Variable = Variable(name: string, typ: TypeName, kind: VariableKind) // TODO: add auto-invariant
   {
     static predicate UniqueNames(variables: seq<Variable>) {
       forall i, j :: 0 <= i < j < |variables| ==> variables[i].name != variables[j].name
@@ -167,23 +167,23 @@ module Ast {
           && MatchingParameters(proc.parameters, args)
           && (forall i :: 0 <= i < |args| ==> args[i].WellFormed(proc.parameters[i], b3, scope))
       case Check(cond) =>
-        cond.Type(b3, scope) == Some(BoolType)
+        cond.Type(b3, scope) == Some(BoolTypeName)
       case Assume(cond) =>
-        cond.Type(b3, scope) == Some(BoolType)
+        cond.Type(b3, scope) == Some(BoolTypeName)
       case Assert(cond) =>
-        cond.Type(b3, scope) == Some(BoolType)
+        cond.Type(b3, scope) == Some(BoolTypeName)
       case AForall(v, body) =>
         && v.kind == Bound && LegalVariableName(v.name, localNames)
         && body.WellFormed(b3, scope[v.name := v], localNames, labels)
         && !body.ContainsNonAssertions()
       case If(cond, thn, els) =>
-        && cond.Type(b3, scope) == Some(BoolType)
+        && cond.Type(b3, scope) == Some(BoolTypeName)
         && thn.WellFormed(b3, scope, localNames, labels)
         && els.WellFormed(b3, scope, localNames, labels)
       case IfCase(cases) =>
         && |cases| != 0
         && forall i :: 0 <= i < |cases| ==> var cs := cases[i];
-            && cs.cond.Type(b3, scope) == Some(BoolType)
+            && cs.cond.Type(b3, scope) == Some(BoolTypeName)
             && cs.body.WellFormed(b3, scope, localNames, labels)
       case Loop(lbl, invariants, body) =>
         && lbl.IsLegalIn(labels)
@@ -254,7 +254,7 @@ module Ast {
     predicate WellFormed(b3: Program, scope: Scope, labels: set<string>) {
       match this
       case AExpr(e) =>
-        e.Type(b3, scope) == Some(BoolType)
+        e.Type(b3, scope) == Some(BoolTypeName)
       case AAssertion(s) =>
         s.WellFormed(b3, scope, {}, labels) && !s.ContainsNonAssertions()
     }
@@ -373,7 +373,7 @@ module Ast {
     | IdExpr(name: string)
   {
     function Type(b3: Program, scope: Scope): Option<string>
-    { Some(IntType) } // TODO
+    { Some(IntTypeName) } // TODO
     function Eval(vals: Valuation): Value // TODO: either make Option<Value> or require Type(...).Some?
     { 3 } // TODO
 

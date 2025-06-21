@@ -1,12 +1,12 @@
 module Parser {
   export
     provides TopLevel
-    provides StringBuilders, Ast
+    provides StringBuilders, RawAst
 
   import opened Std.Parsers.StringBuilders
   import opened Std.Wrappers
   import opened Basics
-  import opened Ast
+  import opened RawAst
   import Types
   import Std.Collections.Seq
 

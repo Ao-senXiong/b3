@@ -1,14 +1,13 @@
 module Printer {
   import opened Basics
-  import opened Ast
+  import opened RawAst
   import Types
 
   method Program(b3: Program) {
     print "// B3 program\n";
-    var types := SetToSeq(b3.types);
-    for i := 0 to |types| {
+    for i := 0 to |b3.types| {
       print "\n";
-      TypeDecl(types[i]);
+      TypeDecl(b3.types[i]);
     }
     var procedures := SetToSeq(b3.procedures);
     for i := 0 to |procedures| {
@@ -17,7 +16,7 @@ module Printer {
     }
   }
 
-  method TypeDecl(ty: Types.Type) {
+  method TypeDecl(ty: Types.TypeName) {
     print "type ", ty, "\n";
   }
 

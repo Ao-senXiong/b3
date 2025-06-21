@@ -3,10 +3,10 @@ module WellFormednessConsequences {
     provides Stmt
     provides AboutBlock, AboutBlockStmts, AboutIf, AboutIfCase, AboutLoop, AboutAForall
     reveals StmtList, StmtSeq
-    provides Ast, Basics
+    provides RawAst, Basics
 
   import opened Basics
-  import opened Ast
+  import opened RawAst
 
   ghost predicate Stmt(stmt: Stmt, b3: Program) {
     && b3.WellFormed()
@@ -30,7 +30,7 @@ module WellFormednessConsequences {
     var scope, localNames, labels :| stmt.WellFormed(b3, scope, localNames, labels);
     localNames, labels := {}, stmt.lbl.AddTo(labels);
     for i := 0 to |stmt.stmts|
-      invariant Ast.Stmt.WellFormedStmtSeq(stmt.stmts[i..], b3, scope, localNames, labels)
+      invariant RawAst.Stmt.WellFormedStmtSeq(stmt.stmts[i..], b3, scope, localNames, labels)
       invariant forall s <- stmt.stmts[..i] :: Stmt(s, b3)
     {
       var ss := stmt.stmts[i..];

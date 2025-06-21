@@ -1,7 +1,7 @@
 module B3 {
   import opened Std.Wrappers
   import opened Basics
-  import opened Ast
+  import opened RawAst
   import Types
   import Printer
   import Std.FileIO
@@ -17,10 +17,12 @@ module B3 {
     var r := ReadAndParseProgram(args[1]);
     if r.IsFailure() {
       print r.error;
-    } else {
-      Printer.Program(r.value);
+      return;
     }
-  }
+    var b3 := r.value;
+
+    Printer.Program(b3);
+   }
 
   method PrintUsage() {
     print "Usage: b3 <filename.b3>\n";
@@ -33,19 +35,6 @@ module B3 {
       case ParseSuccess(value, remaining) => Success(value)
       case ParseFailure(_, _) => Failure(SB.FailureToString(input, parseResult))
     };
-    return Success(b3);
-  }
-
-  method TestProgram() returns (b3: Program) {
-    var types := {};
-
-    var x := Variable("x", Types.IntType, VariableKind.In);
-    var y := Variable("y", Types.IntType, VariableKind.InOut);
-    var z := Variable("z", Types.IntType, VariableKind.Out);
-    var body := Block(AnonymousLabel, [Check(Expr.CreateTrue())]);
-    var p := Procedure("Test", [x, y, z], Nil, Nil, Some(body));
-
-    var procedures := {p};
-    b3 := Program(types, procedures);
+   return Success(b3);
   }
 }
