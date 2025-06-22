@@ -70,4 +70,8 @@ module Basics {
   function MapProject<X, Y>(m: map<X, Y>, s: set<X>): map<X, Y> {
     map x | x in m && x in s :: m[x]
   }
+
+  predicate MapIsInjective<X, Y(==)>(m: map<X, Y>) {
+    forall x0 <- m.Keys, x1 <- m.Keys :: x0 != x1 ==> m[x0] != m[x1]
+  }
 }

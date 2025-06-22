@@ -10,6 +10,7 @@ module RawAst {
   {
     predicate WellFormed() {
       && (forall typ <- types :: typ !in BuiltInTypes)
+      && (forall i, j :: 0 <= i < j < |types| ==> types[i] != types[j])
       && (forall proc <- procedures, proc' <- procedures :: proc.name == proc'.name ==> proc == proc')
       && forall proc <- procedures :: proc.WellFormed(this)
     }
