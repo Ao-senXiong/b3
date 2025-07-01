@@ -6,8 +6,28 @@ module Ast {
 
   type Type = Types.Type
   datatype Program = Program(types: set<Type>, procedures: set<Procedure>)
+  {
+    predicate WellFormed() {
+      && Types.BuiltInTypes <= (set typ <- types :: typ.Name)
+      && (forall typ0 <- types, typ1 <- types :: typ0.Name == typ1.Name ==> typ0 == typ1)
+      && (forall proc0 <- procedures, proc1 <- procedures :: proc0.Name == proc1.Name ==> proc0 == proc1)
+    }
+  }
 
-  datatype Procedure = Procedure(name: string, parameters: seq<Variable>, pre: List<AExpr>, post: List<AExpr>, body: Option<Stmt>)
+  class Procedure {
+    const Name: string
+    const Parameters: seq<Variable>
+    const Pre: List<AExpr>
+    const Post: List<AExpr>
+    var Body: Option<Stmt>
+
+    constructor (name: string, parameters: seq<Variable>, pre: List<AExpr>, post: List<AExpr>)
+      ensures Name == name
+    {
+      Name, Parameters, Pre, Post := name, parameters, pre, post;
+      Body := None;
+    }
+  }
 
   datatype Variable = Variable(name: string, typ: Type, kind: VariableKind) // TODO: add auto-invariant
   type VariableKind = Raw.VariableKind
