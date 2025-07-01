@@ -9,10 +9,9 @@ module Printer {
       print "\n";
       TypeDecl(b3.types[i]);
     }
-    var procedures := SetToSeq(b3.procedures);
-    for i := 0 to |procedures| {
+    for i := 0 to |b3.procedures| {
       print "\n";
-      Procedure(procedures[i]);
+      Procedure(b3.procedures[i]);
     }
   }
 

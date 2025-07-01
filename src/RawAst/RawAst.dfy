@@ -6,7 +6,7 @@ module RawAst {
 
   // Top-level program
 
-  datatype Program = Program(types: seq<TypeName>, procedures: set<Procedure>)
+  datatype Program = Program(types: seq<TypeName>, procedures: seq<Procedure>)
   {
     predicate WellFormed() {
       && (forall typ <- types :: typ !in BuiltInTypes)

@@ -12,7 +12,7 @@ module Parser {
 
   const TopLevel: B<Program> :=
     W.e_I(parseTopLevelDecl.I_e(W).Rep()).End().M(decls =>
-      var (tt, pp) := DeclsToSets(decls);
+      var (tt, pp) := SeparateTopLevelDecls(decls);
       Program(tt, pp))
 
   // ----- Parser helpers
@@ -125,12 +125,12 @@ module Parser {
       parseProcDecl.M(decl => TProc(decl))
     ])
   
-  function DeclsToSets(decls: seq<TopLevelDecl>): (seq<Types.TypeName>, set<Procedure>) {
-    if decls == [] then ([], {}) else
-      var (tt, pp) := DeclsToSets(decls[1..]);
+  function SeparateTopLevelDecls(decls: seq<TopLevelDecl>): (seq<Types.TypeName>, seq<Procedure>) {
+    if decls == [] then ([], []) else
+      var (tt, pp) := SeparateTopLevelDecls(decls[1..]);
       match decls[0]
       case TType(typeDecl) => ([typeDecl] + tt, pp)
-      case TProc(procDecl) => (tt, {procDecl} + pp)
+      case TProc(procDecl) => (tt, [procDecl] + pp)
   }
 
   const parseTypeDecl: B<Types.TypeName> :=
