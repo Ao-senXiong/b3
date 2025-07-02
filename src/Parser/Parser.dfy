@@ -148,16 +148,16 @@ module Parser {
       Procedure(name, formals, pre, post, optBody)
     )
   
-  const parseInOutKind: B<VariableKind> :=
+  const parseParameterMode: B<ParameterMode> :=
     Or([
-      T("inout").M(_ => VariableKind.InOut),
-      T("out").M(_ => VariableKind.Out),
-      Nothing.M(_ => VariableKind.In)
+      T("inout").M(_ => ParameterMode.InOut),
+      T("out").M(_ => ParameterMode.Out),
+      Nothing.M(_ => ParameterMode.In)
     ])
     
-  const parseFormal: B<Variable> :=
-    parseInOutKind.I_I(parseIdType)
-    .M3(Unfold3r, (kind, name, typ) => Variable(name, typ, kind))
+  const parseFormal: B<Parameter> :=
+    parseParameterMode.I_I(parseIdType)
+    .M3(Unfold3r, (mode: ParameterMode, name, typ) => Parameter(mode, Variable(name, typ, mode.IsOutgoing())))
 
   const parseIdType: B<(string, string)> :=
     parseId.I_e(Sym(":")).I_I(parseId)
@@ -220,15 +220,15 @@ module Parser {
 
   function parseStmt(c: RecSel): B<Stmt> {
     Or([
-      T("var").e_I(parseIdType).M2(MId, (name, typ) => VarDecl(Variable(name, typ, VariableKind.Local))),
-      T("val").e_I(parseIdType).I_e(Sym(":=")).I_I(parseExpr).M3(Unfold3l, (name, typ, rhs) => ValDecl(Variable(name, typ, VariableKind.Let), rhs)),
+      T("var").e_I(parseIdType).M2(MId, (name, typ) => VarDecl(Variable(name, typ, true))),
+      T("val").e_I(parseIdType).I_e(Sym(":=")).I_I(parseExpr).M3(Unfold3l, (name, typ, rhs) => ValDecl(Variable(name, typ, false), rhs)),
       T("exit").e_I(parseId).M(name => Exit(NamedLabel(name))),
       T("return").M(_ => Return),
       T("check").e_I(parseExpr).M(e => Check(e)),
       T("assume").e_I(parseExpr).M(e => Assume(e)),
       T("assert").e_I(parseExpr).M(e => Assert(e)),
       T("probe").e_I(parseExpr).M(e => Probe(e)),
-      T("forall").e_I(parseIdType).I_I(parseSelStmt(c, "block")).M3(Unfold3l, (name, typ, body) => AForall(Variable(name, typ, VariableKind.Bound), body)),
+      T("forall").e_I(parseIdType).I_I(parseSelStmt(c, "block")).M3(Unfold3l, (name, typ, body) => AForall(Variable(name, typ, false), body)),
       T("if").e_I(parseIfCont(c)),
       parseOptionalLabel(Sym("{")).Then((optLbl: Option<string>) =>
         parseSelStmt(c, "block").M((s: Stmt) =>
@@ -285,8 +285,8 @@ module Parser {
 
   const parseCallArgument: B<CallArgument> :=
     Or([
-      T("out").e_I(parseId).M(name => ArgLValue(VariableKind.Out, name)),
-      T("inout").e_I(parseId).M(name => ArgLValue(VariableKind.InOut, name)),
+      T("out").e_I(parseId).M(name => ArgLValue(ParameterMode.Out, name)),
+      T("inout").e_I(parseId).M(name => ArgLValue(ParameterMode.InOut, name)),
       parseExpr.M(e => ArgExpr(e))
     ])
 

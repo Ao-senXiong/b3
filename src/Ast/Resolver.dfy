@@ -50,13 +50,26 @@ module Resolver {
       if name in procMap.Keys {
         return Failure("duplicate procedure name: " + name);
       }
-      var rproc := new Procedure(name, [], Nil, Nil); // TODO: other parameters
+      var rproc :- ResolveProcedure(proc, b3);
       procMap := procMap[name := rproc];
-      assume {:axiom} proc.WellFormed(b3); // TODO
     }
 
     var r3 := Program(typeMap.Values, procMap.Values);
 
     return Success(r3);
+  }
+
+  method ResolveProcedure(proc: Raw.Procedure, b3: Raw.Program) returns (r: Result<Procedure, string>)
+    ensures r.Success? ==> proc.WellFormed(b3)
+    ensures r.Success? ==> r.value.Name == proc.name
+  {
+    if i, j :| 0 <= i < j < |proc.parameters| && proc.parameters[i].v.name == proc.parameters[j].v.name {
+      return Failure("duplicate parameter name: " + proc.parameters[i].v.name);
+    }
+    assert Raw.Variable.UniqueNames(SeqMap(proc.parameters, (p: Parameter) => p.v));
+
+    var rproc := new Procedure(proc.name, [], Nil, Nil); // TODO: other parameters
+    assume {:axiom} proc.WellFormed(b3); // TODO
+    return Success(rproc);
   }
 }

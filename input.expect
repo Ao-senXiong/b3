@@ -4,8 +4,6 @@ type string
 
 type MyClass
 
-procedure Egon(test: bool, inout test: int, abc: bool, out xyz: string)
-
 procedure Test(x: int)
 
 procedure Mote()
@@ -91,6 +89,8 @@ procedure Mote()
   M5(1000, 2000, inout x, inout y, inout z)
   M6(1000, 2000, inout m, inout n, out x, out z)
 }
+
+procedure Egon(testb: bool, inout testi: int, abc: bool, out xyz: string)
 
 procedure MyProc()
   requires 10

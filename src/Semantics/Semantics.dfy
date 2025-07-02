@@ -121,7 +121,7 @@ module Semantics {
     var Call(name, args) := stmt;
     var sh := st.shadowedVariables;
     exists proc <- b3.procedures | proc.name == name ::
-      FollowsFromWellFormedness(Stmt.MatchingParameters(proc.parameters, args) && Variable.UniqueNames(proc.parameters)) &&
+      FollowsFromWellFormedness(Stmt.MatchingParameters(proc.parameters, args) && Parameter.UniqueNames(proc.parameters)) &&
       exists entry | ProcEntryParameters(st.m, entry, proc.parameters, args) ::
         var checks := proc.pre.Map((ae: AExpr) => ae.ToCheckStmt());
         WF.StmtList(checks, b3) && // TODO: follows from ToCheckStmt()
@@ -139,34 +139,34 @@ module Semantics {
                   WriteBackOutgoingParameters(st.m, sh, exit, st', proc.parameters, args))
   }
 
-  ghost predicate ProcEntryParameters(callState: Valuation, entry: Valuation, parameters: seq<Variable>, args: seq<CallArgument>)
-    requires Stmt.MatchingParameters(parameters, args) && Variable.UniqueNames(parameters)
+  ghost predicate ProcEntryParameters(callState: Valuation, entry: Valuation, parameters: seq<Parameter>, args: seq<CallArgument>)
+    requires Stmt.MatchingParameters(parameters, args) && Parameter.UniqueNames(parameters)
   {
     FollowsFromWellFormedness(forall arg <- args :: arg.ArgLValue? ==> arg.name in callState) &&
-    entry == map i | 0 <= i < |args| && parameters[i].kind.IsIncomingParameter() :: parameters[i].name := args[i].Eval(callState)
+    entry == map i | 0 <= i < |args| && parameters[i].mode.IsIncoming() :: parameters[i].v.name := args[i].Eval(callState)
   }
 
-  ghost predicate ProcExitParameters(entry: Valuation, exit: Valuation, parameters: seq<Variable>, args: seq<CallArgument>)
-    requires Stmt.MatchingParameters(parameters, args) && Variable.UniqueNames(parameters)
+  ghost predicate ProcExitParameters(entry: Valuation, exit: Valuation, parameters: seq<Parameter>, args: seq<CallArgument>)
+    requires Stmt.MatchingParameters(parameters, args) && Parameter.UniqueNames(parameters)
     ensures ProcExitParameters(entry, exit, parameters, args) ==>
-      forall formal <- parameters | formal.kind.IsOutgoingParameter() :: formal.name in exit
+      forall formal <- parameters | formal.mode.IsOutgoing() :: formal.v.name in exit
   {
-    var inOuts := set formal <- parameters | formal.kind == InOut;
-    var outgoing := set formal <- parameters | formal.kind.IsOutgoingParameter();
+    var inOuts := set formal <- parameters | formal.mode == InOut :: formal;
+    var outgoing := set formal <- parameters | formal.mode.IsOutgoing();
     exists outValues: Valuation ::
-      outValues.Keys == (set formal: Variable <- outgoing :: formal.name) &&
-      (forall formal: Variable <- outgoing :: HasType(outValues[formal.name], formal.typ)) &&
+      outValues.Keys == (set formal: Parameter <- outgoing :: formal.v.name) &&
+      (forall formal: Parameter <- outgoing :: HasType(outValues[formal.v.name], formal.v.typ)) &&
       (UniqueNamesImpliesUniqueOldNames(inOuts);
-         FollowsFromWellFormedness(forall formal <- inOuts :: formal.name in entry) &&
-         var oldValues := map formal <- inOuts :: OldName(formal.name) := entry[formal.name];
+         FollowsFromWellFormedness(forall formal <- inOuts :: formal.v.name in entry) &&
+         var oldValues := map formal <- inOuts :: OldName(formal.v.name) := entry[formal.v.name];
          exit == entry + oldValues + outValues)
   }
 
-  predicate WriteBackOutgoingParameters(entry: Valuation, shadowedVariables: Valuation, exit: Valuation, st': State, parameters: seq<Variable>, args: seq<CallArgument>)
+  predicate WriteBackOutgoingParameters(entry: Valuation, shadowedVariables: Valuation, exit: Valuation, st': State, parameters: seq<Parameter>, args: seq<CallArgument>)
     requires Stmt.MatchingParameters(parameters, args)
-    requires forall formal <- parameters | formal.kind.IsOutgoingParameter() :: formal.name in exit
+    requires forall formal <- parameters | formal.mode.IsOutgoing() :: formal.v.name in exit
   {
-    var actualOutgoing := map i | 0 <= i < |parameters| && parameters[i].kind.IsOutgoingParameter() :: args[i].name := exit[parameters[i].name];
+    var actualOutgoing := map i | 0 <= i < |parameters| && parameters[i].mode.IsOutgoing() :: args[i].name := exit[parameters[i].v.name];
     st' == State(entry + actualOutgoing, shadowedVariables)
   }
 

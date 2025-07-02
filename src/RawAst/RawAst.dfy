@@ -8,6 +8,15 @@ module RawAst {
 
   datatype Program = Program(types: seq<TypeName>, procedures: seq<Procedure>)
   {
+    // A raw program is well-formed when
+    //    + no scope declares duplicate names
+    //    + every name (of a type, procedure, function, variable) resolves to a declaration
+    //    + the arity of each call (of a procedure or function) matches that of the callee
+    // Well-formedness of a raw program does NOT imply things like
+    //    - type correctness
+    //    - no duplication of actual out-going parameters
+    //    - assignments only to mutable variables
+    //    - additional semantic rules
     predicate WellFormed() {
       && (forall typ <- types :: typ !in BuiltInTypes)
       && (forall i, j :: 0 <= i < j < |types| ==> types[i] != types[j])
@@ -25,23 +34,22 @@ module RawAst {
 
   // Procedures
 
-  datatype Procedure = Procedure(name: string, parameters: seq<Variable>, pre: List<AExpr>, post: List<AExpr>, body: Option<Stmt>)
+  datatype Procedure = Procedure(name: string, parameters: seq<Parameter>, pre: List<AExpr>, post: List<AExpr>, body: Option<Stmt>)
   {
     predicate WellFormed(b3: Program) {
-      && (forall p <- parameters :: p.kind.IsParameter())
-      && Variable.UniqueNames(parameters)
-      && var preScope := map p <- parameters | p.kind.IsIncomingParameter() :: p.name := p;
+      && Parameter.UniqueNames(parameters)
+      && var preScope := map p <- parameters | p.mode.IsIncoming() :: p.v.name := p.v;
       && pre.Forall((ae: AExpr) requires ae < this => ae.WellFormed(b3, preScope, {}))
-      && var scope := map p <- parameters :: p.name := p;
+      && var scope := map p <- parameters :: p.v.name := p.v;
       && post.Forall((ae: AExpr) requires ae < this => ae.WellFormed(b3, scope, {}))
-      && var localNames := set p <- parameters | p.kind.IsOutgoingParameter() :: p.name;
+      && var localNames := set p <- parameters | p.mode.IsOutgoing() :: p.v.name;
       && (body == None || body.value.WellFormed(b3, scope, localNames, {}))
     }
   }
 
   type Scope = map<string, Variable>
 
-  datatype Variable = Variable(name: string, typ: TypeName, kind: VariableKind) // TODO: add auto-invariant
+  datatype Variable = Variable(name: string, typ: TypeName, isMutable: bool) // TODO: add auto-invariant
   {
     static predicate UniqueNames(variables: seq<Variable>) {
       forall i, j :: 0 <= i < j < |variables| ==> variables[i].name != variables[j].name
@@ -52,19 +60,36 @@ module RawAst {
     }
   }
 
-  datatype VariableKind = In | InOut | Out | Local | Let | Bound
+  datatype Parameter = Parameter(mode: ParameterMode, v: Variable)
   {
-    predicate IsParameter() {
-      this in {In, InOut, Out}
+    static function ToVariables(parameters: seq<Parameter>): seq<Variable> {
+      SeqMap(parameters, (p: Parameter) => p.v)
     }
-    predicate IsIncomingParameter() {
+
+    static predicate UniqueNames(parameters: seq<Parameter>): (unique: bool)
+      ensures unique ==> forall i, j :: 0 <= i < j < |parameters| ==> parameters[i].v.name != parameters[j].v.name
+      ensures unique ==> UniquelyNamed(set p <- parameters)
+    {
+      var vars := ToVariables(parameters);
+      forall i, j | 0 <= i < j < |parameters|
+        ensures Variable.UniqueNames(vars) ==> parameters[i].v.name != parameters[j].v.name
+      {
+        assert vars[i] == parameters[i].v && vars[j] == parameters[j].v;
+      }
+      Variable.UniqueNames(vars)
+    }
+
+    static predicate UniquelyNamed(parameters: set<Parameter>) {
+      forall p0 <- parameters, p1 <- parameters :: p0.v.name == p1.v.name ==> p0 == p1
+    }
+  }
+  datatype ParameterMode = In | InOut | Out
+  {
+    predicate IsIncoming() {
       this in {In, InOut}
     }
-    predicate IsOutgoingParameter() {
+    predicate IsOutgoing() {
       this in {InOut, Out}
-    }
-    predicate IsAssignable() {
-      this in {InOut, Out, Local}
     }
   }
 
@@ -74,15 +99,15 @@ module RawAst {
     OldPrefix + name
   }
 
-  lemma UniqueNamesImpliesUniqueOldNames(variables: set<Variable>)
-    requires Variable.UniquelyNamed(variables)
-    ensures forall v0 <- variables, v1 <- variables :: OldName(v0.name) == OldName(v1.name) ==> v0 == v1
+  lemma UniqueNamesImpliesUniqueOldNames(parameters: set<Parameter>)
+    requires Parameter.UniquelyNamed(parameters)
+    ensures forall p0 <- parameters, p1 <- parameters :: OldName(p0.v.name) == OldName(p1.v.name) ==> p0 == p1
   {
-    forall v0 <- variables, v1 <- variables | OldName(v0.name) == OldName(v1.name)
-      ensures v0 == v1
+    forall p0 <- parameters, p1 <- parameters | OldName(p0.v.name) == OldName(p1.v.name)
+      ensures p0 == p1
     {
-      assert v0.name == OldName(v0.name)[|OldPrefix|..];
-      assert v1.name == OldName(v1.name)[|OldPrefix|..];
+      assert p0.v.name == OldName(p0.v.name)[|OldPrefix|..];
+      assert p1.v.name == OldName(p1.v.name)[|OldPrefix|..];
     }
   }
 
@@ -152,14 +177,14 @@ module RawAst {
     predicate WellFormed(b3: Program, scope: Scope, localNames: set<string>, labels: set<string>) {
       match this
       case VarDecl(v) =>
-        v.kind == Local && LegalVariableName(v.name, localNames)
+        v.isMutable && LegalVariableName(v.name, localNames)
       case ValDecl(v, rhs) =>
-        && v.kind == Let && LegalVariableName(v.name, localNames)
+        && !v.isMutable && LegalVariableName(v.name, localNames)
         && rhs.Type(b3, scope) == Some(v.typ)
       case Assign(lhs, rhs) =>
         && lhs in scope.Keys
         && var v := scope[lhs];
-        && v.kind.IsAssignable() && rhs.Type(b3, scope) == Some(v.typ)
+        && v.isMutable && rhs.Type(b3, scope) == Some(v.typ)
       case Block(lbl, stmts) =>
         lbl.IsLegalIn(labels) && WellFormedStmtSeq(stmts, b3, scope, {}, lbl.AddTo(labels))
       case Call(name, args) =>
@@ -174,7 +199,7 @@ module RawAst {
       case Assert(cond) =>
         cond.Type(b3, scope) == Some(BoolTypeName)
       case AForall(v, body) =>
-        && v.kind == Bound && LegalVariableName(v.name, localNames)
+        && !v.isMutable && LegalVariableName(v.name, localNames)
         && body.WellFormed(b3, scope[v.name := v], localNames, labels)
         && !body.ContainsNonAssertions()
       case If(cond, thn, els) =>
@@ -216,10 +241,10 @@ module RawAst {
           WellFormedStmtSeq(cont, b3, scope', localNames', labels)
     }
 
-    static predicate MatchingParameters(parameters: seq<Variable>, args: seq<CallArgument>) {
+    static predicate MatchingParameters(parameters: seq<Parameter>, args: seq<CallArgument>) {
       && (forall i, j :: 0 <= i < j < |args| && args[i].ArgLValue? && args[j].ArgLValue? ==> args[i].name != args[j].name)
       && |args| == |parameters|
-      && forall i | 0 <= i < |parameters| && parameters[i].kind.IsOutgoingParameter() :: args[i].ArgLValue?
+      && forall i | 0 <= i < |parameters| && parameters[i].mode.IsOutgoing() :: args[i].ArgLValue?
     }
 
     predicate IsEmptyBlock() {
@@ -345,16 +370,16 @@ module RawAst {
 
   datatype CallArgument =
     | ArgExpr(e: Expr)
-    | ArgLValue(kind: VariableKind /* TODO: .kind not yet used in semantics/verifier */, name: string)
+    | ArgLValue(mode: ParameterMode /* TODO: .mode not yet used in semantics/verifier */, name: string)
   {
-    predicate WellFormed(formal: Variable, b3: Program, scope: Scope) {
+    predicate WellFormed(formal: Parameter, b3: Program, scope: Scope) {
       match this
       case ArgExpr(e) =>
-        formal.kind == In && e.Type(b3, scope) == Some(formal.typ)
+        formal.mode == In && e.Type(b3, scope) == Some(formal.v.typ)
       case ArgLValue(_, name) =>
-        && formal.kind.IsOutgoingParameter()
+        && formal.mode.IsOutgoing()
         && name in scope && var v := scope[name];
-        && v.kind.IsAssignable() && v.typ == formal.typ
+        && v.isMutable && v.typ == formal.v.typ
     }
 
     function Eval(vals: Valuation): Value

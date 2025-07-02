@@ -29,8 +29,9 @@ module Ast {
     }
   }
 
-  datatype Variable = Variable(name: string, typ: Type, kind: VariableKind) // TODO: add auto-invariant
-  type VariableKind = Raw.VariableKind
+  datatype Variable = Variable(name: string, typ: Type, isMutable: bool) // TODO: add auto-invariant
+  type Parameter = Raw.Parameter
+  type ParameterMode = Raw.ParameterMode
 
   type Label = Raw.Label
 
@@ -58,7 +59,7 @@ module Ast {
 
   datatype CallArgument =
     | ArgExpr(e: Expr)
-    | ArgLValue(kind: VariableKind /* TODO: .kind not yet used in semantics/verifier */, name: string)
+    | ArgLValue(mode: ParameterMode, name: string)
 
   datatype AExpr =
     | AExpr(e: Expr)

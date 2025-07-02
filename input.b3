@@ -67,7 +67,7 @@ exit MyLabel
 type string type
 MyClass
 
-  procedure Egon( test  :bool, inout test :  int,abc: bool,out xyz: string)
+  procedure Egon( testb  :bool, inout testi :  int,abc: bool,out xyz: string)
 
 procedure   MyProc   (     )
   requires 10

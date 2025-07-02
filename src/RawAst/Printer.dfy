@@ -25,13 +25,7 @@ module Printer {
     var sep := "";
     for i := 0 to |params| {
       var param := params[i];
-      print sep;
-      match param.kind {
-        case InOut => print "inout ";
-        case Out => print "out ";
-        case _ =>
-      }
-      print param.name, ": ", param.typ;
+      print sep, ParameterMode(param.mode), param.v.name, ": ", param.v.typ;
       sep := ", ";
     }
     print ")\n";
@@ -204,21 +198,21 @@ module Printer {
       Statement(stmt, indent);
   }
 
-  function InOutPrefix(kind: VariableKind): string {
-    match kind
+  function ParameterMode(mode: ParameterMode): string {
+    match mode
     case InOut => "inout "
     case Out => "out "
     case _ => ""
   }
 
   method VariableDecl(v: Variable) {
-    print InOutPrefix(v.kind), v.name, ": ", v.typ;
+    print v.name, ": ", v.typ;
   }
 
   method CallArgument(arg: CallArgument) {
     match arg
     case ArgExpr(e) => Expression(e);
-    case ArgLValue(kind, name) => print InOutPrefix(kind), name;
+    case ArgLValue(mode, name) => print ParameterMode(mode), name;
   }
 
   method PrintAExprs(indent: nat, prefix: string, aexprs: List<AExpr>)
