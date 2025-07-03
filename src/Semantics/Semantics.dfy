@@ -11,6 +11,8 @@ module Semantics {
   // The big-step semantics is defined as a relation on State, relating an initial valuation contained where the initial state is a
   // valuation contained in the State(_) variant and the final state is such a valuation, possibly augmented with a target label,
   // or an error.
+  //
+  // TODO: This first version of a formal semantics is defined on raw programs. This should change to instead be defined on a resolved program.
   datatype State =
     | State(m: Valuation, shadowedVariables: Valuation)
     | AbruptExit(lbl: Label, m: Valuation, shadowedVariables: Valuation)
@@ -94,9 +96,9 @@ module Semantics {
     case Loop(lbl, invariants, body) =>
       WF.AboutLoop(stmt, b3);
       exists st0 ::
-        var checks := invariants.Map((ae: AExpr) => ae.ToCheckStmt());
-        WF.StmtList(checks, b3) && // TODO: follows from ToCheckStmt()
-        BigStepList(checks, b3, st, st0) &&
+        var checks := SeqMap(invariants, (ae: AExpr) => ae.ToCheckStmt());
+        WF.StmtSeq(checks, b3) && // TODO: follows from ToCheckStmt()
+        BigStepSeq(checks, b3, st, st0) &&
         if !st0.State? then
           st' == st0
         else
@@ -123,19 +125,18 @@ module Semantics {
     exists proc <- b3.procedures | proc.name == name ::
       FollowsFromWellFormedness(Stmt.MatchingParameters(proc.parameters, args) && Parameter.UniqueNames(proc.parameters)) &&
       exists entry | ProcEntryParameters(st.m, entry, proc.parameters, args) ::
-        var checks := proc.pre.Map((ae: AExpr) => ae.ToCheckStmt());
-        WF.StmtList(checks, b3) && // TODO: follows from ToCheckStmt()
-        exists st0 | BigStepList(checks, b3, State(entry, sh), st0) ::
+        var checks := SeqMap(proc.pre, (ae: AExpr) => ae.ToCheckStmt());
+        WF.StmtSeq(checks, b3) && // TODO: follows from ToCheckStmt()
+        exists st0 | BigStepSeq(checks, b3, State(entry, sh), st0) ::
           || (!st0.State? && st' == st0)
           || (st0.State? &&
               exists exit | ProcExitParameters(entry, exit, proc.parameters, args) ::
                 var toAssumeStmt := (ae: AExpr) requires ae.Valid() => ae.ToAssumeStmt();
-                var toAssumeStmtPre := (ae: AExpr) => ae.Valid();
-                FollowsFromWellFormedness(proc.post.Forall(toAssumeStmtPre)) &&
-                var assumes := (proc.post.ForallToPartialPre(toAssumeStmtPre, toAssumeStmt); proc.post.MapPartial(toAssumeStmt));
-                WF.StmtList(assumes, b3) && // TODO: follows from ToAssumeStmt()
-                exists st1 | BigStepList(assumes, b3, State(exit, sh), st1) ::
-                  st1.State? && st1 == State(exit, sh) && // this line follows from the definitions of BigStepList and ToAssumeStmt
+                FollowsFromWellFormedness(forall ae <- proc.post :: ae.Valid()) &&
+                var assumes := SeqMap(proc.post, toAssumeStmt);
+                WF.StmtSeq(assumes, b3) && // TODO: follows from ToAssumeStmt()
+                exists st1 | BigStepSeq(assumes, b3, State(exit, sh), st1) ::
+                  st1.State? && st1 == State(exit, sh) && // this line follows from the definitions of BigStepSeq and ToAssumeStmt
                   WriteBackOutgoingParameters(st.m, sh, exit, st', proc.parameters, args))
   }
 
@@ -184,21 +185,6 @@ module Semantics {
           st' == mid
         else
           BigStepSeq(cont, b3, mid, st')
-  }
-
-  greatest predicate BigStepList(stmts: List<Stmt>, b3: Program, st: State, st': State)
-    requires WF.StmtList(stmts, b3)
-    requires st.State?
-  {
-    match stmts
-    case Nil => st' == st
-    case Cons(stmt, cont) =>
-      exists mid ::
-        BigStep(stmt, b3, st, mid) &&
-        if !mid.State? then
-          st' == mid
-        else
-          BigStepList(cont, b3, mid, st')
   }
 
   function SeparateAssertion(stmt: Stmt, context: AssertionContext): seq<Stmt>

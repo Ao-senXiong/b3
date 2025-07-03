@@ -164,7 +164,7 @@ module Parser {
 
   // ----- Parsing gallery
 
-  datatype RecUnion = UStmt(stmt: Stmt) | UAExprs(aexprs: List<AExpr>) | UExpr(expr: Expr)
+  datatype RecUnion = UStmt(stmt: Stmt) | UAExprs(aexprs: seq<AExpr>) | UExpr(expr: Expr)
   type RecSel = RecMapSel<RecUnion>
 
   function BMap<T, U>(b: B<T>, f: T -> Option<U>): B<U> {
@@ -183,7 +183,7 @@ module Parser {
     BMap(c(productionName), (ru: RecUnion) => if ru.UStmt? then Some(ru.stmt) else None)
   }
 
-  function parseSelAExprs(c: RecSel, productionName: string): B<List<AExpr>> {
+  function parseSelAExprs(c: RecSel, productionName: string): B<seq<AExpr>> {
     BMap(c(productionName), (ru: RecUnion) => if ru.UAExprs? then Some(ru.aexprs) else None)
   }
 
@@ -195,16 +195,16 @@ module Parser {
       "block" := RecMapDef(0, (c: RecSel) => parseUnlabeledBlockStmt(c).M(s => UStmt(s))),
       "stmt" := RecMapDef(0, (c: RecSel) => parseStmt(c).M(s => UStmt(s))),
       "if-cont" := RecMapDef(0, (c: RecSel) => parseIfCont(c).M(s => UStmt(s))),
-      "requires" := RecMapDef(0, (c: RecSel) => parseAExprList("requires", c).M(aexprs => UAExprs(aexprs))),
-      "ensures" := RecMapDef(0, (c: RecSel) => parseAExprList("ensures", c).M(aexprs => UAExprs(aexprs))),
-      "invariant" := RecMapDef(0, (c: RecSel) => parseAExprList("invariant", c).M(aexprs => UAExprs(aexprs)))
+      "requires" := RecMapDef(0, (c: RecSel) => parseAExprSeq("requires", c).M(aexprs => UAExprs(aexprs))),
+      "ensures" := RecMapDef(0, (c: RecSel) => parseAExprSeq("ensures", c).M(aexprs => UAExprs(aexprs))),
+      "invariant" := RecMapDef(0, (c: RecSel) => parseAExprSeq("invariant", c).M(aexprs => UAExprs(aexprs)))
     ]
 
   function RecMapStmt(productionName: string): B<Stmt> {
     BMap(RecMap(gallery, productionName), (ru: RecUnion) => if ru.UStmt? then Some(ru.stmt) else None)
   }
 
-  function RecMapAExprs(productionName: string): B<List<AExpr>> {
+  function RecMapAExprs(productionName: string): B<seq<AExpr>> {
     BMap(RecMap(gallery, productionName), (ru: RecUnion) => if ru.UAExprs? then Some(ru.aexprs) else None)
   }
 
@@ -292,8 +292,8 @@ module Parser {
 
   // ----- Expressions
 
-  function parseAExprList(keyword: string, c: RecSel): B<List<AExpr>> {
-    parseAExpr(keyword, c).Rep().M(aexprs => List.FromSeq(aexprs))
+  function parseAExprSeq(keyword: string, c: RecSel): B<seq<AExpr>> {
+    parseAExpr(keyword, c).Rep()
   }
 
   function parseAExpr(keyword: string, c: RecSel): B<AExpr> {

@@ -6,6 +6,7 @@ module RawAst {
 
   // Top-level program
 
+  // A raw program reflects program that has been parsed.
   datatype Program = Program(types: seq<TypeName>, procedures: seq<Procedure>)
   {
     // A raw program is well-formed when
@@ -34,14 +35,14 @@ module RawAst {
 
   // Procedures
 
-  datatype Procedure = Procedure(name: string, parameters: seq<Parameter>, pre: List<AExpr>, post: List<AExpr>, body: Option<Stmt>)
+  datatype Procedure = Procedure(name: string, parameters: seq<Parameter>, pre: seq<AExpr>, post: seq<AExpr>, body: Option<Stmt>)
   {
     predicate WellFormed(b3: Program) {
       && Parameter.UniqueNames(parameters)
       && var preScope := map p <- parameters | p.mode.IsIncoming() :: p.v.name := p.v;
-      && pre.Forall((ae: AExpr) requires ae < this => ae.WellFormed(b3, preScope, {}))
+      && (forall ae <- pre :: ae.WellFormed(b3, preScope, {}))
       && var scope := map p <- parameters :: p.v.name := p.v;
-      && post.Forall((ae: AExpr) requires ae < this => ae.WellFormed(b3, scope, {}))
+      && (forall ae <- post :: ae.WellFormed(b3, scope, {}))
       && var localNames := set p <- parameters | p.mode.IsOutgoing() :: p.v.name;
       && (body == None || body.value.WellFormed(b3, scope, localNames, {}))
     }
@@ -133,7 +134,7 @@ module RawAst {
     // Control flow
     | If(cond: Expr, thn: Stmt, els: Stmt)
     | IfCase(cases: seq<Case>)
-    | Loop(lbl: Label, invariants: List<AExpr>, body: Stmt)
+    | Loop(lbl: Label, invariants: seq<AExpr>, body: Stmt)
     | Exit(lbl: Label)
     | Return
     // Error reporting
@@ -213,7 +214,7 @@ module RawAst {
             && cs.body.WellFormed(b3, scope, localNames, labels)
       case Loop(lbl, invariants, body) =>
         && lbl.IsLegalIn(labels)
-        && invariants.Forall((ae: AExpr) requires ae < this => ae.WellFormed(b3, scope, labels))
+        && (forall ae <- invariants :: ae.WellFormed(b3, scope, labels))
         && body.WellFormed(b3, scope, localNames, lbl.AddTo(labels))
       case Exit(lbl) =>
         match lbl {

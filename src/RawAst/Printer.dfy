@@ -1,4 +1,5 @@
 module Printer {
+  import opened Std.Wrappers
   import opened Basics
   import opened RawAst
   import Types
@@ -55,7 +56,7 @@ module Printer {
 
 
   method Statement(stmt: Stmt, indent: nat, omitInitialIndent: bool := false)
-    decreases stmt, 0
+    decreases stmt, 1
   {
     if !omitInitialIndent {
       Indent(indent);
@@ -144,11 +145,11 @@ module Printer {
     case Loop(lbl, invariants, body) =>
       Label(lbl);
       print "loop";
-      if invariants == Nil {
+      if |invariants| == 0 {
         print " ";
       } else {
         print "\n";
-        PrintAExprs(indent + IndentAmount, "invariant", invariants);
+        PrintAExprs(indent + IndentAmount, "invariant", invariants, stmt);
         Indent(indent);
       }
       StmtAsBlock(body, indent);
@@ -215,24 +216,19 @@ module Printer {
     case ArgLValue(mode, name) => print ParameterMode(mode), name;
   }
 
-  method PrintAExprs(indent: nat, prefix: string, aexprs: List<AExpr>)
-    decreases aexprs
+  method PrintAExprs(indent: nat, prefix: string, aexprs: seq<AExpr>, ghost parent: Stmt := Loop(AnonymousLabel, aexprs, Return))
+    requires forall ae <- aexprs :: ae.AAssertion? ==> ae.s < parent
+    decreases parent, 0
   {
-    var a := aexprs;
-    while a != Nil
-      invariant aexprs nonincreases to a
-      decreases a.Length()
-    {
+    for i := 0 to |aexprs| {
       Indent(indent);
       print prefix, " ";
-      match a.head {
-        case AExpr(e) =>
-          Expression(e);
-          print "\n";
-        case AAssertion(s) =>
-          Statement(s, indent, true);
-      }
-      a := a.tail;
+      match aexprs[i]
+      case AExpr(e) =>
+        Expression(e);
+        print "\n";
+      case AAssertion(s) =>
+        Statement(s, indent, true);
     }
   }
 
