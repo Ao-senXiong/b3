@@ -132,8 +132,8 @@ module Parser {
     T("procedure")
     .e_I(parseId).Then(name =>
       parseParenthesized(parseCommaDelimitedSeq(parseFormal)).Then(formals =>
-        RecMapAExprs("requires").Then(pre =>
-          RecMapAExprs("ensures").Then(post =>
+        ParseWithContext(gallery, (c: RecSel) => parseAExprSeq("requires", c)).Then(pre =>
+          ParseWithContext(gallery, (c: RecSel) => parseAExprSeq("ensures", c)).Then(post =>
             RecMapStmt("block").Option().M(optBody =>
               Procedure(name, formals, pre, post, optBody)
             )
@@ -161,8 +161,7 @@ module Parser {
 
   // ----- Parsing gallery
 
-  datatype RecUnion = UStmt(stmt: Stmt) | UAExprs(aexprs: seq<AExpr>) | UExpr(expr: Expr)
-  type RecSel = RecMapSel<RecUnion>
+  type RecSel = RecMapSel<Stmt>
 
   function BMap<T, U>(b: B<T>, f: T -> Option<U>): B<U> {
     B(YMap(b.apply, f))
@@ -177,36 +176,61 @@ module Parser {
   }
 
   function parseSelStmt(c: RecSel, productionName: string): B<Stmt> {
-    BMap(c(productionName), (ru: RecUnion) => if ru.UStmt? then Some(ru.stmt) else None)
+    BMap(c(productionName), (stmt: Stmt) => Some(stmt))
   }
 
-  function parseSelAExprs(c: RecSel, productionName: string): B<seq<AExpr>> {
-    BMap(c(productionName), (ru: RecUnion) => if ru.UAExprs? then Some(ru.aexprs) else None)
-  }
-
-  function parseSelExpr(c: RecSel, productionName: string): B<Expr> {
-    BMap(c(productionName), (ru: RecUnion) => if ru.UExpr? then Some(ru.expr) else None)
-  }
-
-  const gallery: map<string, RecMapDef<RecUnion>> := map[
-      "block" := RecMapDef(0, (c: RecSel) => parseUnlabeledBlockStmt(c).M(s => UStmt(s))),
-      "stmt" := RecMapDef(0, (c: RecSel) => parseStmt(c).M(s => UStmt(s))),
-      "if-cont" := RecMapDef(0, (c: RecSel) => parseIfCont(c).M(s => UStmt(s))),
-      "requires" := RecMapDef(0, (c: RecSel) => parseAExprSeq("requires", c).M(aexprs => UAExprs(aexprs))),
-      "ensures" := RecMapDef(0, (c: RecSel) => parseAExprSeq("ensures", c).M(aexprs => UAExprs(aexprs))),
-      "invariant" := RecMapDef(0, (c: RecSel) => parseAExprSeq("invariant", c).M(aexprs => UAExprs(aexprs)))
+  const gallery: map<string, RecMapDef<Stmt>> := map[
+      "block" := RecMapDef(0, (c: RecSel) => parseUnlabeledBlockStmt(c).M(s => s)),
+      "stmt" := RecMapDef(0, (c: RecSel) => parseStmt(c).M(s => s)),
+      "if-cont" := RecMapDef(0, (c: RecSel) => parseIfCont(c).M(s => s))
     ]
 
   function RecMapStmt(productionName: string): B<Stmt> {
-    BMap(RecMap(gallery, productionName), (ru: RecUnion) => if ru.UStmt? then Some(ru.stmt) else None)
+    BMap(RecMap(gallery, productionName), (stmt: Stmt) => Some(stmt))
   }
 
-  function RecMapAExprs(productionName: string): B<seq<AExpr>> {
-    BMap(RecMap(gallery, productionName), (ru: RecUnion) => if ru.UAExprs? then Some(ru.aexprs) else None)
+  function ParseWithContext<G(!new), R>(underlyingGallery: map<string, RecMapDef<G>>, parser: RecMapSel<G> -> B<R>): B<R> {
+    var b := MyRecMapSpecialized(underlyingGallery, parser);
+    B((input: Input) =>
+      var (result, remaining) :- b.apply(input);
+      P.ParseSuccess(result, remaining))
   }
 
-  function RecMapExpr(productionName: string): B<Expr> {
-    BMap(RecMap(gallery, productionName), (ru: RecUnion) => if ru.UExpr? then Some(ru.expr) else None)
+  function MyRecMapSpecialized<G(!new), R>(underlyingGallery: map<string, RecMapDef<G>>, parser: RecMapSel<G> -> B<R>): B<R> {
+    B((input: Input) =>
+      var callback: P.ParserSelector<G> := Callback(UnderlyingP(underlyingGallery), "<context>", 0, P.A.Length(input));
+      var c: RecMapSel<G> := (name: string) => B(callback(name));
+      parser(c).apply(input)
+    )
+  }
+
+  function UnderlyingP<R>(underlying: map<string, RecMapDef<R>>): map<string, P.RecursiveDef<R>> {
+    map k <- underlying ::
+      P.RecursiveDef(
+        underlying[k].order,
+        (selector: P.ParserSelector<R>) =>
+          underlying[k].definition(
+            (name: string) => B(selector(name))                  
+          ).apply)
+  }
+
+  function Callback<R(!new)>(underlying: map<string, P.RecursiveDef<R>>, fun: string, orderFun: nat, initialInputLength: nat): P.ParserSelector<R> {
+    (fun': string) =>
+      if fun' !in underlying.Keys then
+        P.FailWith(fun' + " not defined", P.Fatal)
+      else
+        var orderFun', definitionFun' := underlying[fun'].order, underlying[fun'].definition;
+        (remaining: Input) =>
+          if P.A.Length(remaining) < initialInputLength || (P.A.Length(remaining) == initialInputLength && orderFun' < orderFun) then
+            P.RecursiveMap_(underlying, fun', remaining)
+          else if P.A.Length(remaining) == initialInputLength then
+            P.ParseFailure(P.Recoverable,
+              P.FailureData(
+                "non-progressing recursive call requires that order of '" + fun' + "' (" + P.Strings.OfInt(orderFun') + ") " +
+                "is lower than the order of '" + fun + "' (" + P.Strings.OfInt(orderFun) + ")",
+              remaining, Option.None))
+          else
+            P.ParseFailure(P.Fatal, P.FailureData("parser did not return a suffix of the input", remaining, Option.None))
   }
 
   // ----- Statements
