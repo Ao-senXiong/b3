@@ -134,7 +134,7 @@ module Parser {
       parseParenthesized(parseCommaDelimitedSeq(parseFormal)).Then(formals =>
         ParseWithContext(gallery, (c: RecSel) => parseAExprSeq("requires", c)).Then(pre =>
           ParseWithContext(gallery, (c: RecSel) => parseAExprSeq("ensures", c)).Then(post =>
-            RecMapStmt("block").Option().M(optBody =>
+            RecMap(gallery, "block").Option().M(optBody =>
               Procedure(name, formals, pre, post, optBody)
             )
           )
@@ -163,31 +163,11 @@ module Parser {
 
   type RecSel = RecMapSel<Stmt>
 
-  function BMap<T, U>(b: B<T>, f: T -> Option<U>): B<U> {
-    B(YMap(b.apply, f))
-  }
-
-  opaque function YMap<R, U>(underlying: P.Parser<R>, mappingFunc: R -> Option<U>): P.Parser<U> {
-    (input: Input) =>
-      var (result, remaining) :- underlying(input);
-      match mappingFunc(result)
-      case None => P.ParseFailure(FailureLevel.Fatal, P.FailureData("mismatched type of parser production", remaining, None))
-      case Some(u) => P.ParseSuccess(u, remaining)
-  }
-
-  function parseSelStmt(c: RecSel, productionName: string): B<Stmt> {
-    BMap(c(productionName), (stmt: Stmt) => Some(stmt))
-  }
-
   const gallery: map<string, RecMapDef<Stmt>> := map[
       "block" := RecMapDef(0, (c: RecSel) => parseUnlabeledBlockStmt(c).M(s => s)),
       "stmt" := RecMapDef(0, (c: RecSel) => parseStmt(c).M(s => s)),
       "if-cont" := RecMapDef(0, (c: RecSel) => parseIfCont(c).M(s => s))
     ]
-
-  function RecMapStmt(productionName: string): B<Stmt> {
-    BMap(RecMap(gallery, productionName), (stmt: Stmt) => Some(stmt))
-  }
 
   function ParseWithContext<G(!new), R>(underlyingGallery: map<string, RecMapDef<G>>, parser: RecMapSel<G> -> B<R>): B<R> {
     var b := MyRecMapSpecialized(underlyingGallery, parser);
@@ -249,10 +229,10 @@ module Parser {
       T("assume").e_I(parseExpr).M(e => Assume(e)),
       T("assert").e_I(parseExpr).M(e => Assert(e)),
       T("probe").e_I(parseExpr).M(e => Probe(e)),
-      T("forall").e_I(parseIdType).I_I(parseSelStmt(c, "block")).M3(Unfold3l, (name, typ, body) => AForall(Variable(name, typ, false), body)),
+      T("forall").e_I(parseIdType).I_I(c("block")).M3(Unfold3l, (name, typ, body) => AForall(Variable(name, typ, false), body)),
       T("if").e_I(parseIfCont(c)),
       parseOptionalLabel(Sym("{")).Then((optLbl: Option<string>) =>
-        parseSelStmt(c, "block").M((s: Stmt) =>
+        c("block").M((s: Stmt) =>
           if optLbl.Some? && s.Block? then
             Block(NamedLabel(optLbl.value), s.stmts)
           else
@@ -260,7 +240,7 @@ module Parser {
         )
       ),
       parseOptionalLabel(T("loop")).Then((optLbl: Option<string>) =>
-        T("loop").e_I(parseAExprSeq("invariant", c)).I_I(parseSelStmt(c, "block"))
+        T("loop").e_I(parseAExprSeq("invariant", c)).I_I(c("block"))
         .M2(MId, (invariants, body) => Loop(match optLbl case Some(name) => NamedLabel(name) case _ => AnonymousLabel, invariants, body))
       ),
       Atomic(parseId.I_e(Sym(":="))).I_I(parseExpr).M2(MId, (lhs, rhs) => Assign(lhs, rhs)),
@@ -288,10 +268,10 @@ module Parser {
   function parseIfCont(c: RecSel): B<Stmt> {
     Or([
       Sym("{").e_I(parseCase(c).Rep()).I_e(Sym("}")).M(cases => IfCase(cases)),
-      parseExpr.I_I(parseSelStmt(c, "block")).I_I(Or([
+      parseExpr.I_I(c("block")).I_I(Or([
         T("else").e_I(Or([
-          T("if").e_I(parseSelStmt(c, "if-cont")),
-          parseSelStmt(c, "block")
+          T("if").e_I(c("if-cont")),
+          c("block")
         ])),
         Nothing.M(_ => Block(AnonymousLabel, []))
       ])).M3(Unfold3l, (cond, thn, els) => If(cond, thn, els))
@@ -300,7 +280,7 @@ module Parser {
 
   function parseCase(c: RecSel): B<Case> {
     T("case").e_I(parseExpr).I_e(Sym("=>")).I_I(
-      parseSelStmt(c, "stmt").Rep().M(stmts => Block(AnonymousLabel, stmts))
+      c("stmt").Rep().M(stmts => Block(AnonymousLabel, stmts))
     ).M2(MId, (cond, body) => Case(cond, body))
   }
 
@@ -319,7 +299,7 @@ module Parser {
 
   function parseAExpr(keyword: string, c: RecSel): B<AExpr> {
     T(keyword).e_I(Or([
-      parseSelStmt(c, "block").M(stmt => AAssertion(stmt)),
+      c("block").M(stmt => AAssertion(stmt)),
       parseExpr.M(e => AExpr(e))
     ]))
   }
