@@ -107,14 +107,6 @@ module Parser {
     (r.0.0, r.0.1, r.1)
   }
 
-  function Unfold3r<X, Y, Z>(r: (X, (Y, Z))): (X, Y, Z) {
-    (r.0, r.1.0, r.1.1)
-  }
-
-  function Unfold5l<A, B, C, D, E>(r: ((((A, B), C), D), E)): (A, B, C, D, E) {
-    (r.0.0.0.0, r.0.0.0.1, r.0.0.1, r.0.1, r.1)
-  }
-
   // ----- Top-level declarations
 
   datatype TopLevelDecl = TType(typeDecl: Types.TypeName) | TProc(procDecl: Procedure)
@@ -138,14 +130,16 @@ module Parser {
 
   const parseProcDecl: B<Procedure> :=
     T("procedure")
-    .e_I(parseId)
-    .I_I(parseParenthesized(parseCommaDelimitedSeq(parseFormal)))
-    .I_I(RecMapAExprs("requires"))
-    .I_I(RecMapAExprs("ensures"))
-    .I_I(RecMapStmt("block").Option())
-    .M(r =>
-      var (name, formals, pre, post, optBody) := Unfold5l(r);
-      Procedure(name, formals, pre, post, optBody)
+    .e_I(parseId).Then(name =>
+      parseParenthesized(parseCommaDelimitedSeq(parseFormal)).Then(formals =>
+        RecMapAExprs("requires").Then(pre =>
+          RecMapAExprs("ensures").Then(post =>
+            RecMapStmt("block").Option().M(optBody =>
+              Procedure(name, formals, pre, post, optBody)
+            )
+          )
+        )
+      )
     )
   
   const parseParameterMode: B<ParameterMode> :=
@@ -156,8 +150,11 @@ module Parser {
     ])
     
   const parseFormal: B<Parameter> :=
-    parseParameterMode.I_I(parseIdType)
-    .M3(Unfold3r, (mode: ParameterMode, name, typ) => Parameter(mode, Variable(name, typ, mode.IsOutgoing())))
+    parseParameterMode.Then((mode: ParameterMode) =>
+      parseIdType.M2(MId, (name, typ) =>
+        Parameter(mode, Variable(name, typ, mode.IsOutgoing()))
+      )
+    )
 
   const parseIdType: B<(string, string)> :=
     parseId.I_e(Sym(":")).I_I(parseId)
@@ -239,7 +236,7 @@ module Parser {
         )
       ),
       parseOptionalLabel(T("loop")).Then((optLbl: Option<string>) =>
-        T("loop").e_I(parseSelAExprs(c, "invariant")).I_I(parseSelStmt(c, "block"))
+        T("loop").e_I(parseAExprSeq("invariant", c)).I_I(parseSelStmt(c, "block"))
         .M2(MId, (invariants, body) => Loop(match optLbl case Some(name) => NamedLabel(name) case _ => AnonymousLabel, invariants, body))
       ),
       Atomic(parseId.I_e(Sym(":="))).I_I(parseExpr).M2(MId, (lhs, rhs) => Assign(lhs, rhs)),
