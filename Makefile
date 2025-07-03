@@ -25,3 +25,6 @@ test:
 
 b3:
 	$(TARGET) $(INPUT)
+
+docs:
+	cd doc ; make

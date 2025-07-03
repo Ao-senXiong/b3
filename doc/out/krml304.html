@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+  <meta name="generator" content="Madoko, version 1.2.3" />
+  <meta name="viewport" content="initial-scale=1.0" />
+  <meta name="author" content="K. Rustan M. Leino" />
+  <meta name="description" content="Leino mode: Start numbering at 0" />
+  <title>B3 statements: Syntax, raw AST, and printing</title>
+  <style type="text/css"  class="link">
+  /*# sourceURL=madoko.css */
+  
+  .madoko .toc>.tocblock .tocblock .tocblock {
+    margin-left: 2.25em;
+  }
+  .madoko .toc>.tocblock .tocblock {
+    margin-left: 1.5em;
+  }
+  .madoko .toc-contents>.tocblock>.tocitem {
+    font-weight: bold;
+  }
+  .madoko .toc {
+    margin-top: 1em;
+  }
+  .madoko p.para-continue {
+    margin-bottom: 0pt;
+  }
+  .madoko .para-block+p {
+    margin-top: 0pt;
+  }
+  .madoko ul.para-block, .madoko ol.para-block {
+    margin-top: 0pt;
+    margin-bottom: 0pt;
+  }
+  .madoko ul.para-end, .madoko ol.para-end {
+    margin-bottom: 1em;
+  }
+  .madoko dl {
+    margin-left: 0em;
+  }
+  .madoko blockquote {
+    font-style: italic;
+  }
+  .madoko a.localref {
+    text-decoration: none;
+  }
+  .madoko a.localref:hover {
+    text-decoration: underline;
+  }
+  .madoko .footnotes {
+    font-size: smaller;
+    margin-top: 2em;
+  }
+  .madoko .footnotes hr {
+    width: 50%;
+    text-align: left;
+  }
+  .madoko .footnote {
+    margin-left: 1em;
+  }
+  .madoko .footnote-before {
+    margin-left: -1em;
+    width: 1em;
+    display: inline-block;
+  }
+  .madoko .align-center, .madoko .align-center>p {
+    text-align: center !important;
+  }
+  .madoko .align-center pre {
+    text-align: left;
+  }
+  .madoko .align-center>* {
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
+  .madoko .align-left, .madoko .align-left>p {
+    text-align: left !important;
+  }
+  .madoko .align-left>* {
+    margin-left: 0pt !important;
+    margin-right: auto !important;
+  }
+  .madoko .align-right, .madoko .align-right>p {
+    text-align: right !important;
+  }
+  .madoko .align-right>* {
+    margin-left: auto !important;
+    margin-right: 0pt !important;
+  }
+  .madoko .align-center>table,
+  .madoko .align-left>table,
+  .madoko .align-right>table {
+    text-align: left !important;
+  }
+  .madoko .equation-before {
+    float: right;
+  }
+  .madoko .bibitem {
+    font-size: smaller;
+  }
+  .madoko .bibsearch {
+    font-size: x-small;
+    text-decoration:none;
+    color: black;
+    font-family: "Segoe UI Symbol", Symbola, serif;
+  }
+  .madoko .block, .madoko .figure, .madoko .bibitem, .madoko .equation, .madoko div.math {
+    margin-top: 1ex;
+    margin-bottom: 1ex;
+  }
+  .madoko .figure {
+    padding: 0.5em;
+    margin-left: 0pt;
+    margin-right: 0pt;
+  }
+  .madoko .hidden {
+    display: none;
+  }
+  .madoko .invisible {
+    visibility: hidden;
+  }
+  .madoko.preview .invisible {
+    visibility: visible;
+    opacity: 0.5;
+  }
+  .madoko code.code, .madoko span.code {
+    white-space: pre-wrap;
+  }
+  .madoko hr, hr.madoko {
+    border: none;
+    border-bottom: black solid 1px;
+    margin-bottom: 0.5ex;
+  }
+  .madoko .framed>*:first-child {
+    margin-top: 0pt;
+  }
+  .madoko .framed>*:last-child {
+    margin-bottom: 0pt;
+  }
+  .madoko ul.list-style-type-dash {
+      list-style-type: none !important;
+  }
+  .madoko ul.list-style-type-dash > li:before {
+      content: "\2013";
+      position: absolute;
+      margin-left: -1em;
+  }
+  .madoko table.madoko {
+    border-collapse: collapse;
+  }
+  .madoko td, .madoko th {
+    padding: 0ex 0.5ex;
+    margin: 0pt;
+    vertical-align: top;
+  }
+  .madoko .cell-border-left {
+    border-left: 1px solid black;
+  }
+  .madoko .cell-border-right {
+    border-right: 1px solid black;
+  }
+  .madoko thead>tr:first-child>.cell-line,
+  .madoko tbody:first-child>tr:first-child>.cell-line {
+    border-top: 1px solid black;
+    border-bottom: none;
+  }
+  .madoko .cell-line, .madoko .cell-double-line {
+    border-bottom: 1px solid black;
+    border-top: none;
+  }
+  .madoko .cell-double-line {
+    border-top: 1px solid black;
+    padding-top: 1.5px !important;
+  }
+  .madoko .input-mathpre .MathJax_Display {
+    text-align: left !important;
+  }
+  .madoko div.input-mathpre {
+    text-align: left;
+    margin-top: 1.5ex;
+    margin-bottom: 1ex;
+  }
+  .madoko .math-rendering {
+    text-align: left;
+    white-space: pre;
+    color: gray;
+  }
+  .madoko .mathdisplay {
+    text-align: center;
+  }
+  .madoko span.math-rendering {
+    display:inline-block;
+    width:8em;
+    overflow-x:auto;
+    font-size:70%;
+  }
+  .madoko span.math-rendering::-webkit-scrollbar {
+    width:4px;
+  }
+  .madoko .pretty table {
+    border-collapse: collapse;
+  }
+  .madoko .pretty td {
+    padding: 0em;
+  }
+  .madoko .pretty td.empty {
+    min-width: 1.5ex;
+  }
+  .madoko .pretty td.expander {
+    width: 100em;
+  }
+  body.madoko, .madoko .serif {
+    font-family: Cambria,"Times New Roman","Liberation Serif","Times",serif;
+  }
+  .madoko .sans-serif {
+    font-family: "Calibri", "Optima", sans-serif;
+  }
+  .madoko .symbol {
+    font-family: "Segoe UI Symbol", Symbola, serif;
+  }
+  body.madoko {
+    -webkit-text-size-adjust: 100%;       
+    text-rendering: optimizeLegibility;
+  }
+  body.madoko {
+    max-width: 88ex; 
+    margin: 1em auto;
+    padding: 0em 2em;
+  }
+  body.preview.madoko {
+    padding: 0em 1em;
+  }
+  .madoko p {
+    text-align: justify;
+  }
+  .madoko h1, .madoko h2, .madoko h3, .madoko h4 {
+    margin-top: 1.22em;
+    margin-bottom: 1ex;
+  }
+  .madoko h1+p, .madoko h2+p, .madoko h3+p, .madoko h4+p, .madoko h5+p  {
+    margin-top: 1ex;
+  }
+  .madoko h5, .madoko h6 {
+    margin-top: 1ex;
+    font-size: 1em;
+  }
+  .madoko h5 {
+    margin-bottom: 0.5ex;
+  }
+  .madoko h5 + p {
+    margin-top: 0.5ex;
+  }
+  .madoko h6 {
+    margin-bottom: 0pt;
+  }
+  .madoko h6 + p {
+    margin-top: 0pt;
+  }
+  .madoko pre, .madoko code, .madoko kbd, .madoko samp, .madoko tt,
+  .madoko .monospace, .madoko .token-indent, .madoko .reveal pre, .madoko .reveal code, .madoko .email {
+    font-family: Consolas,"Andale Mono WT","Andale Mono",Lucida Console,Monaco,monospace,monospace;
+    font-size: 0.85em;
+  }
+  .madoko pre code, .madoko .token-indent {
+    font-size: 0.95em;
+  }
+  .madoko pre code {
+    font-family: inherit !important;
+  }
+  .madoko ol.linenums li {
+    background-color: white;
+    list-style-type: decimal;
+  }
+  .madoko .remote {
+    background-color: #F0FFF0;
+  }
+  .madoko .remote + * {
+    margin-top: 0pt;
+  }
+  @media print {
+    body.madoko {
+      font-size: 10pt;
+    }
+    @page {
+      margin: 1in 1.5in;
+    }
+  }
+  @media only screen and (max-device-width:1024px) {
+    body.madoko {
+      padding: 0em 0.5em;
+    }
+    .madoko li {
+      text-align: left;
+    }
+  }
+  
+    </style>
+  
+  <style>
+    .pre-indented { margin-left: 20pt; }
+        .pre-fenced { margin-left: 20pt; }
+  </style>
+  </head>
+<body class="madoko">
+
+<div class="body madoko" style="line-adjust:0">
+<div class="titleblock align-center para-block" data-line="80" style="text-align:center;line-adjust:0">
+<div class="titleheader align-center" data-line="80" style="text-align:center;line-adjust:0">
+<div class="title para-block" data-line="80" style="font-size:xx-large;font-weight:bold;margin-bottom:0.5ex;line-adjust:0"><span data-line="80"></span>B3 statements: Syntax, raw AST, and printing</div></div>
+<div class="authors align-center" data-line="85" style="text-align:center;width:80%;line-adjust:0"><table class="authorrow columns block" data-line="85" style="margin-top:2ex;width:100%;line-adjust:0">
+<tbody><tr><td class="author column" data-line="85" style="text-align:center;line-adjust:0">
+<div class="authorname" data-line="85" style="font-size:large;line-adjust:0"><span data-line="85"></span>K. Rustan M. Leino</div></td></tr></tbody></table></div>
+<div class="titlefooter align-center" data-line="94" style="text-align:center;margin-top:0.5ex;line-adjust:0"><span data-line="94"></span>Manuscript KRML 304, 3 July 2025</div></div>
+<div class="abstract" data-line="82" style="margin-left:3em;margin-right:3em;font-size:small">
+<p class="p noindent" data-line="83"><span data-line="83"></span><strong class="strong-star2">Abstract.</strong><span data-line="83"></span> This document describes the abstract syntax, concrete syntax, and printing related
+to <span data-line="84"></span><code class="code code1 language-b3 lang-b3 b3 colorized">RawAst</code><span data-line="84"></span> statements in the B3 implementation.</p></div><h2 id="sec-introduction" class="clearnum h1" data-line="87" data-heading-depth="1" style="display:block"><span data-line="87"></span>Introduction</h2>
+<p class="p noindent" data-line="89"><span data-line="89"></span>The abstract syntax captured by the types in the <span data-line="89"></span><code class="code code1 language-b3 lang-b3 b3 colorized">RawAst</code><span data-line="89"></span> module of the B3 implementation
+are more general than the concrete syntax that is parsed. This gives rise to an abstract syntax
+tree (AST) that is easier to process, because it is more general and abstracts over restrictions
+in the syntax.
+</p>
+<p class="p indent" data-line="94"><span data-line="94"></span>An AST is said to be <span data-line="94"></span><em class="em-low1">anomalous</em><span data-line="94"></span> if it<span data-line="94"></span>&#39;<span data-line="94"></span>s not the direct counterpart of what the parser accepts.
+</p>
+<p class="p indent" data-line="96"><span data-line="96"></span>Printing is defined on the general AST, not just on the restricted way in which the parser creates
+such ASTs. Two desired properties of the printed output are:
+</p>
+<ul class="ul list-star compact" data-line="99">
+<li class="li ul-li list-star-li compact-li" data-line="99"><span data-line="99"></span>it should be legal syntax, so the parser can parse it, and
+</li>
+<li class="li ul-li list-star-li compact-li" data-line="100"><span data-line="100"></span>a program that has been parsed into the AST and then printed should come out looking like the original.
+</li></ul>
+
+<p class="p noindent" data-line="102"><span data-line="102"></span>This document describes the relation between these three components.
+</p><h3 id="sec-blocks" class="clearnum h2" data-line="104" data-heading-depth="2" style="display:block"><span data-line="104"></span>Blocks</h3>
+<p class="p noindent" data-line="106"><span data-line="106"></span>In the AST, a <span data-line="106"></span><em class="em-low1">block statement</em><span data-line="106"></span>, or <span data-line="106"></span><em class="em-low1">block</em><span data-line="106"></span> for short, is a list of statements:
+</p>
+<pre class="para-block pre-fenced pre-fenced3 language-dafny lang-dafny dafny colorized" data-line="108" data-line-first="109" style="display:block"><code data-line="109"><span style="color:blue">datatype</span> Stmt =
+  <span class="code-escaped"><svg  class="math-inline math-render-svg math" style="vertical-align:-0.0210em;height:0.1522em;width:1.2633em" viewBox='34.67 60.585 12.031 1.45'><desc>$\ldots$</desc><g id='math-379ee6'><use x='34.869' y='61.836' xlink:href='#g0-58'/><use x='39.297' y='61.836' xlink:href='#g0-58'/><use x='43.725' y='61.836' xlink:href='#g0-58'/></g></svg></span>
+  | Block(stmts: <span style="color:teal">seq</span>&lt;Stmt&gt;)</code></pre>
+<p class="p noindent para-continued" data-line="114"><span data-line="114"></span>The concrete syntax for a block is a pair of curly braces surrounding a sequence of
+(zero of more) statements. Here and throughout, the concrete syntax shown uses <span data-line="115"></span><code class="code code1 language-b3 lang-b3 b3 colorized">S</code><span data-line="115"></span>
+to denote a statement.
+</p>
+<pre class="para-block pre-indented language-b3 lang-b3 b3 colorized" data-line="118" style="display:block"><code><span style="color:maroon">&quot;</span><span style="color:maroon">{</span><span style="color:maroon">&quot;</span> S<span class="code-escaped"><sup>*</sup></span> <span style="color:maroon">&quot;</span><span style="color:maroon">}</span><span style="color:maroon">&quot;</span></code></pre>
+<p class="p noindent para-continued" data-line="120"><span data-line="120"></span>Printing of a block is straightforward.
+</p><h3 id="sec-procedure-bodies" class="clearnum h2" data-line="122" data-heading-depth="2" style="display:block"><span data-line="122"></span>Procedure bodies</h3>
+<p class="p noindent" data-line="124"><span data-line="124"></span>A procedure has an optional body:
+</p>
+<pre class="para-block pre-fenced pre-fenced3 language-dafny lang-dafny dafny colorized" data-line="126" data-line-first="127" style="display:block"><code data-line="127"><span style="color:blue">datatype</span> Procedure = Procedure(<span class="code-escaped"><svg  class="math-inline math-render-svg math" style="vertical-align:-0.0210em;height:0.1522em;width:1.2633em" viewBox='34.67 60.585 12.031 1.45'><desc>$\ldots$</desc><g id='math-379ee6'><use x='34.869' y='61.836' xlink:href='#g0-58'/><use x='39.297' y='61.836' xlink:href='#g0-58'/><use x='43.725' y='61.836' xlink:href='#g0-58'/></g></svg></span>, body: Option&lt;Stmt&gt;)</code></pre>
+<p class="p noindent para-continued" data-line="130"><span data-line="130"></span>In the AST, the body is an optional <span data-line="130"></span><code class="code code1 language-b3 lang-b3 b3 colorized">Stmt</code><span data-line="130"></span>. However, the parser only accepts a block.
+In an anomalous AST, where the body is some <span data-line="131"></span><code class="code code1 language-b3 lang-b3 b3 colorized">Stmt</code><span data-line="131"></span> that is not a <span data-line="131"></span><code class="code code1 language-b3 lang-b3 b3 colorized">Block</code><span data-line="131"></span>, the printer
+prints the anomalous body inside a pair of curly braces, as if it were a block containing
+a single statement.
+</p><h3 id="sec-loops" class="clearnum h2" data-line="135" data-heading-depth="2" style="display:block"><span data-line="135"></span>Loops</h3>
+<p class="p noindent" data-line="137"><span data-line="137"></span>A <span data-line="137"></span><em class="em-low1">loop</em><span data-line="137"></span> statement contains a body. In the AST, the body is a <span data-line="137"></span><code class="code code1 language-b3 lang-b3 b3 colorized">Stmt</code><span data-line="137"></span>:
+</p>
+<pre class="para-block pre-fenced pre-fenced3 language-dafny lang-dafny dafny colorized" data-line="139" data-line-first="140" style="display:block"><code data-line="140"><span style="color:blue">datatype</span> Stmt =
+  <span class="code-escaped"><svg  class="math-inline math-render-svg math" style="vertical-align:-0.0210em;height:0.1522em;width:1.2633em" viewBox='34.67 60.585 12.031 1.45'><desc>$\ldots$</desc><g id='math-379ee6'><use x='34.869' y='61.836' xlink:href='#g0-58'/><use x='39.297' y='61.836' xlink:href='#g0-58'/><use x='43.725' y='61.836' xlink:href='#g0-58'/></g></svg></span>
+  | Loop(<span class="code-escaped"><svg  class="math-inline math-render-svg math" style="vertical-align:-0.0210em;height:0.1522em;width:1.2633em" viewBox='34.67 60.585 12.031 1.45'><desc>$\ldots$</desc><g id='math-379ee6'><use x='34.869' y='61.836' xlink:href='#g0-58'/><use x='39.297' y='61.836' xlink:href='#g0-58'/><use x='43.725' y='61.836' xlink:href='#g0-58'/></g></svg></span>, body: Stmt)</code></pre>
+<p class="p noindent para-continued" data-line="145"><span data-line="145"></span>The parser only accepts a block as a loop body. Thus, as for procedure bodies with
+an anomalous body, a loop with an anomalous body prints the body within a pair of
+curly braces, as if it were a block containing a single statement.
+</p><h3 id="sec-variable-declarations" class="clearnum h2" data-line="149" data-heading-depth="2" style="display:block"><span data-line="149"></span>Variable declarations</h3>
+<p class="p noindent" data-line="151"><span data-line="151"></span>A <span data-line="151"></span><em class="em-low1">variable declaration</em><span data-line="151"></span> introduces a new variable (whose name may shadow a previously
+declared variable) for use in a given statement body.
+</p>
+<pre class="para-block pre-fenced pre-fenced3 language-dafny lang-dafny dafny colorized" data-line="154" data-line-first="155" style="display:block"><code data-line="155"><span style="color:blue">datatype</span> Stmt =
+  <span class="code-escaped"><svg  class="math-inline math-render-svg math" style="vertical-align:-0.0210em;height:0.1522em;width:1.2633em" viewBox='34.67 60.585 12.031 1.45'><desc>$\ldots$</desc><g id='math-379ee6'><use x='34.869' y='61.836' xlink:href='#g0-58'/><use x='39.297' y='61.836' xlink:href='#g0-58'/><use x='43.725' y='61.836' xlink:href='#g0-58'/></g></svg></span>
+  | VarDecl(v: Variable, init: Option&lt;Expr&gt;, body: Stmt)
+
+<span style="color:blue">datatype</span> Variable = Variable(name: <span style="color:teal">string</span>, typ: TypeName, isMutable: <span style="color:teal">bool</span>, <span class="code-escaped"><svg  class="math-inline math-render-svg math" style="vertical-align:-0.0210em;height:0.1522em;width:1.2633em" viewBox='34.67 60.585 12.031 1.45'><desc>$\ldots$</desc><g id='math-379ee6'><use x='34.869' y='61.836' xlink:href='#g0-58'/><use x='39.297' y='61.836' xlink:href='#g0-58'/><use x='43.725' y='61.836' xlink:href='#g0-58'/></g></svg></span>)</code></pre>
+<p class="p noindent para-continued" data-line="162"><span data-line="162"></span>Variable declarations are parsed in four forms of concrete syntax:
+</p>
+<pre class="para-block pre-indented language-b3 lang-b3 b3 colorized" data-line="164" style="display:block"><code><span style="color:blue">var</span> x <span style="color:maroon">&quot;</span><span style="color:maroon">:</span><span style="color:maroon">&quot;</span> T S<span class="code-escaped"><sup>*</sup></span>
+<span style="color:blue">var</span> x <span style="color:maroon">&quot;</span><span style="color:maroon">:</span><span style="color:maroon">&quot;</span> T <span style="color:maroon">&quot;</span><span style="color:maroon">:=</span><span style="color:maroon">&quot;</span> E S<span class="code-escaped"><sup>*</sup></span>
+val x <span style="color:maroon">&quot;</span><span style="color:maroon">:</span><span style="color:maroon">&quot;</span> T S<span class="code-escaped"><sup>*</sup></span>
+val x <span style="color:maroon">&quot;</span><span style="color:maroon">:</span><span style="color:maroon">&quot;</span> T <span style="color:maroon">&quot;</span><span style="color:maroon">:=</span><span style="color:maroon">&quot;</span> E S<span class="code-escaped"><sup>*</sup></span></code></pre>
+<p class="p noindent para-continued" data-line="169"><span data-line="169"></span>where <span data-line="169"></span><code class="code code1 language-b3 lang-b3 b3 colorized">x</code><span data-line="169"></span> is an identifier, <span data-line="169"></span><code class="code code1 language-b3 lang-b3 b3 colorized">T</code><span data-line="169"></span> is a type, and <span data-line="169"></span><code class="code code1 language-b3 lang-b3 b3 colorized">E</code><span data-line="169"></span> is an expression.
+Of these, <span data-line="170"></span><code class="code code1 language-b3 lang-b3 b3 colorized">x</code><span data-line="170"></span> and <span data-line="170"></span><code class="code code1 language-b3 lang-b3 b3 colorized">T</code><span data-line="170"></span> are the <span data-line="170"></span><code class="code code1 language-b3 lang-b3 b3 colorized">name</code><span data-line="170"></span> and <span data-line="170"></span><code class="code code1 language-b3 lang-b3 b3 colorized">typ</code><span data-line="170"></span> of the <span data-line="170"></span><code class="code code1 language-b3 lang-b3 b3 colorized">Variable</code><span data-line="170"></span> that is part of the
+AST <span data-line="171"></span><code class="code code1 language-b3 lang-b3 b3 colorized">VarDecl</code><span data-line="171"></span>. The keyword <span data-line="171"></span><code class="code code1 language-b3 lang-b3 b3 colorized"><span style="color:blue">var</span></code><span data-line="171"></span> says <span data-line="171"></span><code class="code code1 language-b3 lang-b3 b3 colorized">isMutable := <span style="color:blue">true</span></code><span data-line="171"></span> and the keyword
+<span data-line="172"></span><code class="code code1 language-b3 lang-b3 b3 colorized">val</code><span data-line="172"></span> says <span data-line="172"></span><code class="code code1 language-b3 lang-b3 b3 colorized">isMutable := <span style="color:blue">false</span></code><span data-line="172"></span>.
+The presence or absence of <span data-line="173"></span><code class="code code1 language-b3 lang-b3 b3 colorized"><span style="color:maroon">&quot;</span><span style="color:maroon">:=</span><span style="color:maroon">&quot;</span> E</code><span data-line="173"></span> correspond to the <span data-line="173"></span><code class="code code1 language-b3 lang-b3 b3 colorized">init</code><span data-line="173"></span> in the AST.
+</p>
+<p class="p indent" data-line="175"><span data-line="175"></span>In the parsed form, the body is not a single statement but a sequence of statements.
+This sequence is parsed as long as possible, which means that the parser only ever
+generates a variable declaration at the end of an enclosing statement sequence (which
+is typically in a block). The parsed statement sequence is placed in a <span data-line="178"></span><code class="code code1 language-b3 lang-b3 b3 colorized">Block</code><span data-line="178"></span>
+and this <span data-line="179"></span><code class="code code1 language-b3 lang-b3 b3 colorized">Block</code><span data-line="179"></span> is used as the <span data-line="179"></span><code class="code code1 language-b3 lang-b3 b3 colorized">body</code><span data-line="179"></span> of the <span data-line="179"></span><code class="code code1 language-b3 lang-b3 b3 colorized">VarDecl</code><span data-line="179"></span>.
+</p>
+<p class="p indent" data-line="181"><span data-line="181"></span>To print this structure when <span data-line="181"></span><code class="code code1 language-b3 lang-b3 b3 colorized">body</code><span data-line="181"></span> is a <span data-line="181"></span><code class="code code1 language-b3 lang-b3 b3 colorized">Block</code><span data-line="181"></span>, only the <span data-line="181"></span><code class="code code1 language-b3 lang-b3 b3 colorized">Block</code><span data-line="181"></span>&#39;<span data-line="181"></span>s statement sequence
+is printed, without enclosing curly braces.
+An anomalous <span data-line="183"></span><code class="code code1 language-b3 lang-b3 b3 colorized">VarDecl</code><span data-line="183"></span>, where <span data-line="183"></span><code class="code code1 language-b3 lang-b3 b3 colorized">body</code><span data-line="183"></span> is not a <span data-line="183"></span><code class="code code1 language-b3 lang-b3 b3 colorized">Block</code><span data-line="183"></span>, prints the body as
+the statement that it is.
+</p><h3 id="sec-forall-assertions" class="clearnum h2" data-line="186" data-heading-depth="2" style="display:block"><span data-line="186"></span>Forall assertions</h3>
+<p class="p noindent" data-line="188"><span data-line="188"></span>There is one more variable declaration.
+It is the <span data-line="189"></span><em class="em-low1">forall statement</em><span data-line="189"></span>, which introduces a bound variable for an assertion
+statement.
+</p>
+<pre class="para-block pre-fenced pre-fenced3 language-dafny lang-dafny dafny colorized" data-line="192" data-line-first="193" style="display:block"><code data-line="193"><span style="color:blue">datatype</span> Stmt =
+  <span class="code-escaped"><svg  class="math-inline math-render-svg math" style="vertical-align:-0.0210em;height:0.1522em;width:1.2633em" viewBox='34.67 60.585 12.031 1.45'><desc>$\ldots$</desc><g id='math-379ee6'><use x='34.869' y='61.836' xlink:href='#g0-58'/><use x='39.297' y='61.836' xlink:href='#g0-58'/><use x='43.725' y='61.836' xlink:href='#g0-58'/></g></svg></span>
+  | AForall(v: Variable, body: Stmt)</code></pre>
+<p class="p noindent para-continued" data-line="198"><span data-line="198"></span>Because of the way it tends to be used, namely to be more intentional about the
+end of the scope of its bound variable, the forall statement has a different concrete
+syntax than the other variable declarations.
+</p>
+<pre class="para-block pre-indented language-b3 lang-b3 b3 colorized" data-line="202" style="display:block"><code><span style="color:blue">forall</span> x <span style="color:maroon">&quot;</span><span style="color:maroon">:</span><span style="color:maroon">&quot;</span> T <span style="color:maroon">&quot;</span><span style="color:maroon">{</span><span style="color:maroon">&quot;</span> S<span class="code-escaped"><sup>*</sup></span> <span style="color:maroon">&quot;</span><span style="color:maroon">}</span><span style="color:maroon">&quot;</span></code></pre>
+<p class="p noindent para-continued" data-line="204"><span data-line="204"></span>The parser records <span data-line="204"></span><code class="code code1 language-b3 lang-b3 b3 colorized">v</code><span data-line="204"></span> as <span data-line="204"></span><code class="code code1 language-b3 lang-b3 b3 colorized">Variable(name := x, typ := T, isMutable := <span style="color:blue">false</span>)</code><span data-line="204"></span>
+and <span data-line="205"></span><code class="code code1 language-b3 lang-b3 b3 colorized">body</code><span data-line="205"></span> as the block statement parsed.
+</p>
+<p class="p indent" data-line="207"><span data-line="207"></span>There are two possible anomalies.
+One possible anomaly is that the AST for a forall statement contains
+a variable where <span data-line="209"></span><code class="code code1 language-b3 lang-b3 b3 colorized">isMutable</code><span data-line="209"></span> is <span data-line="209"></span><code class="code code1 language-b3 lang-b3 b3 colorized"><span style="color:blue">true</span></code><span data-line="209"></span>. The printer ignores the <span data-line="209"></span><code class="code code1 language-b3 lang-b3 b3 colorized">isMutable</code><span data-line="209"></span> field
+and prints the name and type of the bound variable. The other possible anomaly
+is that <span data-line="211"></span><code class="code code1 language-b3 lang-b3 b3 colorized">body</code><span data-line="211"></span> is not a block statement. In that case, the printer prints the
+body within a pair of curly braces, as if it were a block containing a single statement.
+</p><h3 id="sec-labeled-statements" class="clearnum h2" data-line="214" data-heading-depth="2" style="display:block"><span data-line="214"></span>Labeled statements</h3>
+<p class="p noindent" data-line="216"><span data-line="216"></span>A <span data-line="216"></span><em class="em-low1">labeled statement</em><span data-line="216"></span> is a label followed by a statement:
+</p>
+<pre class="para-block pre-fenced pre-fenced3 language-dafny lang-dafny dafny colorized" data-line="218" data-line-first="219" style="display:block"><code data-line="219"><span style="color:blue">datatype</span> Stmt =
+  <span class="code-escaped"><svg  class="math-inline math-render-svg math" style="vertical-align:-0.0210em;height:0.1522em;width:1.2633em" viewBox='34.67 60.585 12.031 1.45'><desc>$\ldots$</desc><g id='math-379ee6'><use x='34.869' y='61.836' xlink:href='#g0-58'/><use x='39.297' y='61.836' xlink:href='#g0-58'/><use x='43.725' y='61.836' xlink:href='#g0-58'/></g></svg></span>
+  | LabeledStmt(lbl: Label, stmt: Stmt)</code></pre>
+<p class="p noindent para-continued" data-line="224"><span data-line="224"></span>The parser expects only blocks and loops can be labeled. Using <span data-line="224"></span><code class="code code1 language-b3 lang-b3 b3 colorized"><span class="code-escaped">&ell;</span></code><span data-line="224"></span> to represent
+a label identifier, <span data-line="225"></span><code class="code code1 language-b3 lang-b3 b3 colorized">B</code><span data-line="225"></span> to represent a block, and <span data-line="225"></span><code class="code code1 language-b3 lang-b3 b3 colorized">L</code><span data-line="225"></span> to represent a loop, the
+concrete syntax thus has just the following two forms of labeled statements:
+</p>
+<pre class="para-block pre-indented language-b3 lang-b3 b3 colorized" data-line="228" style="display:block"><code><span class="code-escaped">&ell;</span> <span style="color:maroon">&quot;</span><span style="color:maroon">:</span><span style="color:maroon">&quot;</span> B
+<span class="code-escaped">&ell;</span> <span style="color:maroon">&quot;</span><span style="color:maroon">:</span><span style="color:maroon">&quot;</span> L</code></pre>
+<p class="p noindent para-continued" data-line="231"><span data-line="231"></span>To print an anomalous labeled statement, there the <span data-line="231"></span><code class="code code1 language-b3 lang-b3 b3 colorized">stmt</code><span data-line="231"></span> labeled is neither a
+block nor a loop, the printer prints the labeled statement within a pair of
+curly braces, as if it were a block containing a single statement.
+</p><h3 id="sec-if-statements" class="clearnum h2" data-line="235" data-heading-depth="2" style="display:block"><span data-line="235"></span>If statements</h3>
+<p class="p noindent" data-line="237"><span data-line="237"></span>The language has two <span data-line="237"></span><em class="em-low1">if statements</em><span data-line="237"></span>:
+</p>
+<pre class="para-block pre-fenced pre-fenced3 language-dafny lang-dafny dafny colorized" data-line="239" data-line-first="240" style="display:block"><code data-line="240"><span style="color:blue">datatype</span> Stmt =
+  <span class="code-escaped"><svg  class="math-inline math-render-svg math" style="vertical-align:-0.0210em;height:0.1522em;width:1.2633em" viewBox='34.67 60.585 12.031 1.45'><desc>$\ldots$</desc><g id='math-379ee6'><use x='34.869' y='61.836' xlink:href='#g0-58'/><use x='39.297' y='61.836' xlink:href='#g0-58'/><use x='43.725' y='61.836' xlink:href='#g0-58'/></g></svg></span>
+  | If(cond: Expr, thn: Stmt, els: Stmt)
+  | IfCase(cases: <span style="color:teal">seq</span>&lt;Case&gt;)
+
+<span style="color:blue">datatype</span> Case = Case(cond: Expr, body: Stmt)</code></pre>
+<p class="p noindent para-continued" data-line="248"><span data-line="248"></span>The ordinary <span data-line="248"></span><code class="code code1 language-b3 lang-b3 b3 colorized"><span style="color:blue">if</span></code><span data-line="248"></span> statement (<span data-line="248"></span><code class="code code1 language-b3 lang-b3 b3 colorized">If</code><span data-line="248"></span>) deterministically chooses between <span data-line="248"></span><code class="code code1 language-b3 lang-b3 b3 colorized">thn</code><span data-line="248"></span> and <span data-line="248"></span><code class="code code1 language-b3 lang-b3 b3 colorized">els</code><span data-line="248"></span>,
+depending on the value of <span data-line="249"></span><code class="code code1 language-b3 lang-b3 b3 colorized">cond</code><span data-line="249"></span>. It is <span data-line="249"></span><em class="em-low1">total</em><span data-line="249"></span>, meaning that every trace that reaches
+the statement continues into it.
+</p>
+<p class="p indent" data-line="252"><span data-line="252"></span>The <span data-line="252"></span><code class="code code1 language-b3 lang-b3 b3 colorized"><span style="color:blue">if</span>-<span style="color:blue">case</span></code><span data-line="252"></span> statement nondeterministically picks one alternative whose condition
+evaluates to <span data-line="253"></span><code class="code code1 language-b3 lang-b3 b3 colorized"><span style="color:blue">true</span></code><span data-line="253"></span>. This statement is <span data-line="253"></span><em class="em-low1">partial</em><span data-line="253"></span>, because it has no continuation if
+no condition evaluates to <span data-line="254"></span><code class="code code1 language-b3 lang-b3 b3 colorized"><span style="color:blue">true</span></code><span data-line="254"></span>.
+</p>
+<p class="p indent" data-line="256"><span data-line="256"></span>The concrete syntax of <span data-line="256"></span><code class="code code1 language-b3 lang-b3 b3 colorized">If</code><span data-line="256"></span> has four possible forms:
+</p>
+<pre class="para-block pre-indented language-b3 lang-b3 b3 colorized" data-line="258" style="display:block"><code><span style="color:blue">if</span> E B
+<span style="color:blue">if</span> E B<span class="code-escaped"><sub>0</sub></span> <span style="color:blue">else</span> B<span class="code-escaped"><sub>1</sub></span>
+<span style="color:blue">if</span> E B <span style="color:blue">else</span> If
+<span style="color:blue">if</span> E B <span style="color:blue">else</span> IfCase</code></pre>
+<p class="p noindent para-continued" data-line="263"><span data-line="263"></span>The parser turns the first of these forms into an instance of the second form: <span data-line="263"></span><code class="code code1 language-b3 lang-b3 b3 colorized"><span style="color:blue">if</span> E B <span style="color:blue">else</span> {}</code><span data-line="263"></span>.
+When the printer gets an <span data-line="264"></span><code class="code code1 language-b3 lang-b3 b3 colorized"><span style="color:blue">if</span></code><span data-line="264"></span> statement where the <span data-line="264"></span><code class="code code1 language-b3 lang-b3 b3 colorized"><span style="color:blue">else</span></code><span data-line="264"></span> branch is an empty block,
+it omits the <span data-line="265"></span><code class="code code1 language-b3 lang-b3 b3 colorized"><span style="color:blue">else</span></code><span data-line="265"></span> clause altogether. This violates the second of our two stated
+desired properties of the printer, since if the parser gets the second form with an
+empty <span data-line="267"></span><code class="code code1 language-b3 lang-b3 b3 colorized"><span style="color:blue">else</span></code><span data-line="267"></span> block, then the printer will print it as the first form.
+</p>
+<p class="p indent" data-line="269"><span data-line="269"></span>The concrete syntax of <span data-line="269"></span><code class="code code1 language-b3 lang-b3 b3 colorized">IfCase</code><span data-line="269"></span> corresponds to the abstract syntax, but with the restriction
+that there always be at least one <span data-line="270"></span><code class="code code1 language-b3 lang-b3 b3 colorized"><span style="color:blue">case</span></code><span data-line="270"></span>. That is, using <span data-line="270"></span><code class="code code1 language-b3 lang-b3 b3 colorized">C</code><span data-line="270"></span> to denote a <span data-line="270"></span><code class="code code1 language-b3 lang-b3 b3 colorized">Case</code><span data-line="270"></span>,
+the concrete syntax is:
+</p>
+<pre class="para-block pre-indented language-b3 lang-b3 b3 colorized" data-line="273" style="display:block"><code><span style="color:blue">if</span> C<span class="code-escaped"><sup>+</sup></span></code></pre>
+<p class="p noindent para-continued" data-line="275"><span data-line="275"></span>If the printer get an anomalous <span data-line="275"></span><code class="code code1 language-b3 lang-b3 b3 colorized">IfCase</code><span data-line="275"></span> with an empty sequence, it prints it as
+</p>
+<pre class="para-block pre-indented language-b3 lang-b3 b3 colorized" data-line="277" style="display:block"><code><span style="color:blue">if</span> <span style="color:blue">case</span> <span style="color:blue">false</span> {}</code></pre><span data-line=""></span></div>
+<svg id='math-svg-paths' style='display:none' version='1.1' viewBox='0 0 0 0' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink'>
+<defs>
+<path id='g0-58' d='M1.913-.528C1.913-.817 1.674-1.056 1.385-1.056S.857-.817 .857-.528S1.096 0 1.385 0S1.913-.239 1.913-.528Z'/>
+</defs>
+</svg>
+
+</body>
+
+</html>

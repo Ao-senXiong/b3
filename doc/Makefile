@@ -7,3 +7,4 @@ pdf:
 
 html:
 	madoko -vv --odir=out krml301
+	madoko -vv --odir=out krml304

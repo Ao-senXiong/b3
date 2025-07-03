@@ -11,7 +11,7 @@
     "contract","axiom",
     "type","partition",
     "function","predicate","procedure",
-    "var",
+    "var","val",
     "define",
     "inout","out","call",
     "assert","assume","check","learn","exit","then","else","if","return",

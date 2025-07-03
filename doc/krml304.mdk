@@ -1,0 +1,256 @@
+Title         : B3 statements: Syntax, raw AST, and printing
+Title Footer  : Manuscript KRML 304, 3 July 2025
+
+<!--
+History:
+  * 3 July 2025, starting writing
+-->
+
+Author        : K. Rustan M. Leino
+
+Colorizer     : dafnyx
+
+Colorizer     : b3
+~Pre,~Code    : replace="//\\lambda/\(&lambda;\)\
+                         //\.\.\./\($\ldots$\)\
+                         //\\bot/\($\bot$\)\
+                         //!=/\(&ne;\)\
+                         //\\not /\(&not;\)\
+                         //\\Imp/\($\Longrightarrow$\)\
+                         //\/\\/\(&Wedge;\)\
+                         //\\\//\(&Vee;\)\
+                         //\\ell/\(&ell;\)\
+                         //\\sigma/\(&sigma;\)\
+                         //\\state/\(&Omega;\)\
+                         //\\emptyseq/\($\varepsilon$\)\
+                         //\+\+/\($\cdot$\)\
+                         //\[\[/\($\llbracket$\)\
+                         //\]\]/\($\rrbracket$\)\
+                         //\*\*/*\
+                         //\*,/\(^*,^\)\
+                         //\*/\(^*^\)\
+                         //\+/\(^+^\)\
+                         //\?/\(^?^\)\
+                         //\'0/\(~0~\)\
+                         //\'1/\(~1~\)\
+                         //\\hole/\($\square$\)\
+                         //g"
+                language=b3
+
+Package       : times
+Package       : [T1]fontenc
+Package       : [scaled=0.85]beramono
+
+Css Header:
+    .pre-indented { margin-left: 20pt; }
+    .pre-fenced { margin-left: 20pt; }
+
+Wedge        : &#8896;
+wedge        : &#8743;
+Vee          : &#8897;
+vee          : &#8744;
+bot          : &#8869;
+not          : &not;
+ell          : &ell;
+
+[INCLUDE=Zero]
+
+
+[TITLE]
+
+~ abstract
+This document describes the abstract syntax, concrete syntax, and printing related
+to `RawAst` statements in the B3 implementation.
+~
+
+# Introduction {-}
+
+The abstract syntax captured by the types in the `RawAst` module of the B3 implementation
+are more general than the concrete syntax that is parsed. This gives rise to an abstract syntax
+tree (AST) that is easier to process, because it is more general and abstracts over restrictions
+in the syntax.
+
+An AST is said to be _anomalous_ if it's not the direct counterpart of what the parser accepts.
+
+Printing is defined on the general AST, not just on the restricted way in which the parser creates
+such ASTs. Two desired properties of the printed output are:
+
+* it should be legal syntax, so the parser can parse it, and
+* a program that has been parsed into the AST and then printed should come out looking like the original.
+
+This document describes the relation between these three components.
+
+## Blocks {-}
+
+In the AST, a _block statement_, or _block_ for short, is a list of statements:
+
+``` dafny
+datatype Stmt =
+  ...
+  | Block(stmts: seq<Stmt>)
+```
+
+The concrete syntax for a block is a pair of curly braces surrounding a sequence of
+(zero of more) statements. Here and throughout, the concrete syntax shown uses `S`
+to denote a statement.
+
+    "{" S* "}"
+
+Printing of a block is straightforward.
+
+## Procedure bodies {-}
+
+A procedure has an optional body:
+
+``` dafny
+datatype Procedure = Procedure(..., body: Option<Stmt>)
+```
+
+In the AST, the body is an optional `Stmt`. However, the parser only accepts a block.
+In an anomalous AST, where the body is some `Stmt` that is not a `Block`, the printer
+prints the anomalous body inside a pair of curly braces, as if it were a block containing
+a single statement.
+
+## Loops {-}
+
+A _loop_ statement contains a body. In the AST, the body is a `Stmt`:
+
+``` dafny
+datatype Stmt =
+  ...
+  | Loop(..., body: Stmt)
+```
+
+The parser only accepts a block as a loop body. Thus, as for procedure bodies with
+an anomalous body, a loop with an anomalous body prints the body within a pair of
+curly braces, as if it were a block containing a single statement.
+
+## Variable declarations {-}
+
+A _variable declaration_ introduces a new variable (whose name may shadow a previously
+declared variable) for use in a given statement body.
+
+``` dafny
+datatype Stmt =
+  ...
+  | VarDecl(v: Variable, init: Option<Expr>, body: Stmt)
+
+datatype Variable = Variable(name: string, typ: TypeName, isMutable: bool, ...)
+```
+
+Variable declarations are parsed in four forms of concrete syntax:
+
+    var x ":" T S*
+    var x ":" T ":=" E S*
+    val x ":" T S*
+    val x ":" T ":=" E S*
+
+where `x` is an identifier, `T` is a type, and `E` is an expression.
+Of these, `x` and `T` are the `name` and `typ` of the `Variable` that is part of the
+AST `VarDecl`. The keyword `var` says `isMutable := true` and the keyword
+`val` says `isMutable := false`.
+The presence or absence of `":=" E` correspond to the `init` in the AST.
+
+In the parsed form, the body is not a single statement but a sequence of statements.
+This sequence is parsed as long as possible, which means that the parser only ever
+generates a variable declaration at the end of an enclosing statement sequence (which
+is typically in a block). The parsed statement sequence is placed in a `Block`
+and this `Block` is used as the `body` of the `VarDecl`.
+
+To print this structure when `body` is a `Block`, only the `Block`'s statement sequence
+is printed, without enclosing curly braces.
+An anomalous `VarDecl`, where `body` is not a `Block`, prints the body as
+the statement that it is.
+
+## Forall assertions {-}
+
+There is one more variable declaration.
+It is the _forall statement_, which introduces a bound variable for an assertion
+statement.
+
+``` dafny
+datatype Stmt =
+  ...
+  | AForall(v: Variable, body: Stmt)
+```
+
+Because of the way it tends to be used, namely to be more intentional about the
+end of the scope of its bound variable, the forall statement has a different concrete
+syntax than the other variable declarations.
+
+    forall x ":" T "{" S* "}"
+
+The parser records `v` as `Variable(name := x, typ := T, isMutable := false)`
+and `body` as the block statement parsed.
+
+There are two possible anomalies.
+One possible anomaly is that the AST for a forall statement contains
+a variable where `isMutable` is `true`. The printer ignores the `isMutable` field
+and prints the name and type of the bound variable. The other possible anomaly
+is that `body` is not a block statement. In that case, the printer prints the
+body within a pair of curly braces, as if it were a block containing a single statement.
+
+## Labeled statements {-}
+
+A _labeled statement_ is a label followed by a statement:
+
+``` dafny
+datatype Stmt =
+  ...
+  | LabeledStmt(lbl: Label, stmt: Stmt)
+```
+
+The parser expects only blocks and loops can be labeled. Using `\ell` to represent
+a label identifier, `B` to represent a block, and `L` to represent a loop, the
+concrete syntax thus has just the following two forms of labeled statements:
+
+    \ell ":" B
+    \ell ":" L
+
+To print an anomalous labeled statement, there the `stmt` labeled is neither a
+block nor a loop, the printer prints the labeled statement within a pair of
+curly braces, as if it were a block containing a single statement.
+
+## If statements {-}
+
+The language has two _if statements_:
+
+``` dafny
+datatype Stmt =
+  ...
+  | If(cond: Expr, thn: Stmt, els: Stmt)
+  | IfCase(cases: seq<Case>)
+
+datatype Case = Case(cond: Expr, body: Stmt)
+```
+
+The ordinary `if` statement (`If`) deterministically chooses between `thn` and `els`,
+depending on the value of `cond`. It is _total_, meaning that every trace that reaches
+the statement continues into it.
+
+The `if-case` statement nondeterministically picks one alternative whose condition
+evaluates to `true`. This statement is _partial_, because it has no continuation if
+no condition evaluates to `true`.
+
+The concrete syntax of `If` has four possible forms:
+
+    if E B
+    if E B'0 else B'1
+    if E B else If
+    if E B else IfCase
+
+The parser turns the first of these forms into an instance of the second form: `if E B else {}`.
+When the printer gets an `if` statement where the `else` branch is an empty block,
+it omits the `else` clause altogether. This violates the second of our two stated
+desired properties of the printer, since if the parser gets the second form with an
+empty `else` block, then the printer will print it as the first form.
+
+The concrete syntax of `IfCase` corresponds to the abstract syntax, but with the restriction
+that there always be at least one `case`. That is, using `C` to denote a `Case`,
+the concrete syntax is:
+
+    if C+
+
+If the printer get an anomalous `IfCase` with an empty sequence, it prints it as
+
+    if case false {}
