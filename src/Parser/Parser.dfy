@@ -132,8 +132,9 @@ module Parser {
     T("procedure")
     .e_I(parseId).Then(name =>
       parseParenthesized(parseCommaDelimitedSeq(parseFormal)).Then(formals =>
-        ParseWithContext(gallery, (c: RecSel) => parseAExprSeq("requires", c)).Then(pre =>
-          ParseWithContext(gallery, (c: RecSel) => parseAExprSeq("ensures", c)).Then(post =>
+        var c := GetRecMapSel(gallery);
+        parseAExprSeq("requires", c).Then(pre =>
+          parseAExprSeq("ensures", c).Then(post =>
             RecMap(gallery, "block").Option().M(optBody =>
               Procedure(name, formals, pre, post, optBody)
             )
@@ -169,48 +170,13 @@ module Parser {
       "if-cont" := RecMapDef(0, (c: RecSel) => parseIfCont(c).M(s => s))
     ]
 
+  function GetRecMapSel<R(!new)>(underlying: map<string, RecMapDef<R>>): RecMapSel<R> {
+    (fun: string) => RecMap(underlying, fun)
+  }
+
   function ParseWithContext<G(!new), R>(underlyingGallery: map<string, RecMapDef<G>>, parser: RecMapSel<G> -> B<R>): B<R> {
-    var b := MyRecMapSpecialized(underlyingGallery, parser);
-    B((input: Input) =>
-      var (result, remaining) :- b.apply(input);
-      P.ParseSuccess(result, remaining))
-  }
-
-  function MyRecMapSpecialized<G(!new), R>(underlyingGallery: map<string, RecMapDef<G>>, parser: RecMapSel<G> -> B<R>): B<R> {
-    B((input: Input) =>
-      var callback: P.ParserSelector<G> := Callback(UnderlyingP(underlyingGallery), "<context>", 0, P.A.Length(input));
-      var c: RecMapSel<G> := (name: string) => B(callback(name));
-      parser(c).apply(input)
-    )
-  }
-
-  function UnderlyingP<R>(underlying: map<string, RecMapDef<R>>): map<string, P.RecursiveDef<R>> {
-    map k <- underlying ::
-      P.RecursiveDef(
-        underlying[k].order,
-        (selector: P.ParserSelector<R>) =>
-          underlying[k].definition(
-            (name: string) => B(selector(name))                  
-          ).apply)
-  }
-
-  function Callback<R(!new)>(underlying: map<string, P.RecursiveDef<R>>, fun: string, orderFun: nat, initialInputLength: nat): P.ParserSelector<R> {
-    (fun': string) =>
-      if fun' !in underlying.Keys then
-        P.FailWith(fun' + " not defined", P.Fatal)
-      else
-        var orderFun', definitionFun' := underlying[fun'].order, underlying[fun'].definition;
-        (remaining: Input) =>
-          if P.A.Length(remaining) < initialInputLength || (P.A.Length(remaining) == initialInputLength && orderFun' < orderFun) then
-            P.RecursiveMap_(underlying, fun', remaining)
-          else if P.A.Length(remaining) == initialInputLength then
-            P.ParseFailure(P.Recoverable,
-              P.FailureData(
-                "non-progressing recursive call requires that order of '" + fun' + "' (" + P.Strings.OfInt(orderFun') + ") " +
-                "is lower than the order of '" + fun + "' (" + P.Strings.OfInt(orderFun) + ")",
-              remaining, Option.None))
-          else
-            P.ParseFailure(P.Fatal, P.FailureData("parser did not return a suffix of the input", remaining, Option.None))
+    var c := GetRecMapSel(underlyingGallery);
+    parser(c)
   }
 
   // ----- Statements
