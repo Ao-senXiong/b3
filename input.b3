@@ -34,13 +34,12 @@ exit MyLabel
   else if BbB {}
   else if CcC {}
 
-  if {
-    case 3 => return
-    case 4 => exit four
-  }
+  if
+    case 3 { return }
+    case 4 { exit four }
 
   if 600 { exit yes }
-  else if { case 601 => case 602 => case 603 => check 9 }
+  else if case 601 { } case 602 { } case 603 { check 9 }
 
   x := 800
   y := 801

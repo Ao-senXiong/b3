@@ -31,6 +31,10 @@ module RawAst {
       }
       return None;
     }
+
+    predicate IsType(typ: TypeName) {
+      typ in BuiltInTypes || typ in types
+    }
   }
 
   // Procedures
@@ -38,19 +42,20 @@ module RawAst {
   datatype Procedure = Procedure(name: string, parameters: seq<Parameter>, pre: seq<AExpr>, post: seq<AExpr>, body: Option<Stmt>)
   {
     predicate WellFormed(b3: Program) {
+      && (forall p <- parameters :: LegalVariableName(p.name, {}) && b3.IsType(p.typ))
       && Parameter.UniqueNames(parameters)
-      && var preScope := map p <- parameters | p.mode.IsIncoming() :: p.v.name := p.v;
-      && (forall ae <- pre :: ae.WellFormed(b3, preScope, {}))
-      && var scope := map p <- parameters :: p.v.name := p.v;
-      && (forall ae <- post :: ae.WellFormed(b3, scope, {}))
-      && var localNames := set p <- parameters | p.mode.IsOutgoing() :: p.v.name;
-      && (body == None || body.value.WellFormed(b3, scope, localNames, {}))
+      && var preScope := set p <- parameters | p.mode.IsIncoming() :: p.name;
+      && var bodyScope := set p <- parameters :: p.name;
+      && var postScope := bodyScope + (set p <- parameters | p.mode == InOut :: OldName(p.name));
+      && (forall ae <- pre :: ae.WellFormed(b3, preScope))
+      && (forall ae <- post :: ae.WellFormed(b3, postScope))
+      && (body == None || body.value.WellFormed(b3, bodyScope, {}, false))
     }
   }
 
-  type Scope = map<string, Variable>
+  type Scope = set<string>
 
-  datatype Variable = Variable(name: string, typ: TypeName, isMutable: bool) // TODO: add auto-invariant
+  datatype Variable = Variable(name: string, isMutable: bool, typ: TypeName) // TODO: add auto-invariant
   {
     static predicate UniqueNames(variables: seq<Variable>) {
       forall i, j :: 0 <= i < j < |variables| ==> variables[i].name != variables[j].name
@@ -61,29 +66,17 @@ module RawAst {
     }
   }
 
-  datatype Parameter = Parameter(mode: ParameterMode, v: Variable)
+  datatype Parameter = Parameter(name: string, mode: ParameterMode, typ: TypeName)
   {
-    static function ToVariables(parameters: seq<Parameter>): seq<Variable> {
-      SeqMap(parameters, (p: Parameter) => p.v)
-    }
-
-    static predicate UniqueNames(parameters: seq<Parameter>): (unique: bool)
-      ensures unique ==> forall i, j :: 0 <= i < j < |parameters| ==> parameters[i].v.name != parameters[j].v.name
-      ensures unique ==> UniquelyNamed(set p <- parameters)
-    {
-      var vars := ToVariables(parameters);
-      forall i, j | 0 <= i < j < |parameters|
-        ensures Variable.UniqueNames(vars) ==> parameters[i].v.name != parameters[j].v.name
-      {
-        assert vars[i] == parameters[i].v && vars[j] == parameters[j].v;
-      }
-      Variable.UniqueNames(vars)
+    static predicate UniqueNames(parameters: seq<Parameter>) {
+      && (forall i, j :: 0 <= i < j < |parameters| ==> parameters[i].name != parameters[j].name)
     }
 
     static predicate UniquelyNamed(parameters: set<Parameter>) {
-      forall p0 <- parameters, p1 <- parameters :: p0.v.name == p1.v.name ==> p0 == p1
+      forall p0 <- parameters, p1 <- parameters :: p0.name == p1.name ==> p0 == p1
     }
   }
+
   datatype ParameterMode = In | InOut | Out
   {
     predicate IsIncoming() {
@@ -94,12 +87,7 @@ module RawAst {
     }
   }
 
-  const OldPrefix: string := "old$"
-
-  function OldName(name: string): string {
-    OldPrefix + name
-  }
-
+  /*
   lemma UniqueNamesImpliesUniqueOldNames(parameters: set<Parameter>)
     requires Parameter.UniquelyNamed(parameters)
     ensures forall p0 <- parameters, p1 <- parameters :: OldName(p0.v.name) == OldName(p1.v.name) ==> p0 == p1
@@ -111,135 +99,135 @@ module RawAst {
       assert p1.v.name == OldName(p1.v.name)[|OldPrefix|..];
     }
   }
+  */
 
-  predicate LegalVariableName(name: string, localNames: set<string>) {
+  const OldPrefix: string := "old$"
+
+  function OldName(name: string): string {
+    OldPrefix + name
+  }
+
+  predicate LegalVariableName(name: string, scope: Scope) {
     !("_" <= name) &&
     !(OldPrefix <= name) &&
-    name !in localNames
+    name !in scope
   }
 
   // Statements
 
   datatype Stmt =
-    | VarDecl(v: Variable)
-    | ValDecl(v: Variable, rhs: Expr)
+    | VarDecl(v: Variable, init: Option<Expr>, body: Stmt)
     | Assign(lhs: string, rhs: Expr)
-    | Block(lbl: Label, stmts: seq<Stmt>)
+    | Block(stmts: seq<Stmt>)
     | Call(name: string, args: seq<CallArgument>)
     // assertions
     | Check(cond: Expr)
     | Assume(cond: Expr)
     | Assert(cond: Expr)
-    | AForall(v: Variable, body: Stmt)
+    | AForall(name: string, typ: TypeName, body: Stmt)
     // Control flow
     | If(cond: Expr, thn: Stmt, els: Stmt)
     | IfCase(cases: seq<Case>)
-    | Loop(lbl: Label, invariants: seq<AExpr>, body: Stmt)
-    | Exit(lbl: Label)
+    | Loop(invariants: seq<AExpr>, body: Stmt)
+    | LabeledStmt(lbl: string, stmt: Stmt)
+    | Exit(maybeLabel: Option<string>)
     | Return
     // Error reporting
     | Probe(e: Expr)
   {
     predicate ContainsAssertions() {
       match this
-      case Block(_, stmts) =>
+      case VarDecl(_, _, body) =>
+        body.ContainsAssertions()
+      case Block(stmts) =>
         exists s <- stmts :: s.ContainsAssertions()
       case Check(_) => true
       case Assume(_) => true
       case Assert(_) => true
-      case AForall(_, _) => true
+      case AForall(_, _, _) => true
       case If(_, thn, els) =>
         thn.ContainsAssertions() || els.ContainsAssertions()
       case IfCase(cases) =>
         exists c <- cases :: c.body.ContainsAssertions()
-      case Loop(_, _, body) =>
+      case Loop(_, body) =>
+        body.ContainsAssertions()
+      case LabeledStmt(_, body) =>
         body.ContainsAssertions()
       case _=> false
     }
 
     predicate ContainsNonAssertions() {
       match this
-      case VarDecl(_) => true
+      case VarDecl(_, _, body) =>
+        body.ContainsNonAssertions()
       case Assign(_, _) => true
-      case Block(_, stmts) =>
+      case Block(stmts) =>
         exists s <- stmts :: s.ContainsNonAssertions()
       case Call(_, _) => true
       case If(_, thn, els) =>
         thn.ContainsNonAssertions() || els.ContainsNonAssertions()
       case IfCase(cases) =>
         exists c <- cases :: c.body.ContainsNonAssertions()
-      case Loop(_, _, body) => true
+      case Loop(_, _) => true // loops are not allowed in assertions
+      case LabeledStmt(_, _) => true // assertions are not allowed to be labeled
       case Exit(_) => true
       case Return => true
       case Probe(_) => true
       case _ => false
     }
 
-    predicate WellFormed(b3: Program, scope: Scope, localNames: set<string>, labels: set<string>) {
+    predicate WellFormed(b3: Program, scope: Scope, labels: set<string>, insideLoop: bool) {
       match this
-      case VarDecl(v) =>
-        v.isMutable && LegalVariableName(v.name, localNames)
-      case ValDecl(v, rhs) =>
-        && !v.isMutable && LegalVariableName(v.name, localNames)
-        && rhs.Type(b3, scope) == Some(v.typ)
+      case VarDecl(v, init, body) =>
+        && LegalVariableName(v.name, scope)
+        && b3.IsType(v.typ)
+        && (init.Some? ==> init.value.WellFormed(b3, scope))
+        && body.WellFormed(b3, scope + {v.name}, labels, insideLoop)
       case Assign(lhs, rhs) =>
-        && lhs in scope.Keys
-        && var v := scope[lhs];
-        && v.isMutable && rhs.Type(b3, scope) == Some(v.typ)
-      case Block(lbl, stmts) =>
-        lbl.IsLegalIn(labels) && WellFormedStmtSeq(stmts, b3, scope, {}, lbl.AddTo(labels))
+        && lhs in scope
+        && rhs.WellFormed(b3, scope)
+      case Block(stmts) =>
+        forall stmt <- stmts :: stmt.WellFormed(b3, scope, labels, insideLoop)
       case Call(name, args) =>
         exists proc <- b3.procedures ::
           && name == proc.name
           && MatchingParameters(proc.parameters, args)
           && (forall i :: 0 <= i < |args| ==> args[i].WellFormed(proc.parameters[i], b3, scope))
       case Check(cond) =>
-        cond.Type(b3, scope) == Some(BoolTypeName)
+        cond.WellFormed(b3, scope)
       case Assume(cond) =>
-        cond.Type(b3, scope) == Some(BoolTypeName)
+        cond.WellFormed(b3, scope)
       case Assert(cond) =>
-        cond.Type(b3, scope) == Some(BoolTypeName)
-      case AForall(v, body) =>
-        && !v.isMutable && LegalVariableName(v.name, localNames)
-        && body.WellFormed(b3, scope[v.name := v], localNames, labels)
+        cond.WellFormed(b3, scope)
+      case AForall(name, typ, body) =>
+        && LegalVariableName(name, scope)
+        && b3.IsType(typ)
+        && body.WellFormed(b3, scope + {name}, labels, insideLoop)
         && !body.ContainsNonAssertions()
       case If(cond, thn, els) =>
-        && cond.Type(b3, scope) == Some(BoolTypeName)
-        && thn.WellFormed(b3, scope, localNames, labels)
-        && els.WellFormed(b3, scope, localNames, labels)
+        && cond.WellFormed(b3, scope)
+        && thn.WellFormed(b3, scope, labels, insideLoop)
+        && els.WellFormed(b3, scope, labels, insideLoop)
       case IfCase(cases) =>
         && |cases| != 0
         && forall i :: 0 <= i < |cases| ==> var cs := cases[i];
-            && cs.cond.Type(b3, scope) == Some(BoolTypeName)
-            && cs.body.WellFormed(b3, scope, localNames, labels)
-      case Loop(lbl, invariants, body) =>
-        && lbl.IsLegalIn(labels)
-        && (forall ae <- invariants :: ae.WellFormed(b3, scope, labels))
-        && body.WellFormed(b3, scope, localNames, lbl.AddTo(labels))
+            && cs.cond.WellFormed(b3, scope)
+            && cs.body.WellFormed(b3, scope, labels, insideLoop)
+      case Loop(invariants, body) =>
+        && (forall ae <- invariants :: ae.WellFormed(b3, scope))
+        && body.WellFormed(b3, scope, labels, true)
+      case LabeledStmt(lbl, body) =>
+        && lbl !in labels
+        && body.WellFormed(b3, scope, labels + {lbl}, insideLoop)
       case Exit(lbl) =>
         match lbl {
-          case NamedLabel(name) => name in labels
-          case AnonymousLabel => true
-          case ReturnLabel => false
+          case Some(labelName) => labelName in labels
+          case None => insideLoop
         }
       case Return =>
         true
       case Probe(e) =>
-        e.Type(b3, scope).Some?
-    }
-
-    static predicate WellFormedStmtSeq(stmts: seq<Stmt>, b3: Program, scope: Scope, localNames: set<string>, labels: set<string>) {
-      if stmts == [] then
-        true
-      else
-        var stmt, cont := stmts[0], stmts[1..];
-        && stmt.WellFormed(b3, scope, localNames, labels)
-        && var (scope', localNames') :=
-            match stmt
-            case VarDecl(v) => (scope[stmt.v.name := stmt.v], localNames + {stmt.v.name})
-            case ValDecl(v, _) => (scope[stmt.v.name := stmt.v], localNames + {stmt.v.name})
-            case _ => (scope, localNames);
-          WellFormedStmtSeq(cont, b3, scope', localNames', labels)
+        e.WellFormed(b3, scope)
     }
 
     static predicate MatchingParameters(parameters: seq<Parameter>, args: seq<CallArgument>) {
@@ -249,26 +237,7 @@ module RawAst {
     }
 
     predicate IsEmptyBlock() {
-      Block? && lbl == AnonymousLabel && stmts == []
-    }
-  }
-
-  datatype Label =
-    | NamedLabel(name: string)
-    | AnonymousLabel
-    | ReturnLabel
-  {
-    predicate IsLegalIn(labels: set<string>) {
-      match this
-      case NamedLabel(name) => name !in labels
-      case AnonymousLabel => true
-      case ReturnLabel => false
-    }
-
-    function AddTo(labels: set<string>): set<string> {
-      match this
-      case NamedLabel(name) => labels + {name}
-      case _ => labels
+      Block? && |stmts| == 0
     }
   }
 
@@ -278,12 +247,12 @@ module RawAst {
     | AExpr(e: Expr)
     | AAssertion(s: Stmt)
   {
-    predicate WellFormed(b3: Program, scope: Scope, labels: set<string>) {
+    predicate WellFormed(b3: Program, scope: Scope) {
       match this
       case AExpr(e) =>
-        e.Type(b3, scope) == Some(BoolTypeName)
+        e.WellFormed(b3, scope)
       case AAssertion(s) =>
-        s.WellFormed(b3, scope, {}, labels) && !s.ContainsNonAssertions()
+        s.WellFormed(b3, scope, {}, false) && !s.ContainsNonAssertions()
     }
 
     ghost predicate Valid() {
@@ -308,17 +277,17 @@ module RawAst {
   // ValidAssertionStatement(s) is a deep version of !s.ContainsNonAssertions()
   ghost predicate ValidAssertionStatement(s: Stmt) {
     match s
-    case ValDecl(_, _) =>
-      true
+    case VarDecl(v, init, body) =>
+      !v.isMutable && init.Some? && ValidAssertionStatement(body)
     case Check(_) =>
       true
     case Assume(e) =>
       true
     case Assert(e) =>
       true
-    case AForall(v, body) =>
+    case AForall(_, _, body) =>
       ValidAssertionStatement(body)
-    case Block(_, stmts) =>
+    case Block(stmts) =>
       forall s <- stmts :: ValidAssertionStatement(s)
     case If(cond, thn, els) =>
       ValidAssertionStatement(thn) && ValidAssertionStatement(els)
@@ -332,18 +301,17 @@ module RawAst {
     requires ValidAssertionStatement(s)
   {
     match s
-    case ValDecl(_, _) =>
-      // this is a degenerate case, where the let binding is not used anywhere
-      Expr.CreateTrue()
+    case VarDecl(v, Some(rhs), body) =>
+      Expr.CreateLet(v, rhs, Learn(body))
     case Check(_) =>
       Expr.CreateTrue()
     case Assume(e) =>
       e
     case Assert(e) =>
       e
-    case AForall(v, body) =>
-      Expr.CreateForall(v, Learn(body))
-    case Block(_, stmts) =>
+    case AForall(name, typ, body) =>
+      Expr.CreateForall(Variable(name, false, typ), Learn(body))
+    case Block(stmts) =>
       LearnSeq(stmts)
     case If(cond, thn, els) =>
       Expr.CreateAnd(
@@ -361,12 +329,8 @@ module RawAst {
       Expr.CreateTrue()
     else
       var s, tail := stmts[0], stmts[1..];
-      match s
-      case ValDecl(v, rhs) =>
-        Expr.CreateLet(v, rhs, LearnSeq(tail))
-      case _ =>
-        assert ValidAssertionStatement(s);
-        Expr.CreateAnd(Learn(s), LearnSeq(tail))
+      assert ValidAssertionStatement(s);
+      Expr.CreateAnd(Learn(s), LearnSeq(tail))
   }
 
   datatype CallArgument =
@@ -376,19 +340,10 @@ module RawAst {
     predicate WellFormed(formal: Parameter, b3: Program, scope: Scope) {
       match this
       case ArgExpr(e) =>
-        formal.mode == In && e.Type(b3, scope) == Some(formal.v.typ)
+        formal.mode == In && e.WellFormed(b3, scope)
       case ArgLValue(_, name) =>
         && formal.mode.IsOutgoing()
-        && name in scope && var v := scope[name];
-        && v.isMutable && v.typ == formal.v.typ
-    }
-
-    function Eval(vals: Valuation): Value
-      requires ArgLValue? ==> name in vals
-    {
-      match this
-      case ArgExpr(e) => e.Eval(vals)
-      case ArgLValue(_, name) => vals[name]
+        && name in scope
     }
   }
   
@@ -399,10 +354,8 @@ module RawAst {
     | Const(value: int)
     | IdExpr(name: string)
   {
-    function Type(b3: Program, scope: Scope): Option<string>
-    { Some(IntTypeName) } // TODO
-    function Eval(vals: Valuation): Value // TODO: either make Option<Value> or require Type(...).Some?
-    { 3 } // TODO
+    predicate WellFormed(b3: Program, scope: Scope)
+    { true } // TODO
 
     static function CreateTrue(): Expr
     { Const(10) } // TODO

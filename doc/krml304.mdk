@@ -1,8 +1,9 @@
 Title         : B3 statements: Syntax, raw AST, and printing
-Title Footer  : Manuscript KRML 304, 3 July 2025
+Title Footer  : Manuscript KRML 304, 5 July 2025
 
 <!--
 History:
+  * 5 July 2025, revise input
   * 3 July 2025, starting writing
 -->
 
@@ -133,9 +134,8 @@ declared variable) for use in a given statement body.
 ``` dafny
 datatype Stmt =
   ...
-  | VarDecl(v: Variable, init: Option<Expr>, body: Stmt)
-
-datatype Variable = Variable(name: string, typ: TypeName, isMutable: bool, ...)
+  | VarDecl(name: string, isMutable: bool, typ: TypeName,
+            init: Option<Expr>, body: Stmt)
 ```
 
 Variable declarations are parsed in four forms of concrete syntax:
@@ -146,19 +146,28 @@ Variable declarations are parsed in four forms of concrete syntax:
     val x ":" T ":=" E S*
 
 where `x` is an identifier, `T` is a type, and `E` is an expression.
-Of these, `x` and `T` are the `name` and `typ` of the `Variable` that is part of the
-AST `VarDecl`. The keyword `var` says `isMutable := true` and the keyword
-`val` says `isMutable := false`.
+Of these, `x` and `T` are the `name` and `typ` of the `VarDecl`. The keyword
+`var` says `isMutable := true` and the keyword `val` says `isMutable := false`.
 The presence or absence of `":=" E` correspond to the `init` in the AST.
 
 In the parsed form, the body is not a single statement but a sequence of statements.
 This sequence is parsed as long as possible, which means that the parser only ever
-generates a variable declaration at the end of an enclosing statement sequence (which
-is typically in a block). The parsed statement sequence is placed in a `Block`
+generates a variable declaration at the end of an enclosing statement sequence inside
+a block. The parsed statement sequence is placed in a `Block`
 and this `Block` is used as the `body` of the `VarDecl`.
 
-To print this structure when `body` is a `Block`, only the `Block`'s statement sequence
-is printed, without enclosing curly braces.
+To reverse this process for printing in the presence of a possibly anomalous AST,
+two considerations arise.
+
+One consideration is that the concrete syntax expects the variable declaration's body
+to end in an enclosing block. This can be handled by printing the variable declaration
+inside a pair of curly braces. However, in the expected case where the variable
+declaration is already the last statement in an enclosing block, there is no need to
+add any curly braces.
+
+The other consideration is that parsing introduced a `Block` to hold the statement
+sequences that form the body of the variable declaration. To reverse that process,
+only the `Block`'s statement sequence is printed, without enclosing curly braces.
 An anomalous `VarDecl`, where `body` is not a `Block`, prints the body as
 the statement that it is.
 
@@ -171,23 +180,19 @@ statement.
 ``` dafny
 datatype Stmt =
   ...
-  | AForall(v: Variable, body: Stmt)
+  | AForall(name: string, typ: TypeName, body: Stmt)
 ```
 
 Because of the way it tends to be used, namely to be more intentional about the
 end of the scope of its bound variable, the forall statement has a different concrete
-syntax than the other variable declarations.
+syntax than the other variable declarations. Using `B` to represent a block statement,
+the concrete syntax is
 
-    forall x ":" T "{" S* "}"
+    forall x ":" T B
 
-The parser records `v` as `Variable(name := x, typ := T, isMutable := false)`
-and `body` as the block statement parsed.
+The parser records the components of the AST as `x`, `T`, and `B`.
 
-There are two possible anomalies.
-One possible anomaly is that the AST for a forall statement contains
-a variable where `isMutable` is `true`. The printer ignores the `isMutable` field
-and prints the name and type of the bound variable. The other possible anomaly
-is that `body` is not a block statement. In that case, the printer prints the
+In the anomalous case where `body` is not a block statement, the printer prints the
 body within a pair of curly braces, as if it were a block containing a single statement.
 
 ## Labeled statements {-}
@@ -201,7 +206,7 @@ datatype Stmt =
 ```
 
 The parser expects only blocks and loops can be labeled. Using `\ell` to represent
-a label identifier, `B` to represent a block, and `L` to represent a loop, the
+a label identifier, and `L` to represent a loop, the
 concrete syntax thus has just the following two forms of labeled statements:
 
     \ell ":" B
@@ -224,14 +229,6 @@ datatype Stmt =
 datatype Case = Case(cond: Expr, body: Stmt)
 ```
 
-The ordinary `if` statement (`If`) deterministically chooses between `thn` and `els`,
-depending on the value of `cond`. It is _total_, meaning that every trace that reaches
-the statement continues into it.
-
-The `if-case` statement nondeterministically picks one alternative whose condition
-evaluates to `true`. This statement is _partial_, because it has no continuation if
-no condition evaluates to `true`.
-
 The concrete syntax of `If` has four possible forms:
 
     if E B
@@ -246,11 +243,29 @@ desired properties of the printer, since if the parser gets the second form with
 empty `else` block, then the printer will print it as the first form.
 
 The concrete syntax of `IfCase` corresponds to the abstract syntax, but with the restriction
-that there always be at least one `case`. That is, using `C` to denote a `Case`,
-the concrete syntax is:
+that there always be at least one `case`. That is, the concrete syntax is
 
     if C+
+
+where `C` denotes
+
+    case E B
 
 If the printer get an anomalous `IfCase` with an empty sequence, it prints it as
 
     if case false {}
+
+## Assertion expressions {-}
+
+There are two forms of assertion expressions:
+
+``` dafny
+datatype AExpr =
+  | AExpr(e: Expr)
+  | AAssertion(s: Stmt)
+```
+
+In the second form, the concrete syntax expects the assertion statement `s` to be a block statement.
+
+In the case of an anomalous AST where `s` is not a block statement, `s` is printed
+inside a pair of curly braces, as if it were a block containing a single statement.

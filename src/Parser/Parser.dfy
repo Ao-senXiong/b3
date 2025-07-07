@@ -76,7 +76,7 @@ module Parser {
   const identifierChar := canStartIdentifierChar + "0123456789_$."
 
   const parseIdentifierChar: B<char> := CharTest((c: char) => c in identifierChar, "identifier character")
-  const parseIdentifierRaw: B<string> :=
+  const parseIdentifierRaw: B<string> := // TODO: this should fail if the identifier is a keyword
     CharTest((c: char) => c in canStartIdentifierChar, "identifier start character").Then((c: char) =>
       parseIdentifierChar.Rep().M((s: string) => [c] + s))
   const parseId: B<string> := parseIdentifierRaw.I_e(W)
@@ -152,9 +152,7 @@ module Parser {
     
   const parseFormal: B<Parameter> :=
     parseParameterMode.Then((mode: ParameterMode) =>
-      parseIdType.M2(MId, (name, typ) =>
-        Parameter(mode, Variable(name, typ, mode.IsOutgoing()))
-      )
+      parseIdType.M2(MId, (name, typ) => Parameter(name, mode, typ))
     )
 
   const parseIdType: B<(string, string)> :=
@@ -165,89 +163,73 @@ module Parser {
   type RecSel = RecMapSel<Stmt>
 
   const gallery: map<string, RecMapDef<Stmt>> := map[
-      "block" := RecMapDef(0, (c: RecSel) => parseUnlabeledBlockStmt(c).M(s => s)),
-      "stmt" := RecMapDef(0, (c: RecSel) => parseStmt(c).M(s => s)),
-      "if-cont" := RecMapDef(0, (c: RecSel) => parseIfCont(c).M(s => s))
+      "block" := RecMapDef(0, (c: RecSel) => Sym("{").e_I(parseStmt(c).Rep()).I_e(Sym("}")).M(stmts => Block(stmts))),
+      "stmt" := RecMapDef(1, (c: RecSel) => parseStmt(c)),
+      "if-cont" := RecMapDef(0, (c: RecSel) => parseIfCont(c)),
+      "loop" := RecMapDef(0, (c: RecSel) => parseLoop(c))
     ]
 
   function GetRecMapSel<R(!new)>(underlying: map<string, RecMapDef<R>>): RecMapSel<R> {
     (fun: string) => RecMap(underlying, fun)
   }
 
-  function ParseWithContext<G(!new), R>(underlyingGallery: map<string, RecMapDef<G>>, parser: RecMapSel<G> -> B<R>): B<R> {
-    var c := GetRecMapSel(underlyingGallery);
-    parser(c)
-  }
-
   // ----- Statements
-
-  function parseUnlabeledBlockStmt(c: RecSel): B<Stmt> {
-    Sym("{").e_I(parseStmt(c).Rep()).I_e(Sym("}")).M(stmts => Block(AnonymousLabel, stmts))
-  }
 
   function parseStmt(c: RecSel): B<Stmt> {
     Or([
-      T("var").e_I(parseIdType).M2(MId, (name, typ) => VarDecl(Variable(name, typ, true))),
-      T("val").e_I(parseIdType).I_e(Sym(":=")).I_I(parseExpr).M3(Unfold3l, (name, typ, rhs) => ValDecl(Variable(name, typ, false), rhs)),
-      T("exit").e_I(parseId).M(name => Exit(NamedLabel(name))),
+      T("var").e_I(parseVariableDeclaration(true, c)),
+      T("val").e_I(parseVariableDeclaration(false, c)),
+      T("exit").e_I(parseOptionalExitArgument()).M(optionalLabel => Exit(optionalLabel)),
       T("return").M(_ => Return),
       T("check").e_I(parseExpr).M(e => Check(e)),
       T("assume").e_I(parseExpr).M(e => Assume(e)),
       T("assert").e_I(parseExpr).M(e => Assert(e)),
       T("probe").e_I(parseExpr).M(e => Probe(e)),
-      T("forall").e_I(parseIdType).I_I(c("block")).M3(Unfold3l, (name, typ, body) => AForall(Variable(name, typ, false), body)),
+      T("forall").e_I(parseIdType).I_I(c("block")).M3(Unfold3l, (name, typ, body) => AForall(name, typ, body)),
+      c("block"),
       T("if").e_I(parseIfCont(c)),
-      parseOptionalLabel(Sym("{")).Then((optLbl: Option<string>) =>
-        c("block").M((s: Stmt) =>
-          if optLbl.Some? && s.Block? then
-            Block(NamedLabel(optLbl.value), s.stmts)
-          else
-            s
-        )
-      ),
-      parseOptionalLabel(T("loop")).Then((optLbl: Option<string>) =>
-        T("loop").e_I(parseAExprSeq("invariant", c)).I_I(c("block"))
-        .M2(MId, (invariants, body) => Loop(match optLbl case Some(name) => NamedLabel(name) case _ => AnonymousLabel, invariants, body))
-      ),
+      c("loop"),
       Atomic(parseId.I_e(Sym(":="))).I_I(parseExpr).M2(MId, (lhs, rhs) => Assign(lhs, rhs)),
+      Atomic(parseId.I_e(Sym(":"))).I_I(Or([c("block"), c("loop")])).M2(MId, (lbl, stmt) => LabeledStmt(lbl, stmt)),
       Atomic(parseId.I_e(Sym("("))).I_I(parseCommaDelimitedSeq(parseCallArgument)).I_e(Sym(")")).M2(MId, (name, args) => Call(name, args))
     ])
   }
 
-  function parseOptionalLabel<R>(next: B<R>): B<Option<string>> {
-    B((input: Input) =>
-      var p := Try(parseId.I_e(Sym(":"))).apply(input);
-      if p.IsFailure() || p.result == None then
-        p
-      else
-        // look ahead to parse `next`
-        var q := next.apply(p.remaining);
-        if q.IsFatalFailure() then
-          P.ParseFailure(q.level, q.data)
-        else if q.IsFailure() then
-          P.ParseSuccess(None, input)
-        else
-          p // return the state after parsing `id :`
+  function parseVariableDeclaration(isMutable: bool, c: RecSel): B<Stmt> {
+    parseIdType.M2(MId, (name: string, typ: string) => Variable(name, isMutable, typ)).
+    I_I(Sym(":=").e_I(parseExpr).Option()).
+    I_I(c("stmt").Rep()).M3(Unfold3l, (v, init, stmts) =>
+      VarDecl(v, init, Block(stmts)))
+  }
+
+  function parseOptionalExitArgument(): B<Option<string>> {
+    Lookahead(parseId.I_e(Or([Sym(":="), Sym(":"), Sym("(")]))).Then((maybe: Option<string>) =>
+      if maybe.Some? then Nothing.M(_ => None) else parseId.Option()
     )
   }
 
   function parseIfCont(c: RecSel): B<Stmt> {
     Or([
-      Sym("{").e_I(parseCase(c).Rep()).I_e(Sym("}")).M(cases => IfCase(cases)),
+      parseCase(c).I_I(parseCase(c).Rep()).M2(MId, (caseHead, caseTail) => IfCase([caseHead] + caseTail)),
       parseExpr.I_I(c("block")).I_I(Or([
         T("else").e_I(Or([
           T("if").e_I(c("if-cont")),
           c("block")
         ])),
-        Nothing.M(_ => Block(AnonymousLabel, []))
+        Nothing.M(_ => Block([]))
       ])).M3(Unfold3l, (cond, thn, els) => If(cond, thn, els))
     ])
   }
 
   function parseCase(c: RecSel): B<Case> {
-    T("case").e_I(parseExpr).I_e(Sym("=>")).I_I(
-      c("stmt").Rep().M(stmts => Block(AnonymousLabel, stmts))
-    ).M2(MId, (cond, body) => Case(cond, body))
+    T("case").e_I(parseExpr).I_I(c("block")).M2(MId, (cond, body) => Case(cond, body))
+  }
+
+  function parseLoop(c: RecSel): B<Stmt> {
+    T("loop")
+    .e_I(parseAExprSeq("invariant", c))
+    .I_I(c("block"))
+    .M2(MId, (invariants, body) => Loop(invariants, body))
   }
 
   const parseCallArgument: B<CallArgument> :=

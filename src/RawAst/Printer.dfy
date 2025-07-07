@@ -26,7 +26,7 @@ module Printer {
     var sep := "";
     for i := 0 to |params| {
       var param := params[i];
-      print sep, ParameterMode(param.mode), param.v.name, ": ", param.v.typ;
+      print sep, ParameterMode(param.mode), param.name, ": ", param.typ;
       sep := ", ";
     }
     print ")\n";
@@ -36,7 +36,7 @@ module Printer {
 
     match proc.body
     case None =>
-    case Some(stmt) => Statement(stmt, 0);
+    case Some(stmt) => StmtAsBlock(stmt, 0);
   }
 
   method Indent(indent: nat) {
@@ -47,15 +47,7 @@ module Printer {
 
   const IndentAmount := 2
 
-  method Label(lbl: Label) {
-    match lbl
-    case NamedLabel(name) =>
-      print name, ": ";
-    case _ =>
-  }
-
-
-  method Statement(stmt: Stmt, indent: nat, omitInitialIndent: bool := false)
+  method Statement(stmt: Stmt, indent: nat, followedByEndCurly: bool := false, omitInitialIndent: bool := false)
     decreases stmt, 1
   {
     if !omitInitialIndent {
@@ -63,29 +55,25 @@ module Printer {
     }
 
     match stmt
-    case VarDecl(v) =>
-      print "var ";
-      VariableDecl(v);
-      print "\n";
-
-    case ValDecl(v, rhs) =>
-      print "val ";
-      VariableDecl(v);
-      print " := ";
-      Expression(rhs);
-      print "\n";
+    case VarDecl(v, init, body) =>
+      if followedByEndCurly {
+        VariableDeclaration(v, init, body, indent, followedByEndCurly);
+      } else {
+        print "{\n";
+        Indent(indent + IndentAmount);
+        VariableDeclaration(v, init, body, indent + IndentAmount, true);
+        Indent(indent);
+        print "}\n";
+      }
 
     case Assign(lhs, rhs) =>
       print lhs, " := ";
       Expression(rhs);
       print "\n";
 
-    case Block(lbl, stmts) =>
-      Label(lbl);
+    case Block(stmts) =>
       print "{\n";
-      for i := 0 to |stmts| {
-        Statement(stmts[i], indent + IndentAmount);
-      }
+      StatementList(stmts, indent + IndentAmount);
       Indent(indent);
       print "}\n";
 
@@ -108,10 +96,8 @@ module Printer {
     case Assert(e) =>
       ExpressionStmt("assert", e);
 
-    case AForall(v, body) =>
-      print "forall ";
-      VariableDecl(v);
-      print " ";
+    case AForall(name, typ, body) =>
+      print "forall ", name, ": ", typ, " ";
       StmtAsBlock(body, indent);
 
     case If(cond, thn, els) =>
@@ -123,27 +109,30 @@ module Printer {
       } else {
         StmtAsBlock(thn, indent, " else ");
         if els.If? || els.IfCase? {
-          Statement(els, indent, true);
+          Statement(els, indent, omitInitialIndent := true);
         } else {
           StmtAsBlock(els, indent);
         }
       }
 
     case IfCase(cases) =>
-      print "if {\n";
-      for i := 0 to |cases| {
-        var cs := cases[i];
-        Indent(indent + IndentAmount);
-        print "case ";
-        Expression(cs.cond);
-        print " =>\n";
-        BlockAsStmts(cs.body, indent + IndentAmount + IndentAmount);
+      print "if ";
+      if |cases| == 0 {
+        Indent(indent);
+        print "case false {\n";
+        Indent(indent);
+        print "}\n";
+      } else {
+        for i := 0 to |cases| {
+          var cs := cases[i];
+          print "case ";
+          Expression(cs.cond);
+          print " ";
+          StmtAsBlock(cs.body, indent, if i == |cases| - 1 then "\n" else " ");
+        }
       }
-      Indent(indent);
-      print "}\n";
 
-    case Loop(lbl, invariants, body) =>
-      Label(lbl);
+    case Loop(invariants, body) =>
       print "loop";
       if |invariants| == 0 {
         print " ";
@@ -154,12 +143,18 @@ module Printer {
       }
       StmtAsBlock(body, indent);
 
+    case LabeledStmt(lbl, body) =>
+      print lbl, ": ";
+      if body.Loop? {
+        Statement(body, indent, omitInitialIndent := true);
+      } else {
+        StmtAsBlock(body, indent);
+      }
+
     case Exit(lbl) =>
       print "exit";
-      match lbl {
-        case NamedLabel(name) => print " ", name;
-        case AnonymousLabel =>
-        case ReturnLabel => print " <return>"; // this never happens for a parsed program; ReturnLabel is only used internally
+      if lbl.Some? {
+        print " ", lbl.value;
       }
       print "\n";
 
@@ -170,16 +165,29 @@ module Printer {
       ExpressionStmt("probe", e);
   }
 
+  method VariableDeclaration(v: Variable, init: Option<Expr>, body: Stmt, indent: nat, followedByEndCurly: bool)
+    decreases body, 3
+  {
+    print if v.isMutable then "var " else "val ";
+    print v.name, ": ", v.typ;
+    match init {
+      case None =>
+      case Some(e) =>
+        print " := ";
+        Expression(e);
+    }
+    print "\n";
+    BlockAsStatementList(body, indent, followedByEndCurly);
+  }
+
   method StmtAsBlock(stmt: Stmt, indent: nat, suffix: string := "\n")
     decreases stmt
   {
-    print "{\n";
+    print "{\n"; // always omits initial indent
     match stmt {
-      case Block(None, stmts) =>
+      case Block(stmts) =>
         // omit the braces of the Block itself, since we're already printing braces
-        for i := 0 to |stmts| {
-          Statement(stmts[i], indent + IndentAmount);
-        }
+        StatementList(stmts, indent + IndentAmount);
       case _ =>
         Statement(stmt, indent + IndentAmount);
     }
@@ -187,16 +195,20 @@ module Printer {
     print "}", suffix;
   }
 
-  method BlockAsStmts(stmt: Stmt, indent: nat)
-    decreases stmt
+  method BlockAsStatementList(stmt: Stmt, indent: nat, followedByEndCurly: bool)
+    decreases stmt, 2
   {
     match stmt
-    case Block(AnonynousLabel, stmts) =>
-      for i := 0 to |stmts| {
-        Statement(stmts[i], indent);
-      }
+    case Block(stmts) =>
+      StatementList(stmts, indent);
     case _ =>
-      Statement(stmt, indent);
+      Statement(stmt, indent, followedByEndCurly);
+  }
+
+  method StatementList(stmts: seq<Stmt>, indent: nat, followedByEndCurly: bool := true) {
+    for i := 0 to |stmts| {
+      Statement(stmts[i], indent, followedByEndCurly && i == |stmts| - 1);
+    }
   }
 
   function ParameterMode(mode: ParameterMode): string {
@@ -206,17 +218,13 @@ module Printer {
     case _ => ""
   }
 
-  method VariableDecl(v: Variable) {
-    print v.name, ": ", v.typ;
-  }
-
   method CallArgument(arg: CallArgument) {
     match arg
     case ArgExpr(e) => Expression(e);
     case ArgLValue(mode, name) => print ParameterMode(mode), name;
   }
 
-  method PrintAExprs(indent: nat, prefix: string, aexprs: seq<AExpr>, ghost parent: Stmt := Loop(AnonymousLabel, aexprs, Return))
+  method PrintAExprs(indent: nat, prefix: string, aexprs: seq<AExpr>, ghost parent: Stmt := Loop(aexprs, Return))
     requires forall ae <- aexprs :: ae.AAssertion? ==> ae.s < parent
     decreases parent, 0
   {
@@ -228,7 +236,7 @@ module Printer {
         Expression(e);
         print "\n";
       case AAssertion(s) =>
-        Statement(s, indent, true);
+        Statement(s, indent, omitInitialIndent := true);
     }
   }
 
