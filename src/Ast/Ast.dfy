@@ -3,13 +3,17 @@ module Ast {
   import opened Basics
   import Types
   import Raw = RawAst
+  import opened Values
 
   type Type = Types.Type
   datatype Program = Program(types: set<Type>, procedures: set<Procedure>)
   {
     predicate WellFormed() {
+      // the built-in types are included among the resolved-AST program's types
       && Types.BuiltInTypes <= (set typ <- types :: typ.Name)
+      // type declarations have distinct names
       && (forall typ0 <- types, typ1 <- types :: typ0.Name == typ1.Name ==> typ0 == typ1)
+      // procedure declarations have distinct names
       && (forall proc0 <- procedures, proc1 <- procedures :: proc0.Name == proc1.Name ==> proc0 == proc1)
     }
   }
@@ -17,29 +21,54 @@ module Ast {
   class Procedure {
     const Name: string
     const Parameters: seq<Variable>
-    const Pre: List<AExpr>
-    const Post: List<AExpr>
+    const Pre: seq<AExpr>
+    const Post: seq<AExpr>
     var Body: Option<Stmt>
 
-    constructor (name: string, parameters: seq<Variable>, pre: List<AExpr>, post: List<AExpr>)
+    constructor (name: string, parameters: seq<Variable>, pre: seq<AExpr>, post: seq<AExpr>)
       ensures Name == name
     {
       Name, Parameters, Pre, Post := name, parameters, pre, post;
-      Body := None;
+      Body := None; // for a procedure with a body, .Body will be updated later
     }
   }
 
-  datatype Variable = Variable(name: string, typ: Type, isMutable: bool) // TODO: add auto-invariant
+  class Variable {
+    const name: string
+    const isMutable: bool
+    const typ: Type
+
+    constructor Variable(name: string, isMutable: bool, typ: Type)
+      ensures this.name == name
+    {
+      this.name, this.isMutable, this.typ := name, isMutable, typ;
+    }
+  }
+
   type Parameter = Raw.Parameter
   type ParameterMode = Raw.ParameterMode
 
-  type Label = Raw.Label
+  datatype Label =
+    | NamedLabel(name: string)
+    | ReturnLabel
+  {
+    predicate IsLegalIn(labels: set<string>) {
+      match this
+      case NamedLabel(name) => name !in labels
+      case ReturnLabel => false
+    }
+
+    function AddTo(labels: set<string>): set<string> {
+      match this
+      case NamedLabel(name) => labels + {name}
+      case _ => labels
+    }
+  }
 
   datatype Stmt =
-    | VarDecl(v: Variable)
-    | ValDecl(v: Variable, rhs: Expr)
+    | VarDecl(v: Variable, initial: Option<Expr>, body: Stmt)
     | Assign(lhs: string, rhs: Expr)
-    | Block(lbl: Label, stmts: seq<Stmt>)
+    | Block(stmts: seq<Stmt>)
     | Call(name: string, args: seq<CallArgument>)
     // assertions
     | Check(cond: Expr)
@@ -49,23 +78,39 @@ module Ast {
     // Control flow
     | If(cond: Expr, thn: Stmt, els: Stmt)
     | IfCase(cases: seq<Case>)
-    | Loop(lbl: Label, invariants: List<AExpr>, body: Stmt)
+    | Loop(invariants: List<AExpr>, body: Stmt)
     | Exit(lbl: Label)
-    | Return
     // Error reporting
     | Probe(e: Expr)
 
   datatype Case = Case(cond: Expr, body: Stmt)
 
   datatype CallArgument =
-    | ArgExpr(e: Expr)
-    | ArgLValue(mode: ParameterMode, name: string)
+    | InArgument(e: Expr)
+    | OutgoingArgument(isInOut: bool, arg: Variable)
 
   datatype AExpr =
     | AExpr(e: Expr)
     | AAssertion(s: Stmt)
+  {
+    /*
+    function Eval(vals: Valuation): Value
+      requires ArgLValue? ==> name in vals
+    {
+      match this
+      case ArgExpr(e) => e.Eval(vals)
+      case ArgLValue(_, name) => vals[name]
+    }
+    */
+  }
 
   datatype Expr =
     | Const(value: int)
     | IdExpr(name: string)
+  {
+    function Type(b3: Program, scope: set<string>): Option<string>
+    { Some(Types.IntTypeName) } // TODO
+    function Eval(vals: Valuation): Value // TODO: either make Option<Value> or require Type(...).Some?
+    { 3 } // TODO
+  }
 }
