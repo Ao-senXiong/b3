@@ -26,7 +26,7 @@ module Ast {
     var Body: Option<Stmt>
 
     constructor (name: string, parameters: seq<Variable>, pre: seq<AExpr>, post: seq<AExpr>)
-      ensures Name == name
+      ensures Name == name && Body == None
     {
       Name, Parameters, Pre, Post := name, parameters, pre, post;
       Body := None; // for a procedure with a body, .Body will be updated later

@@ -64,23 +64,44 @@ module Resolver {
     ensures r.Success? ==> proc.WellFormed(b3)
     ensures r.Success? ==> r.value.Name == proc.name
   {
+    if p :| p in proc.parameters && !Raw.LegalVariableName(p.name, {}) {
+      return Failure("illegal parameter name: " + p.name);
+    }
+
+    if p :| p in proc.parameters && !b3.IsType(p.typ) {
+      return Failure("unknown type: " + p.typ);
+    }
+
     if i, j :| 0 <= i < j < |proc.parameters| && proc.parameters[i].name == proc.parameters[j].name {
       return Failure("duplicate parameter name: " + proc.parameters[i].name);
     }
 
-/*
-    // TODO: remove 
-      && var preScope := map p <- parameters | p.kind.IsIncomingParameter() :: p.name := p;
-      && pre.Forall((ae: AExpr) requires ae < this => ae.WellFormed(b3, preScope, {}))
-      && var scope := map p <- parameters :: p.name := p;
-      && post.Forall((ae: AExpr) requires ae < this => ae.WellFormed(b3, scope, {}))
-      && var localNames := set p <- parameters | p.kind.IsOutgoingParameter() :: p.name;
-      && (body == None || body.value.WellFormed(b3, scope, localNames, {}))
-*/
+    var preScope := set p <- proc.parameters | p.mode.IsIncoming() :: p.name;
+    var bodyScope := set p <- proc.parameters :: p.name;
+    var postScope := bodyScope + (set p <- proc.parameters | p.mode == Raw.InOut :: Raw.OldName(p.name));
 
+    if ae :| ae in proc.pre && !ae.WellFormed(b3, preScope) {
+      return Failure("ill-formed precondition of procedure " + proc.name);
+    }
+
+    if ae :| ae in proc.post && !ae.WellFormed(b3, postScope) {
+      return Failure("ill-formed postcondition of procedure " + proc.name);
+    }
+
+    if proc.body.Some? {
+      if !proc.body.value.WellFormed(b3, bodyScope, {}, false) {
+        return Failure("ill-formed body of procedure " + proc.name);
+      }
+    }
 
     var rproc := new Procedure(proc.name, [], [], []); // TODO: other parameters
-    assume {:axiom} proc.WellFormed(b3); // TODO
+    assert proc.WellFormed(b3) by {
+      assert forall p <- proc.parameters :: Raw.LegalVariableName(p.name, {}) && b3.IsType(p.typ);
+      assert Parameter.UniqueNames(proc.parameters);
+      assert forall ae <- proc.pre :: ae.WellFormed(b3, preScope);
+      assert forall ae <- proc.post :: ae.WellFormed(b3, postScope);
+      assert proc.body == None || proc.body.value.WellFormed(b3, bodyScope, {}, false);
+    }
     return Success(rproc);
   }
 }
