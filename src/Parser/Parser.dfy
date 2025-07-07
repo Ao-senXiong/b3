@@ -234,9 +234,9 @@ module Parser {
 
   const parseCallArgument: B<CallArgument> :=
     Or([
-      T("out").e_I(parseId).M(name => ArgLValue(ParameterMode.Out, name)),
-      T("inout").e_I(parseId).M(name => ArgLValue(ParameterMode.InOut, name)),
-      parseExpr.M(e => ArgExpr(e))
+      T("out").e_I(parseId).M(name => CallArgument(ParameterMode.Out, IdExpr(name))),
+      T("inout").e_I(parseId).M(name => CallArgument(ParameterMode.InOut, IdExpr(name))),
+      parseExpr.M(e => CallArgument(ParameterMode.In, e))
     ])
 
   // ----- Expressions

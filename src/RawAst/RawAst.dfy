@@ -2,26 +2,31 @@ module RawAst {
   import opened Std.Wrappers
   import opened Basics
   import opened Types
-  import opened Values
 
   // Top-level program
 
   // A raw program reflects program that has been parsed.
   datatype Program = Program(types: seq<TypeName>, procedures: seq<Procedure>)
   {
-    // A raw program is well-formed when
+    // A raw program is well-formed when its identifiers resolve to declarations and some basic
+    // properties hold:
     //    + no scope declares duplicate names
     //    + every name (of a type, procedure, function, variable) resolves to a declaration
     //    + the arity of each call (of a procedure or function) matches that of the callee
+    //    + parameter modes of formal and actual call arguments match
     // Well-formedness of a raw program does NOT imply things like
     //    - type correctness
     //    - no duplication of actual out-going parameters
     //    - assignments only to mutable variables
     //    - additional semantic rules
     predicate WellFormed() {
+      // user-defined types do not use the names of built-in types
       && (forall typ <- types :: typ !in BuiltInTypes)
+      // user-defined types have distinct names
       && (forall i, j :: 0 <= i < j < |types| ==> types[i] != types[j])
+      // procedures have distinct names
       && (forall i, j :: 0 <= i < j < |procedures| ==> procedures[i].name != procedures[j].name)
+      // procedure declarations are well-formed
       && (forall proc <- procedures :: proc.WellFormed(this))
     }
 
@@ -42,13 +47,18 @@ module RawAst {
   datatype Procedure = Procedure(name: string, parameters: seq<Parameter>, pre: seq<AExpr>, post: seq<AExpr>, body: Option<Stmt>)
   {
     predicate WellFormed(b3: Program) {
+      // parameters have legal names and valid types
       && (forall p <- parameters :: LegalVariableName(p.name, {}) && b3.IsType(p.typ))
+      // formal parameters have distinct names
       && Parameter.UniqueNames(parameters)
+      // set up the scopes: precondition, postcondition, body
       && var preScope := set p <- parameters | p.mode.IsIncoming() :: p.name;
       && var bodyScope := set p <- parameters :: p.name;
       && var postScope := bodyScope + (set p <- parameters | p.mode == InOut :: OldName(p.name));
+      // pre- and postconditions are well-formed
       && (forall ae <- pre :: ae.WellFormed(b3, preScope))
       && (forall ae <- post :: ae.WellFormed(b3, postScope))
+      // body, if any, is well-formed
       && (body == None || body.value.WellFormed(b3, bodyScope, {}, false))
     }
   }
@@ -189,10 +199,14 @@ module RawAst {
       case Block(stmts) =>
         forall stmt <- stmts :: stmt.WellFormed(b3, scope, labels, insideLoop)
       case Call(name, args) =>
-        exists proc <- b3.procedures ::
-          && name == proc.name
-          && MatchingParameters(proc.parameters, args)
-          && (forall i :: 0 <= i < |args| ==> args[i].WellFormed(proc.parameters[i], b3, scope))
+        // the call goes to a procedure in the program
+        exists proc <- b3.procedures | name == proc.name ::
+          // the number of arguments agrees with the number of formal parameters
+          && |args| == |proc.parameters|
+          // the parameter modes match
+          && (forall i :: 0 <= i < |proc.parameters| ==> args[i].mode == proc.parameters[i].mode)
+          // the arguments are well-formed
+          && (forall i :: 0 <= i < |args| ==> args[i].arg.WellFormed(b3, scope))
       case Check(cond) =>
         cond.WellFormed(b3, scope)
       case Assume(cond) =>
@@ -210,7 +224,7 @@ module RawAst {
         && els.WellFormed(b3, scope, labels, insideLoop)
       case IfCase(cases) =>
         && |cases| != 0
-        && forall i :: 0 <= i < |cases| ==> var cs := cases[i];
+        && forall cs <- cases ::
             && cs.cond.WellFormed(b3, scope)
             && cs.body.WellFormed(b3, scope, labels, insideLoop)
       case Loop(invariants, body) =>
@@ -219,9 +233,9 @@ module RawAst {
       case LabeledStmt(lbl, body) =>
         && lbl !in labels
         && body.WellFormed(b3, scope, labels + {lbl}, insideLoop)
-      case Exit(lbl) =>
-        match lbl {
-          case Some(labelName) => labelName in labels
+      case Exit(optionalLabel) =>
+        match optionalLabel {
+          case Some(lbl) => lbl in labels
           case None => insideLoop
         }
       case Return =>
@@ -230,16 +244,12 @@ module RawAst {
         e.WellFormed(b3, scope)
     }
 
-    static predicate MatchingParameters(parameters: seq<Parameter>, args: seq<CallArgument>) {
-      && (forall i, j :: 0 <= i < j < |args| && args[i].ArgLValue? && args[j].ArgLValue? ==> args[i].name != args[j].name)
-      && |args| == |parameters|
-      && forall i | 0 <= i < |parameters| && parameters[i].mode.IsOutgoing() :: args[i].ArgLValue?
-    }
-
     predicate IsEmptyBlock() {
       Block? && |stmts| == 0
     }
   }
+
+  datatype CallArgument = CallArgument(mode: ParameterMode, arg: Expr)
 
   datatype Case = Case(cond: Expr, body: Stmt)
 
@@ -333,20 +343,6 @@ module RawAst {
       Expr.CreateAnd(Learn(s), LearnSeq(tail))
   }
 
-  datatype CallArgument =
-    | ArgExpr(e: Expr)
-    | ArgLValue(mode: ParameterMode /* TODO: .mode not yet used in semantics/verifier */, name: string)
-  {
-    predicate WellFormed(formal: Parameter, b3: Program, scope: Scope) {
-      match this
-      case ArgExpr(e) =>
-        formal.mode == In && e.WellFormed(b3, scope)
-      case ArgLValue(_, name) =>
-        && formal.mode.IsOutgoing()
-        && name in scope
-    }
-  }
-  
   // Expressions
 
   // TODO

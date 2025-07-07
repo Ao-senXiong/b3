@@ -81,8 +81,8 @@ module Printer {
       print proc, "(";
       var sep := "";
       for i := 0 to |args| {
-        print sep;
-        CallArgument(args[i]);
+        print sep, ParameterMode(args[i].mode);
+        Expression(args[i].arg);
         sep := ", ";
       }
       print ")\n";
@@ -216,12 +216,6 @@ module Printer {
     case InOut => "inout "
     case Out => "out "
     case _ => ""
-  }
-
-  method CallArgument(arg: CallArgument) {
-    match arg
-    case ArgExpr(e) => Expression(e);
-    case ArgLValue(mode, name) => print ParameterMode(mode), name;
   }
 
   method PrintAExprs(indent: nat, prefix: string, aexprs: seq<AExpr>, ghost parent: Stmt := Loop(aexprs, Return))
