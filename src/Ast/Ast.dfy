@@ -20,65 +20,82 @@ module Ast {
 
   class Procedure {
     const Name: string
-    const Parameters: seq<Variable>
-    const Pre: seq<AExpr>
-    const Post: seq<AExpr>
+    const Parameters: seq<Parameter>
+    var Pre: seq<AExpr>
+    var Post: seq<AExpr>
     var Body: Option<Stmt>
 
-    constructor (name: string, parameters: seq<Variable>, pre: seq<AExpr>, post: seq<AExpr>)
-      ensures Name == name && Body == None
+    constructor (name: string, parameters: seq<Parameter>)
+      ensures Name == name && Parameters == parameters
+      ensures Pre == [] && Post == [] && Body == None
     {
-      Name, Parameters, Pre, Post := name, parameters, pre, post;
-      Body := None; // for a procedure with a body, .Body will be updated later
+      Name, Parameters := name, parameters;
+      Pre, Post, Body := [], [], None; // these are set after construction
+    }
+
+    ghost predicate SignatureWellFormed(proc: Raw.Procedure) {
+      && Name == proc.name
+      && (forall formal <- Parameters :: Raw.LegalVariableName(formal.name, {}))
+      && (forall i, j :: 0 <= i < j < |Parameters| ==> Parameters[i].name != Parameters[j].name)
+      && |Parameters| == |proc.parameters|
+      && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].name == proc.parameters[i].name)
+      && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].mode == proc.parameters[i].mode)
+      && (forall i :: 0 <= i < |Parameters| ==> (Parameters[i].oldInOut.Some? <==> proc.parameters[i].mode == Raw.InOut))
     }
   }
 
-  class Variable {
+  trait Variable extends object {
     const name: string
-    const isMutable: bool
     const typ: Type
+  }
 
-    constructor Variable(name: string, isMutable: bool, typ: Type)
+  class LocalVariable extends Variable {
+    const isMutable: bool
+
+    constructor (name: string, isMutable: bool, typ: Type)
       ensures this.name == name
     {
       this.name, this.isMutable, this.typ := name, isMutable, typ;
     }
   }
 
-  type Parameter = Raw.Parameter
+  class Parameter extends Variable {
+    const mode: ParameterMode
+    const oldInOut: Option<Variable>
+
+    constructor (name: string, mode: ParameterMode, typ: Type, oldInOut: Option<Variable>)
+      ensures this.name == name && this.mode == mode && this.typ == typ && this.oldInOut == oldInOut
+    {
+      this.name, this.mode, this.typ := name, mode, typ;
+      this.oldInOut := oldInOut;
+    }
+  }
+
   type ParameterMode = Raw.ParameterMode
 
-  datatype Label =
-    | NamedLabel(name: string)
-    | ReturnLabel
-  {
-    predicate IsLegalIn(labels: set<string>) {
-      match this
-      case NamedLabel(name) => name !in labels
-      case ReturnLabel => false
-    }
-
-    function AddTo(labels: set<string>): set<string> {
-      match this
-      case NamedLabel(name) => labels + {name}
-      case _ => labels
+  class Label {
+    const name: string
+    constructor (name: string)
+      ensures this.name == name
+    {
+      this.name := name;
     }
   }
 
   datatype Stmt =
     | VarDecl(v: Variable, initial: Option<Expr>, body: Stmt)
-    | Assign(lhs: string, rhs: Expr)
+    | Assign(lhs: Variable, rhs: Expr)
     | Block(stmts: seq<Stmt>)
-    | Call(name: string, args: seq<CallArgument>)
+    | Call(name: Procedure, args: seq<CallArgument>)
     // assertions
     | Check(cond: Expr)
     | Assume(cond: Expr)
     | Assert(cond: Expr)
     | AForall(v: Variable, body: Stmt)
     // Control flow
-    | If(cond: Expr, thn: Stmt, els: Stmt)
-    | IfCase(cases: seq<Case>)
-    | Loop(invariants: List<AExpr>, body: Stmt)
+    | If(cases: seq<Case>)
+    | Loop(invariants: seq<AExpr>, body: Stmt)
+    | LabeledStmt(lbl: Label, body: Stmt)
     | Exit(lbl: Label)
     // Error reporting
     | Probe(e: Expr)
@@ -106,11 +123,13 @@ module Ast {
 
   datatype Expr =
     | Const(value: int)
-    | IdExpr(name: string)
+    | IdExpr(v: Variable)
   {
     function Type(b3: Program, scope: set<string>): Option<string>
     { Some(Types.IntTypeName) } // TODO
     function Eval(vals: Valuation): Value // TODO: either make Option<Value> or require Type(...).Some?
     { 3 } // TODO
+    static function CreateNegation(e: Expr): Expr
+    { if e.Const? then Const(- e.value) else e } // TODO
   }
 }

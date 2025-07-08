@@ -46,20 +46,22 @@ module RawAst {
 
   datatype Procedure = Procedure(name: string, parameters: seq<Parameter>, pre: seq<AExpr>, post: seq<AExpr>, body: Option<Stmt>)
   {
-    predicate WellFormed(b3: Program) {
+    predicate SignatureWellFormed(b3: Program) {
       // parameters have legal names and valid types
       && (forall p <- parameters :: LegalVariableName(p.name, {}) && b3.IsType(p.typ))
       // formal parameters have distinct names
       && Parameter.UniqueNames(parameters)
+    }
+    predicate WellFormed(b3: Program) {
+      && SignatureWellFormed(b3)
       // set up the scopes: precondition, postcondition, body
       && var preScope := set p <- parameters | p.mode.IsIncoming() :: p.name;
-      && var bodyScope := set p <- parameters :: p.name;
-      && var postScope := bodyScope + (set p <- parameters | p.mode == InOut :: OldName(p.name));
+      && var postScope := (set p <- parameters :: p.name) + (set p <- parameters | p.mode == InOut :: OldName(p.name));
       // pre- and postconditions are well-formed
       && (forall ae <- pre :: ae.WellFormed(b3, preScope))
       && (forall ae <- post :: ae.WellFormed(b3, postScope))
       // body, if any, is well-formed
-      && (body == None || body.value.WellFormed(b3, bodyScope, {}, false))
+      && (body == None || body.value.WellFormed(b3, postScope, {}, false))
     }
   }
 
@@ -139,7 +141,7 @@ module RawAst {
     | If(cond: Expr, thn: Stmt, els: Stmt)
     | IfCase(cases: seq<Case>)
     | Loop(invariants: seq<AExpr>, body: Stmt)
-    | LabeledStmt(lbl: string, stmt: Stmt)
+    | LabeledStmt(lbl: string, body: Stmt)
     | Exit(maybeLabel: Option<string>)
     | Return
     // Error reporting
@@ -217,7 +219,6 @@ module RawAst {
         && LegalVariableName(name, scope)
         && b3.IsType(typ)
         && body.WellFormed(b3, scope + {name}, labels, insideLoop)
-        && !body.ContainsNonAssertions()
       case If(cond, thn, els) =>
         && cond.WellFormed(b3, scope)
         && thn.WellFormed(b3, scope, labels, insideLoop)
@@ -262,7 +263,7 @@ module RawAst {
       case AExpr(e) =>
         e.WellFormed(b3, scope)
       case AAssertion(s) =>
-        s.WellFormed(b3, scope, {}, false) && !s.ContainsNonAssertions()
+        s.WellFormed(b3, scope, {}, false)
     }
 
     ghost predicate Valid() {
@@ -350,8 +351,11 @@ module RawAst {
     | Const(value: int)
     | IdExpr(name: string)
   {
-    predicate WellFormed(b3: Program, scope: Scope)
-    { true } // TODO
+    predicate WellFormed(b3: Program, scope: Scope) {
+      match this
+      case Const(_) => true
+      case IdExpr(name) => name in scope
+    }
 
     static function CreateTrue(): Expr
     { Const(10) } // TODO
