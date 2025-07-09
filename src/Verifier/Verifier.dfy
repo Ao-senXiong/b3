@@ -1,7 +1,8 @@
 module Verifier {
+/***********************
   import opened Std.Wrappers
   import opened Basics
-  import opened RawAst
+  import opened Ast
   import opened Solvers
   import opened SolverExpr
   import WF = WellFormednessConsequences
@@ -25,20 +26,113 @@ module Verifier {
     CreateIdExpr(v)
   }
 
-  // TODO: we should really start from a resolved AST
-  function NameToResolvedVariable(name: string): Variable
-  { Variable(name, Types.IntTypeName, true) } // TODO
-
   // map from block names to pairs (V, Ss) of variable sets and statement sequences
   type BlockContinuations = map<Label, Continuation>
   datatype Continuation = Continuation(V: set<Variable>, continuation: seq<Stmt>)
 
   ghost predicate BValid(B: BlockContinuations, b3: Program) {
-    forall s <- B :: WF.StmtSeq(B[s].continuation, b3)
+    true
   }
 
+  method ProcessStmt(stmt: Stmt, incarnations: Incarnations, B: BlockContinuations, o: Solver)
+    returns (incarnations': Incarnations, o': Solver)
+  {
+    match stmt
+    case VarDecl(v, init, body) =>
+      var x := incarnations.New(v);
+      Process(cont, incarnations[v := x], B, o, b3);
+    case Assign(x, rhs) =>
+      var e' := incarnations.Eval(rhs);
+      var x' := incarnations.New(x);
+      var o' := o.Extend(CreateEq(IdExpr(x'), e'));
+      Process(cont, incarnations[x := x'], B, o', b3);
+    case Block(lbl, bodyStmts) =>
+      var B' := B[lbl := Continuation(incarnations.Keys, cont)];
+      assert StmtListMeasure(stmts) + ContinuationsMeasure(B) > StmtListMeasure(bodyStmts + [Exit(lbl)]) + ContinuationsMeasure(B') by {
+        assert StmtMeasure(s0) > StmtListMeasure(bodyStmts + [Exit(lbl)]) by {
+          assert StmtMeasure(s0) == 2 + StmtListMeasure(bodyStmts);
+          AboutStmtListMeasureSingleton(Exit(lbl));
+          AboutStmtListMeasureConcat(bodyStmts, [Exit(lbl)]);
+        }
+        assert ContinuationsMeasure(B) + StmtListMeasure(cont) >= ContinuationsMeasure(B') by {
+          AboutContinuationsMeasureUpdate(B, lbl, incarnations.Keys, cont);
+        }
+
+        calc {
+          StmtListMeasure(stmts) + ContinuationsMeasure(B);
+        ==  // by assertion before `match`
+          StmtMeasure(s0) + StmtListMeasure(cont) + ContinuationsMeasure(B);
+        >  // by first assertion-by above
+          StmtListMeasure(bodyStmts + [Exit(lbl)]) + StmtListMeasure(cont) + ContinuationsMeasure(B);
+        >=  // by second assert-by above
+          StmtListMeasure(bodyStmts + [Exit(lbl)]) + ContinuationsMeasure(B');
+        }
+      }
+      WF.AboutBlockStmts(s0, b3);
+      assert WF.StmtSeq(bodyStmts + [Exit(lbl)], b3);
+      Process(bodyStmts + [Exit(lbl)], incarnations, B', o, b3);
+    case Call(name, args) =>
+      ProcessCall(name, args, cont, incarnations, B, o, b3);
+    case Check(cond) =>
+      var e' := incarnations.Eval(cond);
+      o.Prove(e');
+      Process(cont, incarnations, B, o, b3);
+    case Assume(cond) =>
+      var e' := incarnations.Eval(cond);
+      var o' := o.Extend(e');
+      Process(cont, incarnations, B, o', b3);
+    case Assert(cond) =>
+      var e' := incarnations.Eval(cond);
+      o.Prove(e');
+      var o' := o.Extend(e');
+      Process(cont, incarnations, B, o', b3);
+    case AForall(v, body) =>
+      WF.AboutAForall(s0, b3);
+      var x := incarnations.New(v);
+      Process([body], incarnations[v := x], B, o, b3) by {
+        assert WF.Stmt(body, b3);
+        assert StmtMeasure(s0) > StmtMeasure(body);
+        AboutStmtListMeasureSingleton(body);
+      }
+
+      var L := Learn(s0);
+      var e' := incarnations.Eval(L);
+      var o' := o.Extend(e');
+      Process(cont, incarnations, B, o', b3);
+    case If(cond, thn, els) =>
+      WF.AboutIf(s0, b3);
+      var e' := incarnations.Eval(cond);
+      var oThen := o.Extend(e');
+      Process([thn] + cont, incarnations, B, oThen, b3);
+      var oElse := o.Extend(CreateNegation(e'));
+      Process([els] + cont, incarnations, B, oElse, b3);
+    case IfCase(cases) =>
+      WF.AboutIfCase(s0, b3);
+      for i := 0 to |cases|
+        invariant CaseMeasure(s0, cases[i..]) < StmtMeasure(s0)
+      {
+        var cs := cases[i];
+        var e' := incarnations.Eval(cs.cond);
+        var o' := o.Extend(e');
+        Process([cs.body] + cont, incarnations, B, o', b3);
+      }
+    case Loop(lbl, invariants, body) =>
+      // TODO
+    case Exit(lbl) =>
+      expect lbl in B;
+      ProcessExit(lbl, incarnations, B, o, b3);
+    case Return =>
+      expect ReturnLabel in B;
+      ProcessExit(ReturnLabel, incarnations, B, o, b3);
+    case Probe(e) =>
+      var e' := incarnations.Eval(e);
+      var o' := o.Record(e');
+      Process(cont, incarnations, B, o', b3);
+  }
+
+
   method Process(stmts: seq<Stmt>, incarnations: Incarnations, B: BlockContinuations, o: Solver, b3: Program)
-    requires WF.StmtSeq(stmts, b3) && BValid(B, b3)
+    requires BValid(B, b3)
     decreases StmtListMeasure(stmts) + ContinuationsMeasure(B)
   {
     if |stmts| == 0 {
@@ -48,14 +142,10 @@ module Verifier {
     var s0, cont := stmts[0], stmts[1..];
     assert StmtListMeasure(stmts) == StmtMeasure(s0) + StmtListMeasure(cont);
     match s0
-    case VarDecl(v) =>
+    case VarDecl(v, init, body) =>
       var x := incarnations.New(v);
       Process(cont, incarnations[v := x], B, o, b3);
-    case ValDecl(v, rhs) =>
-      var x := incarnations.New(v);
-      Process(cont, incarnations[v := x], B, o, b3);
-    case Assign(lhs, rhs) =>
-      var x := NameToResolvedVariable(lhs);
+    case Assign(x, rhs) =>
       var e' := incarnations.Eval(rhs);
       var x' := incarnations.New(x);
       var o' := o.Extend(CreateEq(IdExpr(x'), e'));
@@ -346,4 +436,5 @@ module Verifier {
       AboutContinuationsMeasure(B, lbl, V, cont);
     }
   }
+*****************************/
 }
