@@ -116,6 +116,5 @@ module WellFormednessConsequences {
         WellFormedAForallImpliesValidAssertionStatement(body, b3);
       }
   }
-  */
 ******************************/
 }
