@@ -1,13 +1,14 @@
 module B3 {
   import opened Std.Wrappers
   import opened Basics
-  import opened RawAst
+  import RawAst
   import Types
   import Printer
   import Std.FileIO
   import SB = Std.Parsers.StringBuilders
   import Parser
   import Resolver
+  import Ast
 
   method Main(args: seq<string>) {
     if |args| != 2 {
@@ -25,20 +26,19 @@ module B3 {
     Printer.Program(rawb3);
 
     print "The program ", if rawb3.WellFormed() then "IS" else "is NOT", " well-formed\n";
-    var resultResolver := Resolver.Resolve(rawb3);
+    var resultResolver := ResolveAndTypeCheck(rawb3);
     if resultResolver.IsFailure() {
       print resultResolver.error, "\n";
       return;
     }
     var b3 := resultResolver.value;
-
-   }
+  }
 
   method PrintUsage() {
     print "Usage: b3 <filename.b3>\n";
   }
 
-  method ReadAndParseProgram(filename: string) returns (r: Result<Program, string>) {
+  method ReadAndParseProgram(filename: string) returns (r: Result<RawAst.Program, string>) {
     var input :- FileIO.ReadUTF8FromFile(filename);
     var parseResult := SB.Apply(Parser.TopLevel, input);
     var b3 :- match parseResult {
@@ -46,5 +46,11 @@ module B3 {
       case ParseFailure(_, _) => Failure(SB.FailureToString(input, parseResult))
     };
    return Success(b3);
+  }
+
+  method ResolveAndTypeCheck(rawb3: RawAst.Program) returns (r: Result<Ast.Program, string>) {
+    var b3 :- Resolver.Resolve(rawb3);
+    // TODO: type check and check other restrictions (like assignments go only to mutable variables)
+    return Success(b3);
   }
 }
