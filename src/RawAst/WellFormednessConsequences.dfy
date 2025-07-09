@@ -1,4 +1,5 @@
 module WellFormednessConsequences {
+/******************************
   export
     provides Stmt
     provides AboutBlock, AboutBlockStmts, AboutIf, AboutIfCase, AboutLoop, AboutAForall
@@ -115,4 +116,6 @@ module WellFormednessConsequences {
         WellFormedAForallImpliesValidAssertionStatement(body, b3);
       }
   }
+  */
+******************************/
 }

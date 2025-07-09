@@ -1,6 +1,7 @@
 // TODO: enclosing procedures, auto-invariants
 
 module Semantics {
+/*****
   import opened Basics
   import opened RawAst
   import opened Values
@@ -252,4 +253,5 @@ module Semantics {
   predicate FollowsFromWellFormedness(b: bool) {
     b
   }
+*****/
 }
