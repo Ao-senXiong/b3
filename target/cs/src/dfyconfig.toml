@@ -1,4 +1,4 @@
-includes = ["**/*.dfy", "../target/cs/src/Z3Interface.cs"]
+includes = ["../../../src/**/*.dfy", "Z3Interface.cs"]
 
 [options]
 type-system-refresh = true

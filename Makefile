@@ -23,6 +23,12 @@ resolve:
 test:
 	$(TARGET) $(INPUT) | diff $(EXPECTED_OUTPUT) -
 
+test-cs:
+	(cd target/cs; dafny test --no-verify $(PROJECT_FILE) --output test/b3)
+
+build-cs:
+	(cd target/cs; dafny build $(PROJECT_FILE) --output bin/b3)
+
 b3:
 	$(TARGET) $(INPUT)
 
