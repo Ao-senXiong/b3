@@ -1,6 +1,14 @@
 module Basics {
+  import Std.Collections.Seq
+
   datatype List<X> = Nil | Cons(head: X, tail: List<X>)
   {
+    function Append(moreTail: List<X>): List<X> {
+      if this.Nil? then moreTail else
+      Cons(head, tail.Append(moreTail))
+    }
+    const DoubleCons? := Cons? && tail.Cons?
+
     function Length(): nat {
       if this == Nil then 0 else 1 + tail.Length()
     }
@@ -45,6 +53,19 @@ module Basics {
     static function FromSeq(s: seq<X>): List<X> {
       if s == [] then Nil else Cons(s[0], FromSeq(s[1..]))
     }
+
+    function ToReverseSeq(): seq<X> {
+      if Nil? then [] else tail.ToReverseSeq() + [head]
+    }
+    function DropAsMuchAsHeadOf(l: List<List<X>>): (r: List<X>)
+      requires ListFlatten(l) == this
+      requires l.Cons?
+      ensures ListFlatten(l.tail) == r
+    {
+      if l.head.Nil? then this
+      else
+       this.tail.DropAsMuchAsHeadOf(Cons(l.head.tail, l.tail))
+    }
   }
 
   function SeqMap<X, Y>(s: seq<X>, f: X --> Y): seq<Y>
@@ -53,8 +74,18 @@ module Basics {
     seq(|s|, i requires 0 <= i < |s| => f(s[i]))
   }
 
+  function ListFlatten<X>(l: List<List<X>>): List<X> {
+    if l.Nil? then Nil else l.head.Append(ListFlatten(l.tail))
+  }
+
   function SeqFlatten<X>(ss: seq<seq<X>>): seq<X> {
     if ss == [] then [] else ss[0] + SeqFlatten(ss[1..])
+  }
+
+  function SeqToString<T>(s: seq<T>, f: T --> string, separator: string := ""): string
+    requires forall t <- s :: f.requires(t)
+  {
+    Seq.Join(Seq.MapPartialFunction(f, s), separator)
   }
 
   method SetToSeq<X>(s: set<X>) returns (r: seq<X>) {

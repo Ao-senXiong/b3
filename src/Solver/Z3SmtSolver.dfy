@@ -7,18 +7,18 @@ module Z3SmtSolver {
     var z3 := CreateZ3Solver();
     
 
-    var _ := z3.SendCmd("(declare-fun x () Int)");
+    z3.DeclareFun("x", "()", "Int");
 
     z3.Push();
     
     // Example: Check if x > y and y > x is satisfiable
-    var _ := z3.SendCmd("(declare-fun y () Int)");
+    z3.DeclareFun("y", "()", "Int");
 
     // Assert x > y
-    z3.Assert("(> x y)");
+    z3.Assume("(> x y)");
     
     // Assert y > x
-    z3.Assert("(> y x)");
+    z3.Assume("(> y x)");
     
     // Check satisfiability
     var result := z3.CheckSat();
@@ -34,10 +34,10 @@ module Z3SmtSolver {
     z3.Push();
     
     // Assert x >= 0
-    z3.Assert("(>= x 0)");
+    z3.Assume("(>= x 0)");
     
     // Assert x <= 10
-    z3.Assert("(<= x 10)");
+    z3.Assume("(<= x 10)");
     
     // Check satisfiability
     result := z3.CheckSat();
@@ -65,7 +65,7 @@ module Z3SmtSolver {
   
   method CreateZ3Solver() returns (solver: Solver)
     ensures !solver.Disposed()
-    ensures solver.CommandStacks() == [[]]
+    ensures solver.CommandStacks() == Basics.Cons(Basics.Nil, Basics.Nil)
     ensures fresh(solver) && fresh(solver.process)
   {
     var process := CreateZ3Process();

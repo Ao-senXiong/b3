@@ -1,8 +1,11 @@
 module SolverExpr {
+  import Std.Collections.Seq
+  import opened Basics
   export
     reveals Var, Var.name
-    provides SExpr
-    provides CreateTrue, CreateIdExpr, CreateEq, CreateNegation, CreateBigAnd
+    reveals SExprPrintConfig
+    provides SExpr, SExpr.ToString
+    provides SExpr.True, SExpr.Id, SExpr.Eq, SExpr.Negation, SExpr.BigAnd
 
   class Var {
     const name: string
@@ -11,26 +14,64 @@ module SolverExpr {
     }
   }
 
-  type SExpr // pun: solver expression
-    = string // TODO
-
-  function CreateTrue(): SExpr
-  { "TRUE" } // TODO
-  function CreateIdExpr(x: Var): SExpr
-  { x.name } // TODO
-  function CreateEq(e0: SExpr, e1: SExpr): SExpr
-  { "(EQ " + e0 + " " + e1 + ")" } // TODO
-  function CreateNegation(e: SExpr): SExpr
-  { "(NOT " + e + ")" } // TODO
-  function CreateBigAnd(ee: seq<SExpr>): SExpr
-  {  // TODO
-    if |ee| == 0 then
-      CreateTrue()
-    else if |ee| == 1 then
-      ee[0]
-    else
-       "(AND" + ToList(ee) + ")"
+  datatype SExprPrintConfig = SExprPrintConfig(newlines: bool, indent: string)
+  {
+    function ExtraIdent(n: nat): SExprPrintConfig {
+      if !newlines then this
+      else this.(indent := indent + seq(n, i => ' '))
+    }
+    function Space(): string {
+      if newlines then "\n" + indent
+      else " "
+    }
   }
-  function ToList(ee: seq<SExpr>): SExpr
-  { if |ee| == 0 then "" else " " + ee[0] + ToList(ee[1..]) }
+
+  datatype SExpr // pun: solver expression
+    =
+    | S(string) // Single name
+    | PP(seq<SExpr>) // Parentheses
+  {
+    opaque function ToString(config: SExprPrintConfig := SExprPrintConfig(false, "")): string {
+      match this {
+        case S(name) => if name == "" then "()" else name
+        case PP(s) =>
+          if |s| > 0 then
+            var name := s[0].ToString(config);
+            var newIndent := config.ExtraIdent(2);
+            "(" + name +
+            Basics.SeqToString(s[1..], (argument: SExpr) requires argument < this =>
+                                 newIndent.Space() + argument.ToString(newIndent)
+            ) + ")"
+          else
+            "()"
+      }
+    }
+    // SExpr builders
+
+    static const TRUE := "TRUE"
+    static const EQ := "EQ"
+    static const NOT := "NOT"
+    static const AND := "AND"
+
+    static function True(): SExpr {
+      S(TRUE)
+    }
+    function Id(x: Var): SExpr {
+      S(x.name)
+    }
+    static function Eq(e0: SExpr, e1: SExpr): SExpr {
+      PP([S(EQ), e0, e1])
+    }
+    static function Negation(e: SExpr): SExpr {
+      PP([S(NOT), e])
+    }
+    static function BigAnd(ee: seq<SExpr>): SExpr {
+      if |ee| == 0 then
+        True()
+      else if |ee| == 1 then
+        ee[0]
+      else
+        PP([S(AND)] + ee)
+    }
+  }
 }

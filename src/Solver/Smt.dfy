@@ -1,4 +1,6 @@
 module Smt {
+  import opened Basics
+
   // SMT command constants
   const CMD_PUSH: string := "(push)"
   const CMD_POP: string := "(pop)"
@@ -6,13 +8,21 @@ module Smt {
   const CMD_CHECK_SAT: string := "(check-sat)"
   const CMD_GET_MODEL: string := "(get-model)"
 
-  // Opaque function to format assertion expressions
-  opaque function AssertExpr(expr: string): string
-    ensures AssertExpr(expr) != CMD_EXIT
-    ensures AssertExpr(expr) != CMD_PUSH
-    ensures AssertExpr(expr) != CMD_POP
+  datatype Context =
+    | Assumption(assumed: string)
+    | Declaration(name: string, inputType: string, outputType: string)
   {
-    "(assert " + expr + ")"
+    function ToString(): (s: string)
+      ensures s != CMD_EXIT
+      ensures s != CMD_PUSH
+      ensures s != CMD_POP
+    {
+      match this {
+        case Assumption(assumed) => "(assert " + assumed + ")"
+        case Declaration(name, inputType, outputType) =>
+          "(declare-fun " + name + " " + inputType + " " + outputType + ")"
+      }
+    }
   }
 
   trait SmtProcess extends object {
@@ -31,18 +41,18 @@ module Smt {
     const process: SmtProcess
     constructor(process: SmtProcess)
       requires !process.Disposed()
-      ensures CommandStacks() == [[]]
+      ensures CommandStacks() == Cons(Nil, Nil)
       ensures !Disposed()
       ensures this.process == process
     {
       this.process := process;
       new;
-      assume {:axiom} CommandStacks() == [[]];
+      assume {:axiom} CommandStacks() == Cons(Nil, Nil);
     }
 
     // Ghost function to get the command stacks (axiomatized to ensure consistency)
     @Axiom
-    ghost function CommandStacks(): seq<seq<string>>
+    ghost function CommandStacks(): List<List<string>>
       reads this.process
 
     predicate Disposed()
@@ -51,98 +61,113 @@ module Smt {
       this.process.Disposed()
     }
 
-    ghost function PushCommandStack(commandStack: seq<seq<string>>): seq<seq<string>> {
-      commandStack + [[]]  
+    ghost function PushCommandStack(commandStack: List<List<string>>): List<List<string>> {
+      Cons(Nil, commandStack)
     }
-    ghost function PopCommandStack(commandStack: seq<seq<string>>): seq<seq<string>>
-      requires 1 < |commandStack|
+    ghost function PopCommandStack(commandStack: List<List<string>>): List<List<string>>
+      requires commandStack.Cons?
     {
-      commandStack[..|commandStack|-1]
+      commandStack.tail
     }
-    ghost function AddCommand(commandStack: seq<seq<string>>, cmd: string): seq<seq<string>> 
-      requires 0 < |commandStack|
+    ghost function AddCommand(commandStack: List<List<string>>, cmd: string): List<List<string>>
+      requires commandStack.Cons?
     {
-      commandStack[..|commandStack|-1] +
-        [commandStack[|commandStack|-1] + [cmd]]
+      commandStack.(head := Cons(cmd, commandStack.head))
     }
     // Send a command to the solver and get response
     method SendCmd(cmd: string) returns (response: string)
       requires !Disposed()
-      requires |CommandStacks()| > 0
+      requires CommandStacks().Cons?
       modifies process // Hopefully one day we have private memory and we can say "modifies this"
       ensures cmd == CMD_EXIT <==> Disposed()
       ensures cmd == CMD_PUSH ==> CommandStacks() == PushCommandStack(old(CommandStacks()))
-      ensures cmd == CMD_POP && |old(CommandStacks())| > 1 ==>
+      ensures old(allocated(CommandStacks()))
+      ensures cmd == CMD_POP && old(CommandStacks().DoubleCons?) ==>
                 CommandStacks() == PopCommandStack(old(CommandStacks()))
       ensures cmd != CMD_PUSH && cmd != CMD_POP ==>
                 CommandStacks() == AddCommand(old(CommandStacks()), cmd)
     {
       response := process.SendCmd(cmd);
-
+      assume {:axiom} old(allocated(CommandStacks()));
       assume {:axiom} cmd == CMD_PUSH ==> CommandStacks() == PushCommandStack(old(CommandStacks()));
-      assume {:axiom} cmd == CMD_POP && |old(CommandStacks())| > 1 ==>
-                CommandStacks() == PopCommandStack(old(CommandStacks()));
+      assume {:axiom} cmd == CMD_POP && old(CommandStacks().DoubleCons?) ==>
+          CommandStacks() == PopCommandStack(old(CommandStacks()));
       assume {:axiom} cmd != CMD_PUSH && cmd != CMD_POP ==>
-                CommandStacks() == AddCommand(old(CommandStacks()), cmd);
+          CommandStacks() == AddCommand(old(CommandStacks()), cmd);
+    }
+
+    ghost predicate Valid() reads this, this.process {
+      && !Disposed()
+      && CommandStacks().Cons?
     }
 
     // Helper methods defined in terms of SendCmd
     method Push()
-      requires !Disposed()
-      requires |CommandStacks()| > 0
+      requires Valid()
       modifies this, this.process
-      ensures !Disposed()
-      ensures CommandStacks() == old(CommandStacks()) + [[]]
+      ensures Valid()
+      ensures CommandStacks() == PushCommandStack(old(CommandStacks()))
     {
       var _ := SendCmd(CMD_PUSH);
       // The postcondition follows directly from SendCmd's postcondition
     }
 
     method Pop()
-      requires !Disposed()
-      requires |CommandStacks()| > 1 // There is always at least one command stack
+      requires Valid()
+      requires CommandStacks().DoubleCons? // There is always at least one command stack
       modifies this, this.process
-      ensures !Disposed()
-      ensures CommandStacks() == old(CommandStacks()[..|CommandStacks()|-1])
+      ensures Valid()
+      ensures old(allocated(CommandStacks()))
+      ensures CommandStacks() == old(CommandStacks().tail)
     {
       var _ := SendCmd(CMD_POP);
     }
 
-    method Assert(expr: string)
-      requires |CommandStacks()| > 0
-      requires !Disposed()
-      requires |CommandStacks()| > 0
+    method DeclareFun(
+      name: string,
+      inputTpe: string,
+      outputTpe: string)
+      requires Valid()
       modifies this, this.process
-      ensures !Disposed()
-      ensures CommandStacks() == AddCommand(old(CommandStacks()), AssertExpr(expr))
+      ensures Valid()
+      ensures CommandStacks()
+           == AddCommand(old(CommandStacks()), Declaration(name, inputTpe, outputTpe).ToString())
     {
-      var cmd := AssertExpr(expr);
+      var cmd := Declaration(name, inputTpe, outputTpe).ToString();
+      var _ := SendCmd(cmd);
+    }
+
+    method Assume(expr: string)
+      requires Valid()
+      modifies this, this.process
+      ensures Valid()
+      ensures CommandStacks()
+           == AddCommand(old(CommandStacks()), Assumption(expr).ToString())
+    {
+      var cmd := Assumption(expr).ToString();
       var _ := SendCmd(cmd);
     }
 
     method CheckSat() returns (result: string)
-      requires |CommandStacks()| > 0
-      requires !Disposed()
+      requires Valid()
       modifies this, this.process
-      ensures !Disposed()
+      ensures Valid()
       ensures CommandStacks() == AddCommand(old(CommandStacks()), CMD_CHECK_SAT)
     {
       result := SendCmd(CMD_CHECK_SAT);
     }
 
     method GetModel() returns (model: string)
-      requires |CommandStacks()| > 0
-      requires !Disposed()
+      requires Valid()
       modifies this, this.process
-      ensures !Disposed()
+      ensures Valid()
       ensures CommandStacks() == AddCommand(old(CommandStacks()), CMD_GET_MODEL)
     {
       model := SendCmd(CMD_GET_MODEL);
     }
 
     method Dispose()
-      requires |CommandStacks()| > 0
-      requires !Disposed()
+      requires Valid()
       modifies this, this.process
       ensures Disposed()
     {
