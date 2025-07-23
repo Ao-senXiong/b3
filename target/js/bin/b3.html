@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Test B3 online</title>
+    <link rel="stylesheet" href="b3.css">
+  </head>
+  <body>
+    <div id="main">
+      <h1>Test B3 online</h1>
+
+      <div id="editor">
+// here is a comment
+
+procedure Test(x:int)   procedure // another comment alright
+Mote() {var x: string
+val y: int := 200
+exit MyLabel
+              return return
+  { return }
+  {}{  }
+
+  myLabel: { check 62 }
+
+  check 99
+  assume 98
+  assert 97
+  probe 96
+
+  forall x: int {
+    check 5050
+    val y: bool := 12
+    assume y
+  }
+
+  if 100 {
+    return return
+  }
+
+  if 200 { } else {
+    exit hello
+  }
+
+  if AaA {}
+  else if BbB {}
+  else if CcC {}
+
+  if
+    case 3 { return }
+    case 4 { exit four }
+
+  if 600 { exit yes }
+  else if case 601 { } case 602 { } case 603 { check 9 }
+
+  x := 800
+  y := 801
+
+  loop { a := 1 }
+  loop
+    invariant 618 { }
+  asap :loop
+    invariant 619
+    invariant 620
+    invariant { check 8 assume 7 if 2 { assume 9 }}
+    invariant 622
+  { exit asap }
+
+  M0()
+  M1(1000)
+  M2(out x, 1000)
+  M3(out x, 1000, inout y)
+  M4(1000, out a, out b, out c)
+  M5(1000, 2000, inout x, inout y, inout z)
+  M6(1000, 2000, inout m, inout n, out x, out z)
+}
+
+type string type
+MyClass
+
+  procedure Egon( testb  :bool, inout testi :  int,abc: bool,out xyz: string)
+
+procedure   MyProc   (     )
+  requires 10
+  requires 20
+  requires 30
+  requires { check 8 assume 7 if 2 { assume 9 }}
+  ensures { check 8 assume 7 if 2 { assume 9 }}
+  ensures 55
+{ }
+</div>
+
+      <hr />
+
+      <div id="control-panel">
+        <div class="row">
+          <input class="cell" id="file-input" type="file" accept=".b3" />
+          <span id="run-cell"><input id="run" type="button" value="Run B3!" disabled /></span>
+        </div>
+      </div>
+      <pre id="stdout"></pre>
+
+      <div id="footer">
+        Test B3 online in your browser
+      </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.2.6/ace.js" integrity="sha256-xrr4HH5eSY+cFz4SH7ja/LaAi9qcEdjMpeMP49/iOLs=" crossorigin="anonymous"></script>
+    <script src="b3-mode.js"></script>
+    <script src="bignumber.js"></script>
+    <script src="b3-wrapper.js"></script>
+    <script src="b3.js"></script>
+    
+    <script>
+      // Initialize the Ace editor
+      var editor = ace.edit("editor");
+      editor.setTheme("ace/theme/chrome"); // Light theme with neutral colors
+      editor.getSession().setMode("ace/mode/b3");
+      editor.setOptions({ fontFamily: "Ubuntu Mono, monospace", fontSize: "1rem" });
+      
+      // Get DOM elements
+      var fileInput = document.getElementById("file-input");
+      var runButton = document.getElementById("run");
+      var stdoutElement = document.getElementById("stdout");
+      
+      // Helper function to log output
+      function logOutput(message, cssClass) {
+        var span = document.createElement("span");
+        span.className = cssClass;
+        span.appendChild(document.createTextNode(message + "\n"));
+        stdoutElement.appendChild(span);
+      }
+      
+      // Initialize B3Runner
+      B3Runner.init({
+        print: function(message) {
+          logOutput(message, "stdout-msg");
+        },
+        printErr: function(message) {
+          logOutput(message, "stderr-msg");
+        },
+        onRuntimeInitialized: function() {
+          logOutput("B3 compiler initialized and ready.", "info-msg");
+          runButton.disabled = false;
+        }
+      });
+      
+      // Handle file input
+      fileInput.addEventListener("change", function(event) {
+        var file = event.target.files[0];
+        if (file) {
+          var reader = new FileReader();
+          reader.onload = function(e) {
+            editor.setValue(e.target.result, -1);
+          };
+          reader.readAsText(file);
+        }
+      });
+      
+      // Handle run button click
+      runButton.addEventListener("click", function() {
+        // Clear output
+        stdoutElement.innerHTML = "";
+        
+        var b3Code = editor.getValue();
+        logOutput("Processing B3 code...", "info-msg");
+        
+        try {
+          // Run the B3 compiler with the input
+          var startTime = performance.now();
+          var inputFile = "input.b3";
+          var success = B3Runner.run(inputFile, b3Code);
+          var endTime = performance.now();
+          
+          logOutput("\n-- Processing complete (" + Math.round(endTime - startTime) + "ms)", "info-msg");
+        } catch (error) {
+          logOutput("Error: " + error.message, "stderr-msg");
+        }
+      });
+      
+      // Initialize
+      logOutput("Initializing B3 compiler...", "info-msg");
+    </script>
+  </body>
+</html>

@@ -4,3 +4,6 @@
 doc/out/*
 /bin
 /target/cs/bin
+/target/js/bin/b3-js.dtr
+/target/js/bin/b3.js
+/target/js/bin/bignumber.js

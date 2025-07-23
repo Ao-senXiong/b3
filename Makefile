@@ -2,6 +2,7 @@ PROJECT_FILE=src/dfyconfig.toml
 TARGET = "bin/b3"
 INPUT = "input.b3"
 EXPECTED_OUTPUT = "input.expect"
+JS_TARGET = "bin/b3.js"
 
 all: build test
 
@@ -28,6 +29,19 @@ test-cs:
 
 build-cs:
 	(cd target/cs; dafny build $(PROJECT_FILE) --output bin/b3)
+
+# JavaScript targets
+test-js:
+	(cd target/js; dafny test --no-verify --target:js src/dfyconfig.toml --output test/b3)
+
+build-js:
+	(cd target/js; dafny build --target:js src/dfyconfig.toml --output bin/b3)
+
+translate-js:
+	(cd target/js; dafny translate js src/dfyconfig.toml --output bin/b3)
+
+run-js:
+	(cd target/js; node bin/b3.js ../../$(INPUT))
 
 b3:
 	$(TARGET) $(INPUT)
