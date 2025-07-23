@@ -10,11 +10,14 @@ module Parser {
   import Types
   import Std.Collections.Seq
 
-  // Helpful error message
-  const EndOrProcedure := Or([EOS, S("procedure").M(_ => ()), S("type").M(_ => ())])
+  // Helpful error message about what it would have expected after repeatedly
+  // parsing underlying
+  function RepTill<T, U>(underlying: B<T>, consumeAfter: B<U>): B<seq<T>> {
+    underlying.Rep().I_e(Or([consumeAfter.M(_ => ()), underlying.M(_ => ())]))
+  }
 
   const TopLevel: B<Program> :=
-    W.e_I(parseTopLevelDecl.I_e(W).Rep()).I_e(EndOrProcedure).M(
+    W.e_I(RepTill(parseTopLevelDecl.I_e(W), EOS)).M(
       decls =>
         var (tt, pp) := SeparateTopLevelDecls(decls);
         Program(tt, pp))
@@ -81,8 +84,9 @@ module Parser {
 
   const parseIdentifierChar: B<char> := CharTest((c: char) => c in identifierChar, "identifier character")
   const parseIdentifierRaw: B<string> := // TODO: this should fail if the identifier is a keyword
-    CharTest((c: char) => c in canStartIdentifierChar, "identifier start character").Then((c: char) =>
-                                                                                            parseIdentifierChar.Rep().M((s: string) => [c] + s))
+    CharTest((c: char) => c in canStartIdentifierChar, "identifier start character").Then(
+      (c: char) =>
+        parseIdentifierChar.Rep().M((s: string) => [c] + s))
   const parseId: B<string> := parseIdentifierRaw.I_e(W)
 
   // T = token, that is, the string `s` followed by some non-identifier character (the non-identifier character is not consumed)
@@ -162,8 +166,9 @@ module Parser {
        ])
 
   const parseFormal: B<Parameter> :=
-    parseParameterMode.Then((mode: ParameterMode) =>
-                              parseIdType.M2(MId, (name, typ) => Parameter(name, mode, typ))
+    parseParameterMode.Then(
+      (mode: ParameterMode) =>
+        parseIdType.M2(MId, (name, typ) => Parameter(name, mode, typ))
     )
 
   const parseIdType: B<(string, string)> :=
@@ -173,12 +178,15 @@ module Parser {
 
   type RecSel = RecMapSel<Stmt>
 
-  const gallery: map<string, RecMapDef<Stmt>> := map[
-                                                   "block" := RecMapDef(0, (c: RecSel) => Sym("{").e_I(parseStmt(c).Rep()).I_e(Sym("}")).M(stmts => Block(stmts))),
-                                                   "stmt" := RecMapDef(1, (c: RecSel) => parseStmt(c)),
-                                                   "if-cont" := RecMapDef(0, (c: RecSel) => parseIfCont(c)),
-                                                   "loop" := RecMapDef(0, (c: RecSel) => parseLoop(c))
-                                                 ]
+  const gallery: map<string, RecMapDef<Stmt>> :=
+    map[
+      "block" := RecMapDef(
+        0, (c: RecSel) =>
+          Sym("{").e_I(RepTill(parseStmt(c), Sym("}"))).M(stmts => Block(stmts))),
+      "stmt" := RecMapDef(1, (c: RecSel) => parseStmt(c)),
+      "if-cont" := RecMapDef(0, (c: RecSel) => parseIfCont(c)),
+      "loop" := RecMapDef(0, (c: RecSel) => parseLoop(c))
+    ]
 
   function GetRecMapSel<R(!new)>(underlying: map<string, RecMapDef<R>>): RecMapSel<R> {
     (fun: string) => RecMap(underlying, fun)
@@ -259,10 +267,11 @@ module Parser {
   }
 
   function parseAExpr(keyword: string, c: RecSel): B<AExpr> {
-    T(keyword).e_I(Or([
-                        c("block").M(stmt => AAssertion(stmt)),
-                        parseExpr.M(e => AExpr(e))
-                      ]))
+    T(keyword).e_I(
+      Or([
+           c("block").M(stmt => AAssertion(stmt)),
+           parseExpr.M(e => AExpr(e))
+         ]))
   }
 
   const parseExpr: B<Expr> :=

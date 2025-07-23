@@ -51,13 +51,25 @@
     };
   }
 
+  // Ensure BigNumber is properly configured for Dafny's needs
+  if (typeof window.BigNumber !== 'undefined') {
+    // Configure BigNumber for Dafny's needs
+    BigNumber.config({
+      DECIMAL_PLACES: 20,
+      ROUNDING_MODE: BigNumber.ROUND_HALF_EVEN,
+      EXPONENTIAL_AT: [-1000000, 1000000]
+    });
+  } else {
+    console.error("BigNumber.js library not loaded!");
+  }
+
   // Create a virtual file system
   var virtualFS = {
     files: {},
 
     writeFile: function (path, data, options) {
       // Store the data in the format expected by the file system
-      this.files[path] = data;
+      this.files[path] = String(data);
     },
 
     readFile: function (path, options) {
@@ -80,6 +92,7 @@
 
         return content;
       }
+
       throw new Error("File not found: " + path);
     },
 
@@ -90,7 +103,7 @@
 
   // Create global process object
   window.process = {
-    argv: ['node', 'b3.js'],
+    argv: ['node', 'b3.js'], // Just provide the program name, no input file
     stdout: {
       write: function (text) {
         if (window.B3Runner && window.B3Runner.print) {
@@ -116,6 +129,10 @@
     fs: {
       readFileSync: function (path, options) {
         try {
+          // Convert Dafny string to JavaScript string if needed
+          if (path && path.toVerbatimString) {
+            path = path.toVerbatimString(false);
+          }
           return virtualFS.readFile(path, options);
         } catch (e) {
           throw new Error("Error reading file: " + path + " - " + e.message);
@@ -123,12 +140,20 @@
       },
       writeFileSync: function (path, data, options) {
         try {
+          // Convert Dafny string to JavaScript string if needed
+          if (path && path.toVerbatimString) {
+            path = path.toVerbatimString(false);
+          }
           virtualFS.writeFile(path, data, options);
         } catch (e) {
           throw new Error("Error writing file: " + path + " - " + e.message);
         }
       },
       existsSync: function (path) {
+        // Convert Dafny string to JavaScript string if needed
+        if (path && path.toVerbatimString) {
+          path = path.toVerbatimString(false);
+        }
         return virtualFS.existsSync(path);
       }
     },
@@ -171,27 +196,27 @@
     }
     if (moduleName === 'process') {
       // Return a process object with argv as a proper sequence
+      // Only include the input file if one has been explicitly set
+      var args = ['node', 'b3.js']; // Default: just program name, no input file
+
+      // Only add the input file if it's been explicitly set by the run function
+      if (window.B3Runner && window.B3Runner.currentInputFile) {
+        args.push(window.B3Runner.currentInputFile);
+      }
+
       return {
-        argv: []
+        argv: args
       };
+    }
+    if (moduleName === 'Z3SmtSolver') {
+      // Return the Z3SmtSolver module
+      return window.Z3SmtSolver || {};
     }
     if (mockModules[moduleName]) {
       return mockModules[moduleName];
     }
     throw new Error("Module not found: " + moduleName);
   };
-
-  // Ensure BigNumber is properly configured for Dafny
-  if (typeof window.BigNumber !== 'undefined') {
-    // Configure BigNumber for Dafny's needs
-    BigNumber.config({
-      DECIMAL_PLACES: 20,
-      ROUNDING_MODE: BigNumber.ROUND_HALF_EVEN,
-      EXPONENTIAL_AT: [-1000000, 1000000]
-    });
-  } else {
-    console.error("BigNumber.js library not loaded!");
-  }
 
   // Create B3Runner to handle the B3 execution
   window.B3Runner = {
@@ -200,7 +225,10 @@
       this.print = options.print || originalConsole.log;
       this.printErr = options.printErr || originalConsole.error;
 
-      // Update process.argv with the input file
+      // Clear any current input file
+      this.currentInputFile = null;
+
+      // Update process.argv with no input file
       mockModules.process.argv = ['node', 'b3.js'];
 
       // Set up stdout/stderr redirection
@@ -220,8 +248,82 @@
         }
       };
 
+      // Initialize Z3SmtSolver
+      this.initZ3();
+
       if (options.onRuntimeInitialized) {
         setTimeout(options.onRuntimeInitialized, 100);
+      }
+    },
+
+    initZ3: function () {
+      // Create the Z3SmtSolver module if it doesn't exist
+      if (!window.Z3SmtSolver) {
+        window.Z3SmtSolver = {
+          __default: {
+            CreateZ3Process: function () {
+              return new Z3SmtProcess();
+            }
+          }
+        };
+
+        // Z3 SMT Process implementation
+        class Z3SmtProcess {
+          constructor() {
+            this.disposed = false;
+            this.instance = null;
+
+            // Load the Z3 WASM script
+            var scriptPath = 'z3.wasm/z3smt2w.js';
+            var script = document.createElement('script');
+            script.src = scriptPath;
+            script.onload = function () {
+              // Initialize the Z3 module
+              window.Z3({
+                onRuntimeInitialized: function () {
+                  this.instance = new window.Z3.SMT2();
+                }.bind(this)
+              });
+            }.bind(this);
+
+            document.head.appendChild(script);
+          }
+
+          Disposed() {
+            return this.disposed;
+          }
+
+          SendCmd(cmdDafny) {
+            if (this.disposed) {
+              throw new Error("Z3 process is disposed");
+            }
+
+            // Convert Dafny string to JavaScript string
+            var cmd = cmdDafny.toVerbatimString ? cmdDafny.toVerbatimString(false) : cmdDafny;
+
+            // Wait for the Z3 instance to be ready
+            if (!this.instance) {
+              return _dafny.Seq.UnicodeFromString("waiting for Z3 initialization");
+            }
+
+            // Send the command to Z3
+            var response = "";
+
+            try {
+              response = this.instance.eval(cmd);
+            } catch (e) {
+              response = "error: " + e.message;
+            }
+
+            // If this is the exit command, mark as disposed
+            if (cmd === "(exit)") {
+              this.disposed = true;
+            }
+
+            // Convert JavaScript string to Dafny string
+            return _dafny.Seq.UnicodeFromString(response);
+          }
+        }
       }
     },
 
@@ -230,11 +332,23 @@
         // Store the current input file
         this.currentInputFile = inputFile;
 
-        // Write the input file to the virtual filesystem
-        virtualFS.writeFile(inputFile, String(inputContent));
+        // Make sure the input file is a string
+        var contentStr = String(inputContent);
+
+        // Write the input file to the virtual filesystem directly
+        virtualFS.files[inputFile] = contentStr;
+
+        // Also use the writeFile method for consistency
+        virtualFS.writeFile(inputFile, contentStr);
+
+        // Double-check that the file was written correctly
+        if (!virtualFS.existsSync(inputFile)) {
+          this.printErr("Failed to write input file to virtual filesystem");
+          return false;
+        }
 
         // Set up the process.argv array with the correct arguments
-        var programArgs = ['b3.js', inputFile];
+        var programArgs = ['node', 'b3.js', inputFile];
 
         // Update the global process.argv
         window.process.argv = programArgs;
@@ -244,18 +358,12 @@
         if (typeof B3 !== 'undefined' && B3.__default) {
           this.print("Running B3 compiler on " + inputFile);
 
-          // Create a proper Dafny sequence for the arguments
-          // Looking at the B3.__default.Main function, it expects a sequence of strings
-          // with a length property of 2
-
-          // First, let's try a direct approach by creating a custom sequence object
-          var dafnyArgs = {
-            length: 2,
-            "0": _dafny.Seq.UnicodeFromString('b3.js'),
-            "1": _dafny.Seq.UnicodeFromString(inputFile),
-            isEqualTo: function () { return false; }, // Mock comparison method
-            toString: function () { return "Seq#2" }
-          };
+          // The B3.__default.Main function expects exactly 2 arguments
+          // Create a Dafny sequence with exactly 2 elements using _dafny.Seq.of
+          var dafnyArgs = _dafny.Seq.of(
+            _dafny.Seq.UnicodeFromString('b3.js'),
+            _dafny.Seq.UnicodeFromString(inputFile)
+          );
 
           // Call the Main function with the arguments
           B3.__default.Main(dafnyArgs);
@@ -269,9 +377,10 @@
         this.printErr("Error running B3 compiler: " + e.message);
         return false;
       } finally {
-        // Reset process.argv but keep currentInputFile
-        window.process.argv = ['b3.js'];
-        mockModules.process.argv = ['b3.js'];
+        // Reset process.argv and clear currentInputFile
+        window.process.argv = ['node', 'b3.js'];
+        mockModules.process.argv = ['node', 'b3.js'];
+        this.currentInputFile = null; // Clear the input file after running
       }
     },
 

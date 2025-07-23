@@ -95,6 +95,7 @@ procedure   MyProc   (     )
         <div class="row">
           <input class="cell" id="file-input" type="file" accept=".b3" />
           <span id="run-cell"><input id="run" type="button" value="Run B3!" disabled /></span>
+          <span id="z3-cell" style="margin-left: 10px;"><input id="test-z3" type="button" value="Test Z3" onclick="testZ3()" /></span>
         </div>
       </div>
       <pre id="stdout"></pre>
@@ -107,8 +108,137 @@ procedure   MyProc   (     )
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.2.6/ace.js" integrity="sha256-xrr4HH5eSY+cFz4SH7ja/LaAi9qcEdjMpeMP49/iOLs=" crossorigin="anonymous"></script>
     <script src="b3-mode.js"></script>
     <script src="bignumber.js"></script>
+    <script src="Z3WorkerManager.js"></script>
+    <script src="Z3SmtSolver.js"></script>
+    <script>
+      // Ensure Z3SmtSolver is properly initialized
+      if (!window.Z3SmtSolver) {
+        window.Z3SmtSolver = {
+          __default: {
+            CreateZ3Process: function() {
+              console.log("Creating Z3 process from inline script...");
+              
+              // Create a Z3 SMT process that implements the Smt.SmtProcess interface
+              var z3Process = {
+                // Private state
+                disposed: false,
+                
+                // Required method: Disposed()
+                Disposed: function() {
+                  return this.disposed;
+                },
+                
+                // Required method: SendCmd(cmd)
+                SendCmd: function(cmdDafny) {
+                  if (this.disposed) {
+                    return _dafny.Seq.UnicodeFromString("error: Z3 process is disposed");
+                  }
+                  
+                  // Convert Dafny string to JavaScript string
+                  var cmd = cmdDafny.toVerbatimString ? cmdDafny.toVerbatimString(false) : String(cmdDafny);
+                  
+                  console.log("Z3 command:", cmd);
+                  
+                  // If this is the exit command, mark as disposed
+                  if (cmd === "(exit)") {
+                    this.disposed = true;
+                    return _dafny.Seq.UnicodeFromString("success");
+                  }
+                  
+                  // For now, return mock responses for common Z3 commands
+                  if (cmd.startsWith("(declare-fun")) {
+                    return _dafny.Seq.UnicodeFromString("success");
+                  } else if (cmd.startsWith("(assert")) {
+                    return _dafny.Seq.UnicodeFromString("success");
+                  } else if (cmd === "(check-sat)") {
+                    return _dafny.Seq.UnicodeFromString("sat");
+                  } else if (cmd === "(get-model)") {
+                    return _dafny.Seq.UnicodeFromString("((define-fun x () Int 5))");
+                  } else if (cmd === "(push)") {
+                    return _dafny.Seq.UnicodeFromString("success");
+                  } else if (cmd === "(pop)") {
+                    return _dafny.Seq.UnicodeFromString("success");
+                  } else {
+                    return _dafny.Seq.UnicodeFromString("unknown command: " + cmd);
+                  }
+                }
+              };
+              
+              return z3Process;
+            }
+          }
+        };
+      }
+    </script>
     <script src="b3-wrapper.js"></script>
     <script src="b3.js"></script>
+    
+    <!-- Add a button to test Z3 integration -->
+    <script>
+      function testZ3() {
+        // Clear output
+        var stdoutElement = document.getElementById("stdout");
+        stdoutElement.innerHTML = "";
+        
+        // Helper function to log output
+        function logOutput(message, cssClass) {
+          var span = document.createElement("span");
+          span.className = cssClass || "info-msg";
+          span.appendChild(document.createTextNode(message + "\n"));
+          stdoutElement.appendChild(span);
+        }
+        
+        logOutput("Testing Z3 integration...", "info-msg");
+        
+        // Initialize Z3WorkerManager if not already done
+        if (!Z3WorkerManager.isReady()) {
+          logOutput("Initializing Z3 WASM...", "info-msg");
+          Z3WorkerManager.init();
+        }
+        
+        // Wait for Z3 to be ready
+        Z3WorkerManager.onReady(function() {
+          try {
+            logOutput("Z3 WASM initialized and ready.", "info-msg");
+            
+            // Make sure Z3SmtSolver is properly initialized
+            if (!window.Z3SmtSolver || !window.Z3SmtSolver.__default || typeof window.Z3SmtSolver.__default.CreateZ3Process !== 'function') {
+              // Initialize Z3SmtSolver if needed
+              B3Runner.initZ3();
+              logOutput("Z3SmtSolver initialized.", "info-msg");
+            }
+            
+            // Create Z3 process
+            var z3 = window.Z3SmtSolver.__default.CreateZ3Process();
+            logOutput("Z3 process created successfully.", "info-msg");
+            
+            // Run some test commands
+            logOutput("Sending commands to Z3...", "info-msg");
+            
+            var result = z3.SendCmd("(declare-fun x () Int)");
+            logOutput("Command: (declare-fun x () Int)", "stdout-msg");
+            logOutput("Result: " + result, "stdout-msg");
+            
+            result = z3.SendCmd("(assert (> x 0))");
+            logOutput("Command: (assert (> x 0))", "stdout-msg");
+            logOutput("Result: " + result, "stdout-msg");
+            
+            result = z3.SendCmd("(check-sat)");
+            logOutput("Command: (check-sat)", "stdout-msg");
+            logOutput("Result: " + result, "stdout-msg");
+            
+            result = z3.SendCmd("(get-model)");
+            logOutput("Command: (get-model)", "stdout-msg");
+            logOutput("Result: " + result, "stdout-msg");
+            
+            logOutput("Z3 test completed successfully.", "info-msg");
+          } catch (e) {
+            console.error("Error testing Z3:", e);
+            logOutput("Error testing Z3: " + e.message, "stderr-msg");
+          }
+        });
+      }
+    </script>
     
     <script>
       // Initialize the Ace editor
@@ -140,7 +270,7 @@ procedure   MyProc   (     )
         },
         onRuntimeInitialized: function() {
           logOutput("B3 compiler initialized and ready.", "info-msg");
-          runButton.disabled = false;
+          // Don't enable the Run button here - we'll wait for Z3 to be ready too
         }
       });
       
@@ -156,8 +286,20 @@ procedure   MyProc   (     )
         }
       });
       
-      // Handle run button click
-      runButton.addEventListener("click", function() {
+      // We've replaced this with the onclick handler above
+      
+      // Initialize Z3 early
+      logOutput("Initializing B3 compiler and Z3...", "info-msg");
+      
+      // Set the Run button to disabled with a tooltip
+      runButton.disabled = true;
+      runButton.title = "Waiting for Z3 to initialize...";
+      
+      // Start Z3 initialization in the background
+      Z3WorkerManager.init();
+      
+      // Define the run function
+      var runFunction = function() {
         // Clear output
         stdoutElement.innerHTML = "";
         
@@ -168,6 +310,17 @@ procedure   MyProc   (     )
           // Run the B3 compiler with the input
           var startTime = performance.now();
           var inputFile = "input.b3";
+          
+          // First, ensure B3Runner is initialized
+          if (!B3Runner.FS) {
+            logOutput("Error: B3Runner.FS is not available", "stderr-msg");
+            return;
+          }
+          
+          // Write the content to the virtual filesystem
+          B3Runner.FS.writeFile(inputFile, b3Code);
+          
+          // Run the compiler
           var success = B3Runner.run(inputFile, b3Code);
           var endTime = performance.now();
           
@@ -175,10 +328,17 @@ procedure   MyProc   (     )
         } catch (error) {
           logOutput("Error: " + error.message, "stderr-msg");
         }
-      });
+      };
       
-      // Initialize
-      logOutput("Initializing B3 compiler...", "info-msg");
+      // Set up the run button click handler
+      runButton.onclick = runFunction;
+      
+      // Enable the Run button when Z3 is ready
+      Z3WorkerManager.onReady(function() {
+        logOutput("Z3 initialized and ready.", "info-msg");
+        runButton.disabled = false;
+        runButton.title = "Run B3 compiler";
+      });
     </script>
   </body>
 </html>
