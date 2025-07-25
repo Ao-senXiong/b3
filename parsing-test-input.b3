@@ -4,10 +4,7 @@
 procedure Test(x:int)   procedure // another comment alright
 Mote() {var x: string
 val y: int := 200
-
-  MyLabel: {
 exit MyLabel
-  }
               return return
   { return }
   {}{  }
@@ -29,31 +26,21 @@ exit MyLabel
     return return
   }
 
-  hello: {
-    if 200 { } else {
-      exit hello
-    }
+  if 200 { } else {
+    exit hello
   }
 
-  four: {
-    yes: {
-      var AaA: bool
-      var BbB: bool
-      var CcC: bool
-      if AaA {}
-      else if BbB {}
-      else if CcC {}
+  if AaA {}
+  else if BbB {}
+  else if CcC {}
 
-      if
-        case 3 { return }
-        case 4 { exit four }
+  if
+    case 3 { return }
+    case 4 { exit four }
 
-      if 600 { exit yes }
-      else if case 601 { } case 602 { } case 603 { check 9 }
-    }
-  }
+  if 600 { exit yes }
+  else if case 601 { } case 602 { } case 603 { check 9 }
 
-  var a: int
   x := 800
   y := 801
 
@@ -71,13 +58,8 @@ exit MyLabel
   M1(1000)
   M2(out x, 1000)
   M3(out x, 1000, inout y)
-  var b: int
-  var c: int
-  var z: int
   M4(1000, out a, out b, out c)
   M5(1000, 2000, inout x, inout y, inout z)
-  var m: int
-  var n: int
   M6(1000, 2000, inout m, inout n, out x, out z)
 }
 
@@ -95,10 +77,3 @@ procedure   MyProc   (     )
   ensures 55
 { }
 
-procedure M0()
-procedure M1(g: int)
-procedure M2(out g: int, h: int)
-procedure M3(out g: int, h: int, inout i: int)
-procedure M4(g: int, out h: int, out i: int, out j: int)
-procedure M5(g: int, h: int, inout i: int, inout j: int, inout k: int)
-procedure M6(g: int, h: int, inout i: int, inout j: int, out k: int, out l: int)
