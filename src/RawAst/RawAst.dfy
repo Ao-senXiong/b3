@@ -121,8 +121,7 @@ module RawAst {
 
   predicate LegalVariableName(name: string, scope: Scope) {
     !("_" <= name) &&
-    !(OldPrefix <= name) &&
-    name !in scope
+    !(OldPrefix <= name)
   }
 
   // Statements
