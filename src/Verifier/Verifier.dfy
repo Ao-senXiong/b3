@@ -16,14 +16,14 @@ module Verifier {
       x := new Var(v.name + suffix);
     }
     function Eval(e: Expr): SExpr
-    { CreateTrue() } // TODO
+    { SExpr.True() } // TODO
     function DomainRestrict(s: set<Variable>): Incarnations {
       map v | v in this && v in s :: this[v]
     }
   }
 
   function IdExpr(v: Var): SExpr {
-    CreateIdExpr(v)
+    SExpr.Id(v)
   }
 
   // map from block names to pairs (V, Ss) of variable sets and statement sequences
@@ -48,8 +48,7 @@ module Verifier {
       Process(cont, incarnations[x := x'], B, o', b3);
     case Block(lbl, bodyStmts) =>
       var B' := B[lbl := Continuation(incarnations.Keys, cont)];
-      assert StmtListMeasure(stmts) + ContinuationsMeasure(B) > StmtListMeasure(bodyStmts + [Exit(lbl)]) + ContinuationsMeasure(B') by {
-        assert StmtMeasure(s0) > StmtListMeasure(bodyStmts + [Exit(lbl)]) by {
+      assert StmtListMeasure(stmts) + ContinuationsMeasure(B) > StmtListMeasure(bodyStmts + [Exit(lbl)]) + ContinuationsMeasure(B') by {        assert StmtMeasure(s0) > StmtListMeasure(bodyStmts + [Exit(lbl)]) by {
           assert StmtMeasure(s0) == 2 + StmtListMeasure(bodyStmts);
           AboutStmtListMeasureSingleton(Exit(lbl));
           AboutStmtListMeasureConcat(bodyStmts, [Exit(lbl)]);
@@ -148,7 +147,7 @@ module Verifier {
     case Assign(x, rhs) =>
       var e' := incarnations.Eval(rhs);
       var x' := incarnations.New(x);
-      var o' := o.Extend(CreateEq(IdExpr(x'), e'));
+      var o' := o.Extend(SExpr.Eq(IdExpr(x'), e'));
       Process(cont, incarnations[x := x'], B, o', b3);
     case Block(lbl, bodyStmts) =>
       var B' := B[lbl := Continuation(incarnations.Keys, cont)];
@@ -236,8 +235,7 @@ module Verifier {
 
   method ProcessExit(lbl: Label, incarnations: Incarnations, B: BlockContinuations, o: Solver, b3: Program)
     requires BValid(B, b3) && lbl in B
-    decreases 1 + ContinuationsMeasure(B), 0
-  {
+    decreases 1 + ContinuationsMeasure(B), 0  {
       var Continuation(V, cont) := B[lbl];
       var incarnations' := incarnations.DomainRestrict(V);
       var B0 := B - {lbl};

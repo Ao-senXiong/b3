@@ -86,7 +86,7 @@ module Ast {
     | VarDecl(v: Variable, initial: Option<Expr>, body: Stmt)
     | Assign(lhs: Variable, rhs: Expr)
     | Block(stmts: seq<Stmt>)
-    | Call(name: Procedure, args: seq<CallArgument>)
+    | Call(proc: Procedure, args: seq<CallArgument>)
     // assertions
     | Check(cond: Expr)
     | Assume(cond: Expr)
