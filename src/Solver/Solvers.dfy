@@ -155,7 +155,7 @@ module Solvers {
       AddContext(Assumption(e));
     }
 
-    method Prove(e: SExpr) returns (result: ProofResult )
+    method Prove(e: SExpr) returns (result: ProofResult)
       requires Valid()
       ensures Valid()
       modifies this, solver, solver.process
@@ -210,6 +210,7 @@ module Solvers {
       newSolver := Solver(assumptions + [Assumption(e)]);
       s.Extend(e);
     }
+
     method Prove(e: SExpr, s: SolverState)
       requires s.Valid() && s.ValidFor(this)
       modifies s, s.solver, s.solver.process
@@ -225,7 +226,11 @@ module Solvers {
       var proofResult := s.Prove(e);
       print "Result:", proofResult, "\n";
     }
+
     method Record(e: SExpr) returns (solver: Solver)
-    { solver := this; } // TODO
+      ensures forall s: SolverState :: s.ValidFor(this) ==> s.ValidFor(solver)
+    {
+      solver := this; // TODO
+    }
   }
 }

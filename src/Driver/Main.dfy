@@ -9,6 +9,7 @@ module B3 {
   import Parser
   import Resolver
   import Ast
+  import Verifier
 
   method Main(args: seq<string>) {
     if |args| != 2 {
@@ -32,6 +33,8 @@ module B3 {
       return;
     }
     var b3 := resultResolver.value;
+
+    Verifier.Verify(b3);
   }
 
   method PrintUsage() {

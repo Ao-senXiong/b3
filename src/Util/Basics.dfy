@@ -105,4 +105,22 @@ module Basics {
   predicate MapIsInjective<X, Y(==)>(m: map<X, Y>) {
     forall x0 <- m.Keys, x1 <- m.Keys :: x0 != x1 ==> m[x0] != m[x1]
   }
+
+  function Int2String(x: int): string {
+    if x == 0 then
+      "0"
+    else if x < 0 then
+      "-" + Int2StringNoLeadingZero(-x)
+    else
+      Int2StringNoLeadingZero(x)
+  }
+
+  function Int2StringNoLeadingZero(x: nat): string {
+    if x == 0 then
+      ""
+    else
+      var prefix := Int2StringNoLeadingZero(x / 10);
+      var digit := (x % 10) as char + '0';
+      prefix + [digit]
+  }
 }

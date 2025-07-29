@@ -1,11 +1,12 @@
 module SolverExpr {
   import Std.Collections.Seq
   import opened Basics
+
   export
     reveals Var, Var.name
     reveals SExprPrintConfig
     provides SExpr, SExpr.ToString
-    provides SExpr.True, SExpr.Id, SExpr.Eq, SExpr.Negation, SExpr.BigAnd
+    provides SExpr.Boolean, SExpr.Integer, SExpr.Id, SExpr.Eq, SExpr.Negation, SExpr.BigAnd
 
   class Var {
     const name: string
@@ -49,14 +50,18 @@ module SolverExpr {
     // SExpr builders
 
     static const TRUE := "TRUE"
+    static const FALSE := "FALSE"
     static const EQ := "EQ"
     static const NOT := "NOT"
     static const AND := "AND"
 
-    static function True(): SExpr {
-      S(TRUE)
+    static function Boolean(b: bool): SExpr {
+      S(if b then TRUE else FALSE)
     }
-    function Id(x: Var): SExpr {
+    static function Integer(x: int): SExpr {
+      S(Int2String(x))
+    }
+    static function Id(x: Var): SExpr {
       S(x.name)
     }
     static function Eq(e0: SExpr, e1: SExpr): SExpr {
@@ -67,7 +72,7 @@ module SolverExpr {
     }
     static function BigAnd(ee: seq<SExpr>): SExpr {
       if |ee| == 0 then
-        True()
+        Boolean(true)
       else if |ee| == 1 then
         ee[0]
       else
