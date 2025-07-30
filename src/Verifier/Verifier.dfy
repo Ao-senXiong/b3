@@ -72,7 +72,8 @@ module Verifier {
 
     function Eval(expr: Expr): SExpr {
       match expr
-      case Const(value) => SExpr.Integer(value)
+      case BConst(value) => SExpr.Boolean(value)
+      case IConst(value) => SExpr.Integer(value)
       case IdExpr(v) =>
         assume {:axiom} v in this; // TODO
         SExpr.Id(this[v])

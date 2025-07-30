@@ -440,8 +440,10 @@ module Resolver {
   {
     var r: Expr;
     match expr {
-      case Const(value) =>
-        r := Const(value);
+      case BConst(value) =>
+        r := BConst(value);
+      case IConst(value) =>
+        r := IConst(value);
       case IdExpr(name) =>
         if name !in varMap {
           return Failure("undeclared variable: " + name);

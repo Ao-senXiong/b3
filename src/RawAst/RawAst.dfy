@@ -347,36 +347,38 @@ module RawAst {
 
   // TODO
   datatype Expr =
-    | Const(value: int)
+    | BConst(bvalue: bool)
+    | IConst(ivalue: int)
     | IdExpr(name: string)
   {
     predicate WellFormed(b3: Program, scope: Scope) {
       match this
-      case Const(_) => true
+      case BConst(_) => true
+      case IConst(_) => true
       case IdExpr(name) => name in scope
     }
 
     static function CreateTrue(): Expr
-    { Const(10) } // TODO
+    { BConst(true) }
     static function CreateFalse(): Expr
-    { Const(-10) } // TODO
+    { BConst(false) }
     static function CreateNegation(e: Expr): Expr
-    { if e.Const? then Const(- e.value) else e } // TODO
+    { if e.BConst? then BConst(!e.bvalue) else e } // TODO
     static function CreateAnd(e0: Expr, e1: Expr): Expr
-    { if e0.Const? && e1.Const? then Const(e0.value * e1.value) else e0 } // TODO
+    { if e0.IConst? && e1.IConst? then IConst(e0.ivalue * e1.ivalue) else e0 } // TODO
     static function CreateBigAnd(ee: seq<Expr>): Expr {
       if |ee| == 0 then CreateTrue() else CreateAnd(ee[0], CreateBigAnd(ee[1..]))
     }
     static function CreateOr(e0: Expr, e1: Expr): Expr
-    { if e0.Const? && e1.Const? then Const(e0.value + e1.value) else e0 } // TODO
+    { if e0.IConst? && e1.IConst? then IConst(e0.ivalue + e1.ivalue) else e0 } // TODO
     static function CreateBigOr(ee: seq<Expr>): Expr {
       if |ee| == 0 then CreateFalse() else CreateOr(ee[0], CreateBigOr(ee[1..]))
     }
     static function CreateImplies(e0: Expr, e1: Expr): Expr
-    { if e0.Const? && e1.Const? then Const(-e0.value + e1.value) else e0 } // TODO
+    { if e0.IConst? && e1.IConst? then IConst(-e0.ivalue + e1.ivalue) else e0 } // TODO
     static function CreateLet(v: Variable, rhs: Expr, body: Expr): Expr
-    { if body.Const? then Const(100 * body.value) else body } // TODO
+    { if body.IConst? then IConst(100 * body.ivalue) else body } // TODO
     static function CreateForall(v: Variable, body: Expr): Expr
-    { if body.Const? then Const(1000 * body.value) else body } // TODO
+    { if body.IConst? then IConst(1000 * body.ivalue) else body } // TODO
   }
 }

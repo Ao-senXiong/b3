@@ -242,7 +242,8 @@ module Printer {
 
   method Expression(e: Expr) {
     match e
-    case Const(value) => print value;
+    case BConst(value) => print value;
+    case IConst(value) => print value;
     case IdExpr(name) => print name;
   }
 }

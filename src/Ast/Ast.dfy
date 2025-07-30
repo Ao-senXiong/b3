@@ -122,14 +122,21 @@ module Ast {
   }
 
   datatype Expr =
-    | Const(value: int)
+    | BConst(bvalue: bool)
+    | IConst(ivalue: int)
     | IdExpr(v: Variable)
   {
     function Type(b3: Program, scope: set<string>): Option<string>
-    { Some(Types.IntTypeName) } // TODO
+    {
+      // TODO
+      match this
+      case BConst(_) => Some(Types.BoolTypeName)
+      case IConst(_) => Some(Types.IntTypeName)
+      case IdExpr(v) => Some(v.typ.Name)
+    }
     function Eval(vals: Valuation): Value // TODO: either make Option<Value> or require Type(...).Some?
     { 3 } // TODO
     static function CreateNegation(e: Expr): Expr
-    { if e.Const? then Const(- e.value) else e } // TODO
+    { if e.BConst? then BConst(!e.bvalue) else e } // TODO
   }
 }
