@@ -9,6 +9,7 @@ module B3 {
   import Parser
   import Resolver
   import Ast
+  import TypeChecker
   import Verifier
 
   method Main(args: seq<string>) {
@@ -53,7 +54,11 @@ module B3 {
 
   method ResolveAndTypeCheck(rawb3: RawAst.Program) returns (r: Result<Ast.Program, string>) {
     var b3 :- Resolver.Resolve(rawb3);
-    // TODO: type check and check other restrictions (like assignments go only to mutable variables)
+    var outcome := TypeChecker.TypeCheck(b3);
+    if outcome.IsFailure() {
+      return Failure(outcome.error);
+    }
+    // TODO: check other restrictions (like assignments go only to mutable variables)
     return Success(b3);
   }
 }
