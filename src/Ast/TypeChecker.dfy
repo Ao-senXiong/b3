@@ -35,12 +35,69 @@ module TypeChecker {
     return Pass;
   }
 
-  predicate TypeCorrect(b3: Program) {
+  predicate TypeCorrect(b3: Program)
+    reads b3.procedures
+  {
     forall proc <- b3.procedures :: TypeCorrectProc(proc)
   }
 
-  predicate TypeCorrectProc(proc: Procedure) {
-    true
+  predicate TypeCorrectProc(proc: Procedure)
+    reads proc
+  {
+    && (forall ae <- proc.Pre :: TypeCorrectAExpr(ae))
+    && (forall ae <- proc.Post :: TypeCorrectAExpr(ae))
+    && (proc.Body.Some? ==> TypeCorrectStmt(proc.Body.value))
+  }
+
+  predicate TypeCorrectAExpr(aexpr: AExpr) {
+    match aexpr
+    case AExpr(e) => TypeCorrectExpr(e)
+    case AAssertion(s) => TypeCorrectStmt(s)
+  }
+
+  predicate TypeCorrectStmt(stmt: Stmt) {
+    match stmt
+    case VarDecl(variable, init, body) =>
+      && (init.Some? ==> TypeCorrectExpr(init.value))
+      && TypeCorrectStmt(body)
+    case Assign(lhs, rhs) =>
+      TypeCorrectExpr(rhs) && rhs.HasType(lhs.typ)
+    case Block(stmts) =>
+      forall s <- stmts :: TypeCorrectStmt(s)
+    case Call(proc, args) =>
+      forall arg <- args :: TypeCorrectCallArg(arg)
+    case Check(cond) =>
+      TypeCorrectExpr(cond)
+    case Assume(cond) =>
+      TypeCorrectExpr(cond)
+    case Assert(cond) =>
+      TypeCorrectExpr(cond)
+    case AForall(_, body) =>
+      TypeCorrectStmt(body)
+    case If(cases) =>
+      forall c <- cases :: TypeCorrectExpr(c.cond) && TypeCorrectStmt(c.body)
+    case Loop(invariants, body) =>
+      && (forall inv <- invariants :: TypeCorrectAExpr(inv))
+      && TypeCorrectStmt(body)
+    case LabeledStmt(_, body) =>
+      TypeCorrectStmt(body)
+    case Exit(_) =>
+      true
+    case Probe(expr) =>
+      TypeCorrectExpr(expr)
+  }
+
+  predicate TypeCorrectCallArg(arg: CallArgument) {
+    match arg
+    case InArgument(e) => TypeCorrectExpr(e)
+    case OutgoingArgument(_, _) => true
+  }
+
+  predicate TypeCorrectExpr(expr: Expr) {
+    match expr
+    case BConst(_) => true
+    case IConst(_) => true
+    case IdExpr(v) => true
   }
 
   function TestSuccess<R, E>(r: Result<R, E>): Outcome<E> {
@@ -66,6 +123,7 @@ module TypeChecker {
 
     method CheckProcedure(proc: Procedure) returns (outcome: Outcome<string>)
       requires Valid() && proc.WellFormed()
+      ensures outcome.Pass? ==> TypeCorrectProc(proc)
     {
       :- CheckAExprs(proc.Pre);
       :- CheckAExprs(proc.Post);
@@ -77,12 +135,18 @@ module TypeChecker {
 
     method CheckAExprs(aexprs: seq<AExpr>) returns (outcome: Outcome<string>)
       requires Valid() && forall ae <- aexprs :: ae.WellFormed()
+      ensures outcome.Pass? ==> forall ae <- aexprs :: TypeCorrectAExpr(ae)
     {
-      for n := 0 to |aexprs| {
+      for n := 0 to |aexprs|
+        invariant forall ae <- aexprs[..n] :: TypeCorrectAExpr(ae)
+      {
         assert aexprs[n].WellFormed();
         match aexprs[n]
         case AExpr(e) =>
           outcome := TypeCheckAsBool(e);
+          if outcome.IsFailure() {
+            return Fail(outcome.error);
+          }
         case AAssertion(s) =>
           assert aexprs decreases to s by {
             assert aexprs decreases to aexprs[n];
@@ -95,12 +159,14 @@ module TypeChecker {
 
     method TypeCheckAsBool(expr: Expr) returns (outcome: Outcome<string>)
       requires Valid() && expr.WellFormed()
+      ensures outcome.Pass? ==> TypeCorrectExpr(expr)
     {
       outcome := TypeCheckAs(expr, boolType);
     }
 
     method TypeCheckAs(expr: Expr, expectedType: Type) returns (outcome: Outcome<string>)
       requires Valid() && expr.WellFormed()
+      ensures outcome.Pass? ==> TypeCorrectExpr(expr) && expr.HasType(expectedType)
     {
       var r := CheckExpr(expr);
       if r.IsFailure() {
@@ -110,7 +176,9 @@ module TypeChecker {
       outcome := ExpectType(typ, expectedType);
     }
 
-    method ExpectType(typ: Type, expectedType: Type) returns (outcome: Outcome<string>) {
+    method ExpectType(typ: Type, expectedType: Type) returns (outcome: Outcome<string>)
+      ensures outcome.Pass? ==> typ == expectedType
+    {
       if typ != expectedType {
         return Fail("expect type '" + expectedType.Name + "', got type '" + typ.Name + "'");
       }
@@ -119,6 +187,7 @@ module TypeChecker {
 
     method CheckStmt(stmt: Stmt) returns (outcome: Outcome<string>)
       requires Valid() && stmt.WellFormed()
+      ensures outcome.Pass? ==> TypeCorrectStmt(stmt)
     {
       match stmt {
         case VarDecl(variable, init, body) =>
@@ -129,7 +198,9 @@ module TypeChecker {
         case Assign(lhs, rhs) =>
           :- TypeCheckAs(rhs, lhs.typ);
         case Block(stmts) =>
-          for n := 0 to |stmts| {
+          for n := 0 to |stmts|
+            invariant forall s <- stmts[..n] :: TypeCorrectStmt(s)
+          {
             :- CheckStmt(stmts[n]);
           }
         case Call(proc, args) =>
@@ -150,7 +221,9 @@ module TypeChecker {
         case AForall(_, body) =>
           :- CheckStmt(body);
         case If(cases) =>
-          for n := 0 to |cases| {
+          for n := 0 to |cases|
+            invariant forall c <- cases[..n] :: TypeCorrectExpr(c.cond) && TypeCorrectStmt(c.body)
+          {
             :- TypeCheckAsBool(cases[n].cond);
             :- CheckStmt(cases[n].body);
           }
@@ -171,6 +244,7 @@ module TypeChecker {
 
     method CheckExpr(expr: Expr) returns (r: Result<Type, string>)
       requires Valid() && expr.WellFormed()
+      ensures r.Success? ==> TypeCorrectExpr(expr) && expr.HasType(r.value)
     {
       match expr
       case BConst(_) =>

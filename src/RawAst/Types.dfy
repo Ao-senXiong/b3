@@ -15,5 +15,13 @@ module Types {
     {
       Name := name;
     }
+
+    predicate IsBool() {
+      Name == BoolTypeName
+    }
+
+    predicate IsInt() {
+      Name == IntTypeName
+    }
   }
 }

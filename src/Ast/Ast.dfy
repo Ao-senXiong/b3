@@ -174,12 +174,11 @@ module Ast {
     | IConst(ivalue: int)
     | IdExpr(v: Variable)
   {
-    function Type(b3: Program, scope: set<string>): Option<string>
-    {
+    predicate HasType(typ: Type) {
       match this
-      case BConst(_) => Some(Types.BoolTypeName)
-      case IConst(_) => Some(Types.IntTypeName)
-      case IdExpr(v) => Some(v.typ.Name)
+      case BConst(_) => typ.IsBool()
+      case IConst(_) => typ.IsInt()
+      case IdExpr(v) => v.typ == typ
     }
 
     predicate WellFormed() {
