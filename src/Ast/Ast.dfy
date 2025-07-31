@@ -8,7 +8,9 @@ module Ast {
   type Type = Types.Type
   datatype Program = Program(types: set<Type>, procedures: set<Procedure>)
   {
-    predicate WellFormed() {
+    predicate WellFormed()
+      reads procedures
+    {
       // the built-in types are included among the resolved-AST program's types
       && Types.BuiltInTypes <= (set typ <- types :: typ.Name)
       // type declarations have distinct names
@@ -45,8 +47,14 @@ module Ast {
       && (forall i :: 0 <= i < |Parameters| ==> (Parameters[i].oldInOut.Some? <==> proc.parameters[i].mode == Raw.InOut))
     }
 
-    predicate WellFormed() {
-      true // TODO
+    predicate WellFormed()
+      reads this
+    {
+      && (forall i, j :: 0 <= i < j < |Parameters| ==> Parameters[i].name != Parameters[j].name)
+      && (forall pre <- Pre :: pre.WellFormed())
+      && (forall post <- Post :: post.WellFormed())
+      && (Body.Some? ==> Body.value.WellFormed())
+      // TODO: free variables of Pre/Post/Body are the expected ones
     }
   }
 
@@ -57,7 +65,6 @@ module Ast {
 
   class LocalVariable extends Variable {
     const isMutable: bool
-
     constructor (name: string, isMutable: bool, typ: Type)
       ensures this.name == name
     {
@@ -105,17 +112,52 @@ module Ast {
     | Exit(lbl: Label)
     // Error reporting
     | Probe(e: Expr)
+  {
+    predicate WellFormed() {
+      match this
+      case VarDecl(_, initial, body) => 
+        && (initial.Some? ==> initial.value.WellFormed())
+        && body.WellFormed()
+      case Assign(_, rhs) => rhs.WellFormed()
+      case Block(stmts) => forall stmt <- stmts :: stmt.WellFormed()
+      case Call(_, args) => forall arg <- args :: arg.WellFormed()
+      case Check(cond) => cond.WellFormed()
+      case Assume(cond) => cond.WellFormed()
+      case Assert(cond) => cond.WellFormed()
+      case AForall(_, body) => body.WellFormed()
+      case If(cases) =>
+        forall c <- cases :: c.cond.WellFormed() && c.body.WellFormed()
+      case Loop(invariants, body) =>
+        && (forall inv <- invariants :: inv.WellFormed())
+        && body.WellFormed()
+      case LabeledStmt(lbl, body) => body.WellFormed()
+      case Exit(_) => true
+      case Probe(e) => e.WellFormed()
+    }
+  }
 
   datatype Case = Case(cond: Expr, body: Stmt)
 
   datatype CallArgument =
     | InArgument(e: Expr)
     | OutgoingArgument(isInOut: bool, arg: Variable)
+  {
+    predicate WellFormed() {
+      match this
+      case InArgument(e) => e.WellFormed()
+      case OutgoingArgument(_, _) => true
+    }
+  }
 
   datatype AExpr =
     | AExpr(e: Expr)
     | AAssertion(s: Stmt)
   {
+    predicate WellFormed() {
+      match this
+      case AExpr(e) => e.WellFormed()
+      case AAssertion(s) => s.WellFormed()
+    }
   }
 
   datatype Expr =
@@ -130,6 +172,11 @@ module Ast {
       case IConst(_) => Some(Types.IntTypeName)
       case IdExpr(v) => Some(v.typ.Name)
     }
+
+    predicate WellFormed() {
+      true // TODO
+    }
+
     function Eval(vals: Valuation): Value // TODO: either make Option<Value> or require Type(...).Some?
     { 3 } // TODO
     static function CreateNegation(e: Expr): Expr
