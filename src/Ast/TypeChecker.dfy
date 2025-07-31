@@ -1,6 +1,6 @@
 module TypeChecker {
   export
-    provides TypeCheck
+    provides TypeCheck, TypeCorrect
     provides Wrappers, Ast
 
   import opened Std.Wrappers
@@ -10,7 +10,8 @@ module TypeChecker {
   import Printer
 
   method TypeCheck(b3: Program) returns (outcome: Outcome<string>)
-    // TODO: add postcondition that describes what a properly typed program is
+    requires b3.WellFormed()
+    ensures outcome.Pass? ==> TypeCorrect(b3)
   {
     var r := FindType(Types.BoolTypeName, b3);
     :- TestSuccess(r);
@@ -23,13 +24,23 @@ module TypeChecker {
     var context := TypeCheckingContext(boolType, intType);
 
     var procs := b3.procedures;
-    while procs != {} {
+    while procs != {}
+      invariant forall proc <- b3.procedures - procs :: TypeCorrectProc(proc)
+    {
       var proc: Procedure :| proc in procs;
       procs := procs - {proc};
       :- context.CheckProcedure(proc);
     }
 
     return Pass;
+  }
+
+  predicate TypeCorrect(b3: Program) {
+    forall proc <- b3.procedures :: TypeCorrectProc(proc)
+  }
+
+  predicate TypeCorrectProc(proc: Procedure) {
+    true
   }
 
   function TestSuccess<R, E>(r: Result<R, E>): Outcome<E> {
@@ -54,7 +65,7 @@ module TypeChecker {
     }
 
     method CheckProcedure(proc: Procedure) returns (outcome: Outcome<string>)
-      requires Valid()
+      requires Valid() && proc.WellFormed()
     {
       :- CheckAExprs(proc.Pre);
       :- CheckAExprs(proc.Post);
@@ -64,8 +75,11 @@ module TypeChecker {
       return Pass;
     }
 
-    method CheckAExprs(aexprs: seq<AExpr>) returns (outcome: Outcome<string>) {
+    method CheckAExprs(aexprs: seq<AExpr>) returns (outcome: Outcome<string>)
+      requires Valid() && forall ae <- aexprs :: ae.WellFormed()
+    {
       for n := 0 to |aexprs| {
+        assert aexprs[n].WellFormed();
         match aexprs[n]
         case AExpr(e) =>
           outcome := TypeCheckAsBool(e);
@@ -79,11 +93,15 @@ module TypeChecker {
       return Pass;
     }
 
-    method TypeCheckAsBool(expr: Expr) returns (outcome: Outcome<string>) {
+    method TypeCheckAsBool(expr: Expr) returns (outcome: Outcome<string>)
+      requires Valid() && expr.WellFormed()
+    {
       outcome := TypeCheckAs(expr, boolType);
     }
 
-    method TypeCheckAs(expr: Expr, expectedType: Type) returns (outcome: Outcome<string>) {
+    method TypeCheckAs(expr: Expr, expectedType: Type) returns (outcome: Outcome<string>)
+      requires Valid() && expr.WellFormed()
+    {
       var r := CheckExpr(expr);
       if r.IsFailure() {
         return r.ToOutcome();
@@ -100,6 +118,7 @@ module TypeChecker {
     }
 
     method CheckStmt(stmt: Stmt) returns (outcome: Outcome<string>)
+      requires Valid() && stmt.WellFormed()
     {
       match stmt {
         case VarDecl(variable, init, body) =>
@@ -114,7 +133,6 @@ module TypeChecker {
             :- CheckStmt(stmts[n]);
           }
         case Call(proc, args) =>
-          expect |proc.Parameters| == |args|; // TODO: this follows from successful resolution
           for n := 0 to |args| {
             var formal := proc.Parameters[n];
             match args[n]
@@ -151,7 +169,9 @@ module TypeChecker {
       return Pass;
     }
 
-    method CheckExpr(expr: Expr) returns (r: Result<Type, string>) {
+    method CheckExpr(expr: Expr) returns (r: Result<Type, string>)
+      requires Valid() && expr.WellFormed()
+    {
       match expr
       case BConst(_) =>
         return Success(boolType);

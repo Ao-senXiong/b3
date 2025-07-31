@@ -120,7 +120,10 @@ module Ast {
         && body.WellFormed()
       case Assign(_, rhs) => rhs.WellFormed()
       case Block(stmts) => forall stmt <- stmts :: stmt.WellFormed()
-      case Call(_, args) => forall arg <- args :: arg.WellFormed()
+      case Call(proc, args) =>
+        && |args| == |proc.Parameters|
+        && (forall i :: 0 <= i < |args| ==> args[i].CorrespondingMode() == proc.Parameters[i].mode)
+        && (forall arg <- args :: arg.WellFormed())
       case Check(cond) => cond.WellFormed()
       case Assume(cond) => cond.WellFormed()
       case Assert(cond) => cond.WellFormed()
@@ -142,6 +145,12 @@ module Ast {
     | InArgument(e: Expr)
     | OutgoingArgument(isInOut: bool, arg: Variable)
   {
+    function CorrespondingMode(): ParameterMode {
+      match this
+      case InArgument(_) => ParameterMode.In
+      case OutgoingArgument(isInOut, _) => if isInOut then ParameterMode.InOut else ParameterMode.Out
+    }
+
     predicate WellFormed() {
       match this
       case InArgument(e) => e.WellFormed()

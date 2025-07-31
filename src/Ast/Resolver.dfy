@@ -420,10 +420,12 @@ module Resolver {
     }
     assert |args| == |rawProc.parameters|;
 
-    var aa := [];
+    var aa: seq<CallArgument> := [];
     for n := 0 to |args|
       invariant forall i :: 0 <= i < n ==> args[i].mode == rawProc.parameters[i].mode
       invariant forall i :: 0 <= i < n ==> args[i].arg.WellFormed(rs.b3, ls.varMap.Keys)
+      invariant |aa| == n
+      invariant forall i :: 0 <= i < n ==> aa[i].CorrespondingMode() == proc.Parameters[i].mode
     {
       if args[n].mode != proc.Parameters[n].mode {
         return Failure("mismatched parameter mode in call to procedure " + name);
