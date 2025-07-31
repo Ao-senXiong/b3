@@ -15,6 +15,8 @@ module Ast {
       && (forall typ0 <- types, typ1 <- types :: typ0.Name == typ1.Name ==> typ0 == typ1)
       // procedure declarations have distinct names
       && (forall proc0 <- procedures, proc1 <- procedures :: proc0.Name == proc1.Name ==> proc0 == proc1)
+      // procedures are well-formed
+      && (forall proc <- procedures :: proc.WellFormed())
     }
   }
 
@@ -41,6 +43,10 @@ module Ast {
       && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].name == proc.parameters[i].name)
       && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].mode == proc.parameters[i].mode)
       && (forall i :: 0 <= i < |Parameters| ==> (Parameters[i].oldInOut.Some? <==> proc.parameters[i].mode == Raw.InOut))
+    }
+
+    predicate WellFormed() {
+      true // TODO
     }
   }
 

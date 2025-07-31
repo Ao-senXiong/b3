@@ -36,7 +36,9 @@ module TypeChecker {
     if r.IsFailure() then Fail(r.error) else Pass
   }
 
-  method FindType(typeName: string, b3: Program) returns (r: Result<Type, string>) {
+  method FindType(typeName: string, b3: Program) returns (r: Result<Type, string>)
+    ensures r.Success? ==> r.value.Name == typeName
+  {
     if typ :| typ in b3.types && typ.Name == typeName {
       return Success(typ);
     } else {
@@ -46,7 +48,14 @@ module TypeChecker {
 
   datatype TypeCheckingContext = TypeCheckingContext(boolType: Type, intType: Type)
   {
-    method CheckProcedure(proc: Procedure) returns (outcome: Outcome<string>) {
+    ghost predicate Valid() {
+      && boolType.Name == Types.BoolTypeName
+      && intType.Name == Types.IntTypeName
+    }
+
+    method CheckProcedure(proc: Procedure) returns (outcome: Outcome<string>)
+      requires Valid()
+    {
       :- CheckAExprs(proc.Pre);
       :- CheckAExprs(proc.Post);
       if proc.Body.Some? {
