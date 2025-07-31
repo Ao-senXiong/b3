@@ -37,7 +37,7 @@ module Ast {
 
     ghost predicate SignatureWellFormed(proc: Raw.Procedure) {
       && Name == proc.name
-      && (forall formal <- Parameters :: Raw.LegalVariableName(formal.name, {}))
+      && (forall formal <- Parameters :: Raw.LegalVariableName(formal.name))
       && (forall i, j :: 0 <= i < j < |Parameters| ==> Parameters[i].name != Parameters[j].name)
       && |Parameters| == |proc.parameters|
       && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].name == proc.parameters[i].name)
@@ -116,15 +116,6 @@ module Ast {
     | AExpr(e: Expr)
     | AAssertion(s: Stmt)
   {
-    /*
-    function Eval(vals: Valuation): Value
-      requires ArgLValue? ==> name in vals
-    {
-      match this
-      case ArgExpr(e) => e.Eval(vals)
-      case ArgLValue(_, name) => vals[name]
-    }
-    */
   }
 
   datatype Expr =
@@ -134,7 +125,6 @@ module Ast {
   {
     function Type(b3: Program, scope: set<string>): Option<string>
     {
-      // TODO
       match this
       case BConst(_) => Some(Types.BoolTypeName)
       case IConst(_) => Some(Types.IntTypeName)

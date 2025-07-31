@@ -48,7 +48,7 @@ module RawAst {
   {
     predicate SignatureWellFormed(b3: Program) {
       // parameters have legal names and valid types
-      && (forall p <- parameters :: LegalVariableName(p.name, {}) && b3.IsType(p.typ))
+      && (forall p <- parameters :: LegalVariableName(p.name) && b3.IsType(p.typ))
       // formal parameters have distinct names
       && Parameter.UniqueNames(parameters)
     }
@@ -119,7 +119,7 @@ module RawAst {
     OldPrefix + name
   }
 
-  predicate LegalVariableName(name: string, scope: Scope) {
+  predicate LegalVariableName(name: string) {
     !("_" <= name) &&
     !(OldPrefix <= name)
   }
@@ -190,7 +190,7 @@ module RawAst {
     predicate WellFormed(b3: Program, scope: Scope, labels: set<string>, insideLoop: bool) {
       match this
       case VarDecl(v, init, body) =>
-        && LegalVariableName(v.name, scope)
+        && LegalVariableName(v.name)
         && b3.IsType(v.typ)
         && (init.Some? ==> init.value.WellFormed(b3, scope))
         && body.WellFormed(b3, scope + {v.name}, labels, insideLoop)
@@ -215,7 +215,7 @@ module RawAst {
       case Assert(cond) =>
         cond.WellFormed(b3, scope)
       case AForall(name, typ, body) =>
-        && LegalVariableName(name, scope)
+        && LegalVariableName(name)
         && b3.IsType(typ)
         && body.WellFormed(b3, scope + {name}, labels, insideLoop)
       case If(cond, thn, els) =>

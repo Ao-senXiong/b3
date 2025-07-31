@@ -79,7 +79,7 @@ module Resolver {
     var paramMap: map<string, Variable> := map[];
     var formals: seq<Parameter> := [];
     for n := 0 to |proc.parameters|
-      invariant forall p <- proc.parameters[..n] :: Raw.LegalVariableName(p.name, {}) && b3.IsType(p.typ)
+      invariant forall p <- proc.parameters[..n] :: Raw.LegalVariableName(p.name) && b3.IsType(p.typ)
       invariant forall i, j :: 0 <= i < j < n ==> proc.parameters[i].name != proc.parameters[j].name
       invariant paramMap.Keys ==
         (set p <- proc.parameters[..n] :: p.name) +
@@ -91,7 +91,7 @@ module Resolver {
       invariant forall i :: 0 <= i < n ==> (formals[i].oldInOut.Some? <==> proc.parameters[i].mode == Raw.InOut)
     {
       var p := proc.parameters[n];
-      if !Raw.LegalVariableName(p.name, {}) {
+      if !Raw.LegalVariableName(p.name) {
         return Failure("illegal parameter name: " + p.name);
       }
       if p.name in paramMap {
@@ -188,7 +188,7 @@ module Resolver {
   {
     var formals := rproc.Parameters;
     var n := |formals|;
-    assert forall formal: Parameter <- formals :: Raw.LegalVariableName(formal.name, {});
+    assert forall formal: Parameter <- formals :: Raw.LegalVariableName(formal.name);
     assert forall i, j :: 0 <= i < j < n ==> formals[i].name != formals[j].name;
     forall i, j | 0 <= i < j < n
       ensures Raw.OldName(formals[i].name) != Raw.OldName(formals[j].name)
@@ -268,7 +268,7 @@ module Resolver {
     var r: Stmt;
     match stmt {
       case VarDecl(variable, init, body) =>
-        if !Raw.LegalVariableName(variable.name, ls.varMap.Keys) {
+        if !Raw.LegalVariableName(variable.name) {
           return Failure("illegal variable name: " + variable.name);
         }
         var typ :- ResolveType(variable.typ, rs.typeMap);
@@ -319,7 +319,7 @@ module Resolver {
         r := Assert(c);
 
       case AForall(name, typ, body) =>
-        if !Raw.LegalVariableName(name, ls.varMap.Keys) {
+        if !Raw.LegalVariableName(name) {
           return Failure("illegal variable name: " + name);
         }
         var t :- ResolveType(typ, rs.typeMap);
