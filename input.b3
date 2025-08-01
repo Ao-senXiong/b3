@@ -12,25 +12,27 @@ exit MyLabel
   { return }
   {}{  }
 
-  myLabel: { check 62 }
+  myLabel: { check true }
 
-  check 99
-  assume 98
-  assert 97
+  check true
+  assume true
+  assert true
   probe 96
 
   forall x: int {
-    check 5050
-    val y: bool := 12
+    check true
+    val y: bool := false
+    y := true
     assume y
   }
 
-  if 100 {
+  if false {
     return return
   }
 
   hello: {
-    if 200 { } else {
+    var something: bool
+    if something { } else {
       exit hello
     }
   }
@@ -45,26 +47,31 @@ exit MyLabel
       else if CcC {}
 
       if
-        case 3 { return }
-        case 4 { exit four }
+        case true { return }
+        case true { exit four }
 
-      if 600 { exit yes }
-      else if case 601 { } case 602 { } case 603 { check 9 }
+      var s600: bool
+      var s601: bool
+      var s602: bool
+      var s603: bool
+      if s600 { exit yes }
+      else if case s601 { } case s602 { } case s603 { check true }
     }
   }
 
   var a: int
+  var x: int
   x := 800
   y := 801
 
   loop { a := 1 }
   loop
-    invariant 618 { }
+    invariant true { }
   asap :loop
-    invariant 619
-    invariant 620
-    invariant { check 8 assume 7 if 2 { assume 9 }}
-    invariant 622
+    invariant true
+    invariant true
+    invariant { check true assume true if true { assume true }}
+    invariant true
   { exit asap }
 
   M0()
@@ -87,12 +94,12 @@ MyClass
   procedure Egon( testb  :bool, inout testi :  int,abc: bool,out xyz: string)
 
 procedure   MyProc   (     )
-  requires 10
-  requires 20
-  requires 30
-  requires { check 8 assume 7 if 2 { assume 9 }}
-  ensures { check 8 assume 7 if 2 { assume 9 }}
-  ensures 55
+  requires true
+  requires true
+  requires true
+  requires { check true assume true if false { assume false }}
+  ensures { check true assume true if false { assume false }}
+  ensures true
 { }
 
 procedure M0()
