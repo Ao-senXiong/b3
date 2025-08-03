@@ -11,6 +11,7 @@ module B3 {
   import Ast
   import TypeChecker
   import Verifier
+  import StaticConsistency
 
   method Main(args: seq<string>) {
     if |args| != 2 {
@@ -54,11 +55,17 @@ module B3 {
 
   method ResolveAndTypeCheck(rawb3: RawAst.Program) returns (r: Result<Ast.Program, string>) {
     var b3 :- Resolver.Resolve(rawb3);
+
     var outcome := TypeChecker.TypeCheck(b3);
     if outcome.IsFailure() {
       return Failure(outcome.error);
     }
-    // TODO: check other restrictions (like assignments go only to mutable variables)
+
+    outcome := StaticConsistency.CheckConsistent(b3);
+    if outcome.IsFailure() {
+      return Failure(outcome.error);
+    }
+
     return Success(b3);
   }
 }

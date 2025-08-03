@@ -22,7 +22,6 @@ exit MyLabel
   forall x: int {
     check true
     val y: bool := false
-    y := true
     assume y
   }
 
@@ -61,6 +60,7 @@ exit MyLabel
 
   var a: int
   var x: int
+  var y: int
   x := 800
   y := 801
 

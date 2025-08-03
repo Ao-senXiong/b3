@@ -54,13 +54,15 @@ module Ast {
       && (forall pre <- Pre :: pre.WellFormed())
       && (forall post <- Post :: post.WellFormed())
       && (Body.Some? ==> Body.value.WellFormed())
-      // TODO: free variables of Pre/Post/Body are the expected ones
+      // TODO: make sure free variables of Pre/Post/Body are the expected ones
     }
   }
 
   trait Variable extends object {
     const name: string
     const typ: Type
+
+    predicate IsMutable()
   }
 
   class LocalVariable extends Variable {
@@ -69,6 +71,10 @@ module Ast {
       ensures this.name == name
     {
       this.name, this.isMutable, this.typ := name, isMutable, typ;
+    }
+
+    predicate IsMutable() {
+      isMutable
     }
   }
 
@@ -81,6 +87,10 @@ module Ast {
     {
       this.name, this.mode, this.typ := name, mode, typ;
       this.oldInOut := oldInOut;
+    }
+
+    predicate IsMutable() {
+      mode != ParameterMode.In
     }
   }
 

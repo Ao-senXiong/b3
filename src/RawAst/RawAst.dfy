@@ -97,21 +97,14 @@ module RawAst {
     predicate IsOutgoing() {
       this in {InOut, Out}
     }
-  }
 
-  /*
-  lemma UniqueNamesImpliesUniqueOldNames(parameters: set<Parameter>)
-    requires Parameter.UniquelyNamed(parameters)
-    ensures forall p0 <- parameters, p1 <- parameters :: OldName(p0.v.name) == OldName(p1.v.name) ==> p0 == p1
-  {
-    forall p0 <- parameters, p1 <- parameters | OldName(p0.v.name) == OldName(p1.v.name)
-      ensures p0 == p1
-    {
-      assert p0.v.name == OldName(p0.v.name)[|OldPrefix|..];
-      assert p1.v.name == OldName(p1.v.name)[|OldPrefix|..];
+    function ToString(): string {
+      match this
+      case In => "in"
+      case InOut => "inout"
+      case Out => "out"
     }
   }
-  */
 
   const OldPrefix: string := "old$"
 
