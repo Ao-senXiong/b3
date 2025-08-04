@@ -149,84 +149,21 @@ procedure M4(g: int, out h: int, out i: int, out j: int)
 procedure M5(g: int, h: int, inout i: int, inout j: int, inout k: int)
 
 procedure M6(g: int, h: int, inout i: int, inout j: int, out k: int, out l: int)
-The program IS well-formed
 Verifying Mote ...
-Z3 << (set-option :produce-models true)
-Z3 >> success
-Z3 << (set-logic ALL)
-Z3 >> success
-UNHANDLED STATEMENT: Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.None, Ast.Stmt.Block([Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.Some(Ast.Expr.IConst(200)), Ast.Stmt.Block([Ast.Stmt.LabeledStmt(Ast.Label, Ast.Stmt.Block([Ast.Stmt.Exit(Ast.Label)])), Ast.Stmt.Exit(Ast.Label), Ast.Stmt.Exit(Ast.Label), Ast.Stmt.Block([Ast.Stmt.Exit(Ast.Label)]), Ast.Stmt.Block([]), Ast.Stmt.Block([]), Ast.Stmt.LabeledStmt(Ast.Label, Ast.Stmt.Block([Ast.Stmt.Check(Ast.Expr.BConst(true))])), Ast.Stmt.Check(Ast.Expr.BConst(true)), Ast.Stmt.Assume(Ast.Expr.BConst(true)), Ast.Stmt.Assert(Ast.Expr.BConst(true)), Ast.Stmt.Probe(Ast.Expr.IConst(96)), Ast.Stmt.AForall(Ast.LocalVariable, Ast.Stmt.Block([Ast.Stmt.Check(Ast.Expr.BConst(true)), Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.Some(Ast.Expr.BConst(false)), Ast.Stmt.Block([Ast.Stmt.Assume(Ast.Expr.IdExpr(Ast.LocalVariable))]))])), Ast.Stmt.If([Ast.Case.Case(Ast.Expr.BConst(false), Ast.Stmt.Block([Ast.Stmt.Exit(Ast.Label), Ast.Stmt.Exit(Ast.Label)])), Ast.Case.Case(Ast.Expr.BConst(true), Ast.Stmt.Block([]))]), Ast.Stmt.LabeledStmt(Ast.Label, Ast.Stmt.Block([Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.None, Ast.Stmt.Block([Ast.Stmt.If([Ast.Case.Case(Ast.Expr.IdExpr(Ast.LocalVariable), Ast.Stmt.Block([])), Ast.Case.Case(Ast.Expr.IdExpr(Ast.LocalVariable), Ast.Stmt.Block([Ast.Stmt.Exit(Ast.Label)]))])]))])), Ast.Stmt.LabeledStmt(Ast.Label, Ast.Stmt.Block([Ast.Stmt.LabeledStmt(Ast.Label, Ast.Stmt.Block([Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.None, Ast.Stmt.Block([Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.None, Ast.Stmt.Block([Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.None, Ast.Stmt.Block([Ast.Stmt.If([Ast.Case.Case(Ast.Expr.IdExpr(Ast.LocalVariable), Ast.Stmt.Block([])), Ast.Case.Case(Ast.Expr.IdExpr(Ast.LocalVariable), Ast.Stmt.If([Ast.Case.Case(Ast.Expr.IdExpr(Ast.LocalVariable), Ast.Stmt.Block([])), Ast.Case.Case(Ast.Expr.IdExpr(Ast.LocalVariable), Ast.Stmt.If([Ast.Case.Case(Ast.Expr.IdExpr(Ast.LocalVariable), Ast.Stmt.Block([])), Ast.Case.Case(Ast.Expr.IdExpr(Ast.LocalVariable), Ast.Stmt.Block([]))]))]))]), Ast.Stmt.If([Ast.Case.Case(Ast.Expr.BConst(true), Ast.Stmt.Block([Ast.Stmt.Exit(Ast.Label)])), Ast.Case.Case(Ast.Expr.BConst(true), Ast.Stmt.Block([Ast.Stmt.Exit(Ast.Label)]))]), Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.None, Ast.Stmt.Block([Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.None, Ast.Stmt.Block([Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.None, Ast.Stmt.Block([Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.None, Ast.Stmt.Block([Ast.Stmt.If([Ast.Case.Case(Ast.Expr.IdExpr(Ast.LocalVariable), Ast.Stmt.Block([Ast.Stmt.Exit(Ast.Label)])), Ast.Case.Case(Ast.Expr.IdExpr(Ast.LocalVariable), Ast.Stmt.If([Ast.Case.Case(Ast.Expr.IdExpr(Ast.LocalVariable), Ast.Stmt.Block([])), Ast.Case.Case(Ast.Expr.IdExpr(Ast.LocalVariable), Ast.Stmt.Block([])), Ast.Case.Case(Ast.Expr.IdExpr(Ast.LocalVariable), Ast.Stmt.Block([Ast.Stmt.Check(Ast.Expr.BConst(true))]))]))])]))]))]))]))]))]))]))]))])), Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.None, Ast.Stmt.Block([Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.None, Ast.Stmt.Block([Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.None, Ast.Stmt.Block([Ast.Stmt.Assign(Ast.LocalVariable, Ast.Expr.IConst(800)), Ast.Stmt.Assign(Ast.LocalVariable, Ast.Expr.IConst(801)), Ast.Stmt.LabeledStmt(Ast.Label, Ast.Stmt.Loop([], Ast.Stmt.Block([Ast.Stmt.Assign(Ast.LocalVariable, Ast.Expr.IConst(1))]))), Ast.Stmt.LabeledStmt(Ast.Label, Ast.Stmt.Loop([Ast.AExpr.AExpr(Ast.Expr.BConst(true))], Ast.Stmt.Block([]))), Ast.Stmt.LabeledStmt(Ast.Label, Ast.Stmt.LabeledStmt(Ast.Label, Ast.Stmt.Loop([Ast.AExpr.AExpr(Ast.Expr.BConst(true)), Ast.AExpr.AExpr(Ast.Expr.BConst(true)), Ast.AExpr.AAssertion(Ast.Stmt.Block([Ast.Stmt.Check(Ast.Expr.BConst(true)), Ast.Stmt.Assume(Ast.Expr.BConst(true)), Ast.Stmt.If([Ast.Case.Case(Ast.Expr.BConst(true), Ast.Stmt.Block([Ast.Stmt.Assume(Ast.Expr.BConst(true))])), Ast.Case.Case(Ast.Expr.BConst(false), Ast.Stmt.Block([]))])])), Ast.AExpr.AExpr(Ast.Expr.BConst(true))], Ast.Stmt.Block([Ast.Stmt.Exit(Ast.Label)])))), Ast.Stmt.Call(Ast.Procedure, []), Ast.Stmt.Call(Ast.Procedure, [Ast.CallArgument.InArgument(Ast.Expr.IConst(1000))]), Ast.Stmt.Call(Ast.Procedure, [Ast.CallArgument.OutgoingArgument(false, Ast.LocalVariable), Ast.CallArgument.InArgument(Ast.Expr.IConst(1000))]), Ast.Stmt.Call(Ast.Procedure, [Ast.CallArgument.OutgoingArgument(false, Ast.LocalVariable), Ast.CallArgument.InArgument(Ast.Expr.IConst(1000)), Ast.CallArgument.OutgoingArgument(true, Ast.LocalVariable)]), Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.None, Ast.Stmt.Block([Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.None, Ast.Stmt.Block([Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.None, Ast.Stmt.Block([Ast.Stmt.Call(Ast.Procedure, [Ast.CallArgument.InArgument(Ast.Expr.IConst(1000)), Ast.CallArgument.OutgoingArgument(false, Ast.LocalVariable), Ast.CallArgument.OutgoingArgument(false, Ast.LocalVariable), Ast.CallArgument.OutgoingArgument(false, Ast.LocalVariable)]), Ast.Stmt.Call(Ast.Procedure, [Ast.CallArgument.InArgument(Ast.Expr.IConst(1000)), Ast.CallArgument.InArgument(Ast.Expr.IConst(2000)), Ast.CallArgument.OutgoingArgument(true, Ast.LocalVariable), Ast.CallArgument.OutgoingArgument(true, Ast.LocalVariable), Ast.CallArgument.OutgoingArgument(true, Ast.LocalVariable)]), Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.None, Ast.Stmt.Block([Ast.Stmt.VarDecl(Ast.LocalVariable, Wrappers.Option.None, Ast.Stmt.Block([Ast.Stmt.Call(Ast.Procedure, [Ast.CallArgument.InArgument(Ast.Expr.IConst(1000)), Ast.CallArgument.InArgument(Ast.Expr.IConst(2000)), Ast.CallArgument.OutgoingArgument(true, Ast.LocalVariable), Ast.CallArgument.OutgoingArgument(true, Ast.LocalVariable), Ast.CallArgument.OutgoingArgument(false, Ast.LocalVariable), Ast.CallArgument.OutgoingArgument(false, Ast.LocalVariable)])]))]))]))]))]))]))]))]))]))]))
 Verifying M4 ...
-Z3 << (set-option :produce-models true)
-Z3 >> success
-Z3 << (set-logic ALL)
-Z3 >> success
 Verifying M3 ...
-Z3 << (set-option :produce-models true)
-Z3 >> success
-Z3 << (set-logic ALL)
-Z3 >> success
 Verifying MyProc ...
-Z3 << (set-option :produce-models true)
-Z3 >> success
-Z3 << (set-logic ALL)
-Z3 >> success
-Z3 << (assert TRUE)
-Z3 >> success
-Z3 << (assert TRUE)
-Z3 >> success
-Z3 << (assert TRUE)
-Z3 >> success
 ----- Proof obligation:
-  Solvers.Context.Assumption(SolverExpr.SExpr.S("TRUE"))
-  Solvers.Context.Assumption(SolverExpr.SExpr.S("TRUE"))
-  Solvers.Context.Assumption(SolverExpr.SExpr.S("TRUE"))
+  (assert TRUE)
+  (assert TRUE)
+  (assert TRUE)
   |-
-  SolverExpr.SExpr.S("TRUE")
-Z3 << (push)
-Z3 >> success
-Z3 << (assert (NOT TRUE))
-Z3 >> success
-Z3 << (check-sat)
-Z3 >> (error "line 3 column 8: unknown constant TRUE")
-Z3 << (get-model)
-Z3 >> (error "line 4 column 8: unknown constant TRUE")
-
-Z3 << (pop)
-Z3 >> success
+  TRUE
 Result:Solvers.ProofResult.Unproved("(error \"line 3 column 8: unknown constant TRUE\")\n(error \"line 4 column 8: unknown constant TRUE\")\n")
 Verifying M0 ...
-Z3 << (set-option :produce-models true)
-Z3 >> success
-Z3 << (set-logic ALL)
-Z3 >> success
 Verifying M5 ...
-Z3 << (set-option :produce-models true)
-Z3 >> success
-Z3 << (set-logic ALL)
-Z3 >> success
 Verifying M1 ...
-Z3 << (set-option :produce-models true)
-Z3 >> success
-Z3 << (set-logic ALL)
-Z3 >> success
 Verifying Egon ...
-Z3 << (set-option :produce-models true)
-Z3 >> success
-Z3 << (set-logic ALL)
-Z3 >> success
 Verifying M6 ...
-Z3 << (set-option :produce-models true)
-Z3 >> success
-Z3 << (set-logic ALL)
-Z3 >> success
 Verifying M2 ...
-Z3 << (set-option :produce-models true)
-Z3 >> success
-Z3 << (set-logic ALL)
-Z3 >> success
 Verifying Test ...
-Z3 << (set-option :produce-models true)
-Z3 >> success
-Z3 << (set-logic ALL)
-Z3 >> success

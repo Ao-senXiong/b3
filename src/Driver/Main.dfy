@@ -28,7 +28,6 @@ module B3 {
 
     Printer.Program(rawb3);
 
-    print "The program ", if rawb3.WellFormed() then "IS" else "is NOT", " well-formed\n";
     var resultResolver := ResolveAndTypeCheck(rawb3);
     if resultResolver.IsFailure() {
       print resultResolver.error, "\n";

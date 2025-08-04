@@ -6,7 +6,7 @@ using Smt;
 namespace Z3SmtSolver {
   
   public class Z3SmtProcess : SmtProcess {
-    const bool DEBUG = true;
+    const bool DEBUG = false;
     private Process z3Process;
     private StreamWriter z3Input;
     private StreamReader z3Output;
