@@ -3,12 +3,12 @@ module SolverExpr {
   import opened Basics
 
   export
-    reveals Var, Var.name
+    reveals SVar, SVar.name
     reveals SExprPrintConfig
     provides SExpr, SExpr.ToString
     provides SExpr.Boolean, SExpr.Integer, SExpr.Id, SExpr.Eq, SExpr.Negation, SExpr.BigAnd
 
-  class Var {
+  class SVar {
     const name: string
     constructor (name: string) {
       this.name := name;
@@ -61,7 +61,7 @@ module SolverExpr {
     static function Integer(x: int): SExpr {
       S(Int2String(x))
     }
-    static function Id(x: Var): SExpr {
+    static function Id(x: SVar): SExpr {
       S(x.name)
     }
     static function Eq(e0: SExpr, e1: SExpr): SExpr {

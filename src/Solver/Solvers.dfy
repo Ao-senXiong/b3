@@ -219,10 +219,10 @@ module Solvers {
       // TODO
       print "----- Proof obligation:\n";
       for i := 0 to |assumptions| {
-        print "  ", assumptions[i], "\n";
+        print "  ", assumptions[i].ToString(), "\n";
       }
       print "  |-\n";
-      print "  ", e, "\n";
+      print "  ", e.ToString(), "\n";
       var proofResult := s.Prove(e);
       print "Result:", proofResult, "\n";
     }

@@ -12,7 +12,9 @@ module Verifier {
     provides Verify
     provides Ast
 
-  method Verify(b3: Ast.Program) {
+  method Verify(b3: Ast.Program)
+    requires b3.WellFormed()
+  {
     var procs := b3.procedures;
     while procs != {}
     {
@@ -24,28 +26,32 @@ module Verifier {
     }
   }
 
-  method VerifyProcedure(proc: Ast.Procedure) {
+  method VerifyProcedure(proc: Ast.Procedure)
+    requires proc.WellFormed()
+  {
     // TODO: For now, do something basic in order to connect with the Solver
     var z3 := Z3SmtSolver.CreateZ3Solver();
     var ss := new Solvers.SolverState(z3);
     var solver := Solvers.Solver.Empty();
 
+    // Create incarnations for parameters in the pre-state
+    var preIncarnations, bodyIncarnations := CreateProcIncarnations(proc.Parameters);
+
     // Assume precondition (TODO: should also vet precondition)
-    var incarnations: Incarnations := map[]; // TODO: should include parameters
     for i := 0 to |proc.Pre|
       invariant ss.Valid() && ss.ValidFor(solver)
       invariant fresh({ss, ss.solver, ss.solver.process})
     {
       match proc.Pre[i]
       case AExpr(e) =>
-        solver := solver.Extend(incarnations.Eval(e), ss);
+        solver := solver.Extend(preIncarnations.Eval(e), ss);
       case _ => // TODO
     }
 
     if proc.Body.Some? {
       var B := map[]; // TODO: should include return label
       var cp;
-      incarnations, solver, cp := ProcessStmt(proc.Body.value, incarnations, B, solver, ss);
+      bodyIncarnations, solver, cp := ProcessStmt(proc.Body.value, bodyIncarnations, B, solver, ss);
       expect cp == Normal; // TODO: this holds if all exit in the body go to defined labels
     }
 
@@ -56,18 +62,40 @@ module Verifier {
     {
       match proc.Post[i]
       case AExpr(e) =>
-        solver.Prove(incarnations.Eval(e), ss);
+        solver.Prove(bodyIncarnations.Eval(e), ss);
       case _ => // TODO
     }
   }
 
-  newtype Incarnations = map<Variable, Var>
+  method CreateProcIncarnations(parameters: seq<Parameter>) returns (preIncarnations: Incarnations, bodyIncarnations: Incarnations)
+    requires forall i :: 0 <= i < |parameters| ==> parameters[i].WellFormed()
   {
-    method New(v: Variable) returns (x: Var) {
-      x := new Var(v.name);
+    preIncarnations, bodyIncarnations := map[], map[];
+    for i := 0 to |parameters| {
+      var parameter := parameters[i];
+      match parameter.mode
+      case In =>
+        var v := new SVar(parameter.name);
+        preIncarnations := preIncarnations[parameter := v];
+        bodyIncarnations := bodyIncarnations[parameter := v];
+      case InOut =>
+        var vOld := new SVar(parameter.name + "%old");
+        preIncarnations := preIncarnations[parameter := vOld];
+        bodyIncarnations := bodyIncarnations[parameter.oldInOut.value := vOld];
+        bodyIncarnations := bodyIncarnations[parameter := vOld];
+      case out =>
+        var v := new SVar(parameter.name);
+        bodyIncarnations := bodyIncarnations[parameter := v];
     }
-    method NewWithSuffix(v: Variable, suffix: string) returns (x: Var) {
-      x := new Var(v.name + suffix);
+  }
+
+  newtype Incarnations = map<Variable, SVar>
+  {
+    method New(v: Variable) returns (x: SVar) {
+      x := new SVar(v.name);
+    }
+    method NewWithSuffix(v: Variable, suffix: string) returns (x: SVar) {
+      x := new SVar(v.name + suffix);
     }
 
     function Eval(expr: Expr): SExpr {
@@ -104,6 +132,10 @@ module Verifier {
   {
     incarnations, o, cp := incarnations_in, solver_in, Normal;
     match stmt
+    case VarDecl(v, init, body) =>
+      // TODO
+    case Assign(lhs, rhs) =>
+      // TODO
     case Block(stmts) =>
       for i := 0 to |stmts|
         invariant ss.Valid() && ss.ValidFor(o)

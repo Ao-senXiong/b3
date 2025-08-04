@@ -44,12 +44,13 @@ module Ast {
       && |Parameters| == |proc.parameters|
       && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].name == proc.parameters[i].name)
       && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].mode == proc.parameters[i].mode)
-      && (forall i :: 0 <= i < |Parameters| ==> (Parameters[i].oldInOut.Some? <==> proc.parameters[i].mode == Raw.InOut))
+      && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].WellFormed())
     }
 
     predicate WellFormed()
       reads this
     {
+      && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].WellFormed())
       && (forall i, j :: 0 <= i < j < |Parameters| ==> Parameters[i].name != Parameters[j].name)
       && (forall pre <- Pre :: pre.WellFormed())
       && (forall post <- Post :: post.WellFormed())
@@ -89,7 +90,11 @@ module Ast {
       this.oldInOut := oldInOut;
     }
 
-    predicate IsMutable() {
+    predicate WellFormed() {
+      oldInOut.Some? <==> mode == ParameterMode.InOut
+    }
+
+     predicate IsMutable() {
       mode != ParameterMode.In
     }
   }
