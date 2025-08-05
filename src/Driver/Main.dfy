@@ -26,7 +26,7 @@ module B3 {
     }
     var rawb3 := r.value;
 
-    Printer.Program(rawb3);
+    // Printer.Program(rawb3);
 
     var resultResolver := ResolveAndTypeCheck(rawb3);
     if resultResolver.IsFailure() {
