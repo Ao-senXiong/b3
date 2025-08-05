@@ -60,8 +60,8 @@ module StaticConsistency {
     case Assert(cond) => true
     case AForall(_, body) =>
       ConsistentStmt(body) && !ContainsNonAssertions(body)
-    case If(cases) =>
-      forall c <- cases :: ConsistentStmt(c.body)
+    case Choice(branches) =>
+      forall branch <- branches :: ConsistentStmt(branch)
     case Loop(invariants, body) =>
       && (forall inv <- invariants :: ConsistentAExpr(inv))
       && ConsistentStmt(body)
@@ -84,8 +84,8 @@ module StaticConsistency {
     case Assert(_) => false
     case AForall(_, body) =>
       ContainsNonAssertions(body)
-    case If(cases) =>
-      exists cs <- cases :: ContainsNonAssertions(cs.body)
+    case Choice(branches) =>
+      exists branch <- branches :: ContainsNonAssertions(branch)
     case Loop(_, _) => true
     case LabeledStmt(_, _) => true
     case Exit(_) => true
@@ -162,11 +162,11 @@ module StaticConsistency {
         if ContainsNonAssertions(body) {
           return Fail("'forall' statement is not allowed to contain non-assertions");
         }
-      case If(cases) =>
-        for n := 0 to |cases|
-          invariant forall cs <- cases[..n] :: ConsistentStmt(cs.body)
+      case Choice(branches) =>
+        for n := 0 to |branches|
+          invariant forall branch <- branches[..n] :: ConsistentStmt(branch)
         {
-          :- CheckStmt(cases[n].body);
+          :- CheckStmt(branches[n]);
         }
       case Loop(invariants, body) =>
         for n := 0 to |invariants|
@@ -203,11 +203,11 @@ module StaticConsistency {
       case Assert(_) =>
       case AForall(_, body) =>
         :- CheckCanBeUsedInAssertion(body);
-      case If(cases) =>
-        for n := 0 to |cases|
-          invariant forall cs <- cases[..n] :: !ContainsNonAssertions(cs.body)
+      case Choice(branches) =>
+        for n := 0 to |branches|
+          invariant forall branch <- branches[..n] :: !ContainsNonAssertions(branch)
         {
-          :- CheckCanBeUsedInAssertion(cases[n].body);
+          :- CheckCanBeUsedInAssertion(branches[n]);
         }
       case Probe(_) =>
       case _ =>

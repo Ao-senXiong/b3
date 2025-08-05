@@ -337,26 +337,26 @@ module Resolver {
         var c :- ResolveExpr(cond, rs, ls.varMap);
         var th :- ResolveStmt(thn, rs, ls);
         var el :- ResolveStmt(els, rs, ls);
-        var case0 := Case(c, th);
-        var case1 := Case(Expr.CreateNegation(c), el);
-        r := If([case0, case1]);
+        var branch0 := PrependAssumption(c, th);
+        var branch1 := PrependAssumption(Expr.CreateNegation(c), el);
+        r := Choice([branch0, branch1]);
 
       case IfCase(cases) =>
         if |cases| == 0 {
           return Failure("an if-case statement must have at least 1 case");
         }
-        var cc := [];
+        var branches := [];
         for n := 0 to |cases|
           invariant forall cs <- cases[..n] ::
             && cs.cond.WellFormed(rs.b3, ls.varMap.Keys)
             && cs.body.WellFormed(rs.b3, ls.varMap.Keys, ls.LabelSet(), ls.loopLabel.Some?)
-          invariant forall cs: Case <- cc :: cs.cond.WellFormed() && cs.body.WellFormed()
+          invariant forall branch: Stmt <- branches :: branch.WellFormed()
         {
           var cond :- ResolveExpr(cases[n].cond, rs, ls.varMap);
           var body :- ResolveStmt(cases[n].body, rs, ls);
-          cc := cc + [Case(cond, body)];
+          branches := branches + [PrependAssumption(cond, body)];
         }
-        r := If(cc);
+        r := Choice(branches);
 
       case Loop(invariants, body) =>
         var invs :- ResolveAExprs(invariants, rs, ls);
@@ -443,6 +443,13 @@ module Resolver {
     }
 
     return Success(Call(proc, aa));
+  }
+
+  function PrependAssumption(expr: Expr, stmt: Stmt): Stmt {
+    if stmt.Block? then
+      Block([Assume(expr)] + stmt.stmts)
+    else
+      Block([Assume(expr), stmt])
   }
 
   method ResolveExpr(expr: Raw.Expr, rs: ResolverState, varMap: map<string, Variable>) returns (result: Result<Expr, string>)

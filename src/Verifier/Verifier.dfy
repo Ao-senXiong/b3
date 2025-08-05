@@ -161,8 +161,8 @@ module Verifier {
       o := o.Extend(e, ss);
     case AForall(_, _) =>
       print "UNHANDLED STATEMENT: AForall\n"; // TODO
-    case If(_) =>
-      print "UNHANDLED STATEMENT: If\n"; // TODO
+    case Choice(_) =>
+      print "UNHANDLED STATEMENT: Choice\n"; // TODO
     case Loop(_, _) =>
       print "UNHANDLED STATEMENT: Loop\n"; // TODO
     case LabeledStmt(lbl, body) =>

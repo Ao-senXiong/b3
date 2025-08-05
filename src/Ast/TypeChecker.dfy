@@ -74,8 +74,8 @@ module TypeChecker {
       TypeCorrectExpr(cond)
     case AForall(_, body) =>
       TypeCorrectStmt(body)
-    case If(cases) =>
-      forall c <- cases :: TypeCorrectExpr(c.cond) && TypeCorrectStmt(c.body)
+    case Choice(branches) =>
+      forall branch <- branches :: TypeCorrectStmt(branch)
     case Loop(invariants, body) =>
       && (forall inv <- invariants :: TypeCorrectAExpr(inv))
       && TypeCorrectStmt(body)
@@ -228,12 +228,11 @@ module TypeChecker {
           :- TypeCheckAsBool(cond);
         case AForall(_, body) =>
           :- CheckStmt(body);
-        case If(cases) =>
-          for n := 0 to |cases|
-            invariant forall c <- cases[..n] :: TypeCorrectExpr(c.cond) && TypeCorrectStmt(c.body)
+        case Choice(branches) =>
+          for n := 0 to |branches|
+            invariant forall branch <- branches[..n] :: TypeCorrectStmt(branch)
           {
-            :- TypeCheckAsBool(cases[n].cond);
-            :- CheckStmt(cases[n].body);
+            :- CheckStmt(branches[n]);
           }
         case Loop(invariants, body) =>
           :- CheckAExprs(invariants);
