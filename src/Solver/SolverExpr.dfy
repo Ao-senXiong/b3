@@ -49,11 +49,11 @@ module SolverExpr {
     }
     // SExpr builders
 
-    static const TRUE := "TRUE"
-    static const FALSE := "FALSE"
-    static const EQ := "EQ"
-    static const NOT := "NOT"
-    static const AND := "AND"
+    static const TRUE := "true"
+    static const FALSE := "false"
+    static const EQ := "="
+    static const NOT := "not"
+    static const AND := "and"
 
     static function Boolean(b: bool): SExpr {
       S(if b then TRUE else FALSE)
