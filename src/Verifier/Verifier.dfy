@@ -49,9 +49,8 @@ module Verifier {
     }
 
     if proc.Body.Some? {
-      var B := map[]; // TODO: should include return label
       var cp;
-      bodyIncarnations, solver, cp := ProcessStmt(proc.Body.value, bodyIncarnations, B, solver, ss);
+      bodyIncarnations, solver, cp := ProcessStmt(proc.Body.value, bodyIncarnations, solver, ss);
       expect cp == Normal; // TODO: this holds if all exit in the body go to defined labels
     }
 
@@ -91,11 +90,10 @@ module Verifier {
 
   newtype Incarnations = map<Variable, SVar>
   {
-    method New(v: Variable) returns (x: SVar) {
-      x := new SVar(v.name);
-    }
-    method NewWithSuffix(v: Variable, suffix: string) returns (x: SVar) {
-      x := new SVar(v.name + suffix);
+    method Update(v: Variable) returns (incarnations: Incarnations, x: SVar) {
+      var sequenceNumber := Int2String(|this|);
+      x := new SVar(v.name + "%" + sequenceNumber);
+      incarnations := this[v := x];
     }
 
     function Eval(expr: Expr): SExpr {
@@ -117,19 +115,11 @@ module Verifier {
     }
   }
 
-  // map from block names to pairs (V, Ss) of variable sets and statement sequences
-  type BlockContinuations = map<Label, Continuation>
-  datatype Continuation = Continuation(V: set<Variable>, continuation: seq<Stmt>)
-
-  ghost predicate BValid(B: BlockContinuations, b3: Program) {
-    true
-  }
-
   datatype ContinuationPoint =
     | Normal
     | Abrupt(lbl: Label)
 
-  method ProcessStmt(stmt: Stmt, incarnations_in: Incarnations, B: BlockContinuations, solver_in: Solvers.Solver, ss: Solvers.SolverState)
+  method ProcessStmt(stmt: Stmt, incarnations_in: Incarnations, solver_in: Solvers.Solver, ss: Solvers.SolverState)
       returns (incarnations: Incarnations, o: Solvers.Solver, cp: ContinuationPoint)
     requires ss.Valid() && ss.ValidFor(solver_in)
     modifies ss, ss.solver, ss.solver.process
@@ -138,18 +128,29 @@ module Verifier {
     incarnations, o, cp := incarnations_in, solver_in, Normal;
     match stmt
     case VarDecl(v, init, body) =>
-      // TODO
+      var sv;
+      incarnations, sv := incarnations.Update(v);
+      if init.Some? {
+        var sRhs := incarnations.Eval(init.value);
+        o := o.Extend(SExpr.Eq(SExpr.Id(sv), sRhs), ss);
+      }
+      incarnations, o, cp := ProcessStmt(body, incarnations, o, ss);
     case Assign(lhs, rhs) =>
-      // TODO
+      var sRhs := incarnations.Eval(rhs);
+      var sLhs;
+      incarnations, sLhs := incarnations.Update(lhs);
+      o := o.Extend(SExpr.Eq(SExpr.Id(sLhs), sRhs), ss);
     case Block(stmts) =>
       for i := 0 to |stmts|
         invariant ss.Valid() && ss.ValidFor(o)
       {
-        incarnations, o, cp := ProcessStmt(stmts[i], incarnations, B, o, ss);
+        incarnations, o, cp := ProcessStmt(stmts[i], incarnations, o, ss);
         if cp.Abrupt? {
           return;
         }
       }
+    case Call(_, _) =>
+      print "UNHANDLED STATEMENT: Call\n"; // TODO
     case Check(cond) =>
       o.Prove(incarnations.Eval(cond), ss);
     case Assume(cond) =>
@@ -158,8 +159,14 @@ module Verifier {
       var e := incarnations.Eval(cond);
       o.Prove(e, ss);
       o := o.Extend(e, ss);
+    case AForall(_, _) =>
+      print "UNHANDLED STATEMENT: AForall\n"; // TODO
+    case If(_) =>
+      print "UNHANDLED STATEMENT: If\n"; // TODO
+    case Loop(_, _) =>
+      print "UNHANDLED STATEMENT: Loop\n"; // TODO
     case LabeledStmt(lbl, body) =>
-      incarnations, o, cp := ProcessStmt(body, incarnations, B, o, ss);
+      incarnations, o, cp := ProcessStmt(body, incarnations, o, ss);
       if cp == Abrupt(lbl) {
         cp := Normal;
       }
@@ -167,8 +174,6 @@ module Verifier {
       cp := Abrupt(lbl);
     case Probe(e) =>
       o := o.Record(incarnations.Eval(e));
-    case _ =>
-      print "UNHANDLED STATEMENT: ", stmt, "\n"; // TODO
   }
 
 /*
