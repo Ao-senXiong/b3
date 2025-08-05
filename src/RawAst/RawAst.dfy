@@ -339,16 +339,26 @@ module RawAst {
   // Expressions
 
   // TODO
+  datatype Operator = Eq
+  {
+    function ToString(): string {
+      match this
+      case Eq => "=="
+    }
+  }
+
   datatype Expr =
     | BConst(bvalue: bool)
     | IConst(ivalue: int)
     | IdExpr(name: string)
+    | BinaryExpr(op: Operator, 0: Expr, 1: Expr)
   {
     predicate WellFormed(b3: Program, scope: Scope) {
       match this
       case BConst(_) => true
       case IConst(_) => true
       case IdExpr(name) => name in scope
+      case BinaryExpr(_, e0, e1) => e0.WellFormed(b3, scope) && e1.WellFormed(b3, scope)
     }
 
     static function CreateTrue(): Expr

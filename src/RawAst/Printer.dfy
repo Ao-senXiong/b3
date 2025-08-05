@@ -245,5 +245,9 @@ module Printer {
     case BConst(value) => print value;
     case IConst(value) => print value;
     case IdExpr(name) => print name;
+    case BinaryExpr(op, e0, e1) =>
+      Expression(e0);
+      print " ", op.ToString(), " ";
+      Expression(e0);
   }
 }

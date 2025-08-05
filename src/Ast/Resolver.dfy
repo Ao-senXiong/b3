@@ -460,6 +460,10 @@ module Resolver {
           return Failure("undeclared variable: " + name);
         }
         r := IdExpr(varMap[name]);
+      case BinaryExpr(op, e0, e1) =>
+        var r0 :- ResolveExpr(e0, rs, varMap);
+        var r1 :- ResolveExpr(e1, rs, varMap);
+        r := BinaryExpr(op, r0, r1);
     }
     return Success(r);
   }

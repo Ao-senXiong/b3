@@ -105,6 +105,11 @@ module Verifier {
       case IdExpr(v) =>
         assume {:axiom} v in this; // TODO
         SExpr.Id(this[v])
+      case BinaryExpr(op, e0, e1) =>
+        var s0, s1 := Eval(e0), Eval(e1);
+        match op {
+          case Eq => SExpr.Eq(s0, s1)
+        }
     }
 
     function DomainRestrict(s: set<Variable>): Incarnations {

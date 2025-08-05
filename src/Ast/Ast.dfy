@@ -184,16 +184,23 @@ module Ast {
     }
   }
 
+  type Operator = Raw.Operator
+
   datatype Expr =
     | BConst(bvalue: bool)
     | IConst(ivalue: int)
     | IdExpr(v: Variable)
+    | BinaryExpr(op: Operator, 0: Expr, 1: Expr)
   {
     predicate HasType(typ: Type) {
       match this
       case BConst(_) => typ.IsBool()
       case IConst(_) => typ.IsInt()
       case IdExpr(v) => v.typ == typ
+      case BinaryExpr(op, _, _) =>
+        match op {
+          case Eq => typ.IsBool()
+        }
     }
 
     predicate WellFormed() {

@@ -97,7 +97,13 @@ module TypeChecker {
     match expr
     case BConst(_) => true
     case IConst(_) => true
-    case IdExpr(v) => true
+    case IdExpr(_) => true
+    case BinaryExpr(op, e0, e1) =>
+      && TypeCorrectExpr(e0)
+      && TypeCorrectExpr(e1)
+      && match op {
+        case Eq => true // TODO
+      }
   }
 
   function TestSuccess<R, E>(r: Result<R, E>): Outcome<E> {
@@ -204,7 +210,9 @@ module TypeChecker {
             :- CheckStmt(stmts[n]);
           }
         case Call(proc, args) =>
-          for n := 0 to |args| {
+          for n := 0 to |args|
+            invariant forall arg <- args[..n] :: TypeCorrectCallArg(arg)
+          {
             var formal := proc.Parameters[n];
             match args[n]
             case InArgument(e) =>
@@ -253,6 +261,16 @@ module TypeChecker {
         return Success(intType);
       case IdExpr(v) =>
         return Success(v.typ);
+      case BinaryExpr(op, e0, e1) =>
+        var t0 :- CheckExpr(e0);
+        var t1 :- CheckExpr(e1);
+        match op {
+          case Eq =>
+            if t0 != t1 {
+              return Result<Type, string>.Failure("operator == requires both arguments to have the same type; got '" + t0.Name + "' and '" + t1.Name + "'");
+            }
+        }
+        return Success(boolType);
     }
   }
 }

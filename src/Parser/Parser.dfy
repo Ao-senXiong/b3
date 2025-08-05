@@ -275,6 +275,19 @@ module Parser {
   }
 
   const parseExpr: B<Expr> :=
+    parseAtomicExpr.Then(e0 =>
+      parseOperator.I_I(parseAtomicExpr).Option().M(opt =>
+        if opt == None then
+          e0
+        else
+          var Some((op, e1)) := opt;
+          BinaryExpr(op, e0, e1)
+    ))
+
+  const parseOperator: B<Operator> :=
+    Sym("==").M(_ => Operator.Eq)
+
+  const parseAtomicExpr: B<Expr> :=
     Or([
          Nat.I_e(W).M(n => IConst(n)),
          T("false").M(_ => BConst(false)),
