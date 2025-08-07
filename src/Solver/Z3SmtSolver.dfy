@@ -4,7 +4,7 @@ module Z3SmtSolver {
   @Test
   method DemonstrateZ3() {
     // Create Z3 solver
-    var z3 := CreateZ3Solver();
+    var z3 := CreateZ3SolverEngine();
     
 
     z3.DeclareFun("x", "()", "Int");
@@ -63,12 +63,12 @@ module Z3SmtSolver {
     ensures !process.Disposed()
     ensures fresh(process)
   
-  method CreateZ3Solver() returns (solver: Solver)
-    ensures !solver.Disposed()
-    ensures solver.CommandStacks() == Basics.Cons(Basics.Nil, Basics.Nil)
-    ensures fresh(solver) && fresh(solver.process)
+  method CreateZ3SolverEngine() returns (smtEngine: SolverEngine)
+    ensures !smtEngine.Disposed()
+    ensures smtEngine.CommandStacks() == Basics.Cons(Basics.Nil, Basics.Nil)
+    ensures fresh(smtEngine) && fresh(smtEngine.process)
   {
     var process := CreateZ3Process();
-    solver := new Solver(process);
+    smtEngine := new SolverEngine(process);
   }
 }

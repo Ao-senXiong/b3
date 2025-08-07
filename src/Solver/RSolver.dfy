@@ -14,8 +14,8 @@ module RSolvers {
   method Create() returns (r: RSolver)
     ensures r.Valid() && fresh(r.Repr)
   {
-    var z3 := Z3SmtSolver.CreateZ3Solver();
-    var state := new Solvers.SolverState(z3);
+    var smtEngine := Z3SmtSolver.CreateZ3SolverEngine();
+    var state := new Solvers.SolverState(smtEngine);
     var solver := Solvers.Solver.Empty();
     return RSolver(solver, state);
   }
@@ -24,8 +24,7 @@ module RSolvers {
     | Boolean(b: bool)
     | Integer(x: int)
     | Id(v: SolverExpr.SVar)
-    | FuncAppl(op: string, args: seq<RExpr>)
-  {
+    | FuncAppl(op: string, args: seq<RExpr>)  {
     function ToSExpr(): SolverExpr.SExpr {
       match this
       case Boolean(b) => SolverExpr.SExpr.Boolean(b)
@@ -41,7 +40,7 @@ module RSolvers {
 
   datatype RSolver = RSolver(solver: Solvers.Solver, state: Solvers.SolverState)
   {
-    ghost const Repr: set<object> := { state, state.solver, state.solver.process }
+    ghost const Repr: set<object> := { state, state.smtEngine, state.smtEngine.process }
 
     ghost predicate Valid()
       reads Repr
@@ -64,8 +63,7 @@ module RSolvers {
       requires Valid()
       modifies Repr
       ensures Valid()
-    {
-      // TODO: declare the new symbols in "expr"
+    {      // TODO: declare the new symbols in "expr"
       solver.Prove(expr.ToSExpr(), state);
     }
 

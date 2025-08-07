@@ -5,7 +5,7 @@ module Solvers {
     provides Solver, Solver.Extend, Solver.Prove, Solver.Record, Solver.Empty
     reveals SolverState
     reveals Context
-    provides SolverState.solver, SolverState.Valid, SolverState.assumptions
+    provides SolverState.smtEngine, SolverState.Valid, SolverState.assumptions
     provides SolverState.ValidFor
     provides Smt
     provides B
@@ -15,7 +15,7 @@ module Solvers {
   import B = Basics
 
   datatype ProofResult =
-      Proved
+    | Proved
     | Unproved(reason: string)
   
   datatype Context =
@@ -40,17 +40,17 @@ module Solvers {
     ghost var assumptions: B.List<Context>
     ghost var assumptionsStacks: B.List<B.List<Context>>
 
-    const solver: Smt.Solver
+    const smtEngine: Smt.SolverEngine
 
-    constructor(solver: Smt.Solver)
+    constructor(smtEngine: Smt.SolverEngine)
     // Should be a fresh solver
-      requires solver.CommandStacks() == B.Cons(B.Nil, B.Nil)
-      requires solver.Valid()
-      ensures solver == this.solver
+      requires smtEngine.CommandStacks() == B.Cons(B.Nil, B.Nil)
+      requires smtEngine.Valid()
+      ensures smtEngine == this.smtEngine
       ensures this.Valid()
       ensures this.ValidFor(Solver.Empty())
     {
-      this.solver := solver;
+      this.smtEngine := smtEngine;
       this.assumptions := B.Nil;
       this.assumptionsStacks := B.Cons(B.Nil, B.Nil);
     }
@@ -70,50 +70,50 @@ module Solvers {
       )
     }
 
-    ghost predicate Valid() reads this, solver, solver.process
+    ghost predicate Valid() reads this, smtEngine, smtEngine.process
     {
-      solver.Valid()
-      && this as object !in {solver, solver.process}
+      smtEngine.Valid()
+      && this as object !in {smtEngine, smtEngine.process}
       && B.ListFlatten(assumptionsStacks) == assumptions
-      && assumptionsSyncCommands(assumptionsStacks, solver.CommandStacks())
+      && assumptionsSyncCommands(assumptionsStacks, smtEngine.CommandStacks())
     }
 
-    ghost predicate ValidBeforePop() reads this, solver, solver.process
+    ghost predicate ValidBeforePop() reads this, smtEngine, smtEngine.process
     {
-      solver.Valid()
-      && this as object !in {solver, solver.process}
+      smtEngine.Valid()
+      && this as object !in {smtEngine, smtEngine.process}
       && B.ListFlatten(assumptionsStacks) == assumptions
       && assumptionsStacks.Cons?
-      && assumptionsSyncCommands(assumptionsStacks.tail, solver.CommandStacks().tail)
+      && assumptionsSyncCommands(assumptionsStacks.tail, smtEngine.CommandStacks().tail)
     }
 
     method Push()
       requires Valid()
-      modifies this, solver, solver.process
+      modifies this, smtEngine, smtEngine.process
       ensures Valid()
       ensures assumptions == old(assumptions)
       ensures assumptionsStacks.tail == old(assumptionsStacks)
     {
-      solver.Push();
+      smtEngine.Push();
       assumptionsStacks := B.Cons(B.Nil, assumptionsStacks);
     }
 
     method Pop()
       requires ValidBeforePop()
-      requires solver.CommandStacks().DoubleCons?
-      modifies solver, solver.process
+      requires smtEngine.CommandStacks().DoubleCons?
+      modifies smtEngine, smtEngine.process
       modifies this
       ensures Valid()
       ensures assumptionsStacks == old(this.assumptionsStacks.tail)
     {
-      solver.Pop();
+      smtEngine.Pop();
       assumptions := assumptions.DropAsMuchAsHeadOf(assumptionsStacks);
       assumptionsStacks := assumptionsStacks.tail;
     }
 
     method AddContext(context: Context)
       requires Valid()
-      modifies this, solver, solver.process
+      modifies this, smtEngine, smtEngine.process
       ensures Valid()
       ensures assumptions == B.Cons(context, old(assumptions))
       ensures assumptionsStacks.head.Cons?
@@ -122,9 +122,9 @@ module Solvers {
     {
       match context {
         case Declaration(name, inputTpe, outputTpe) =>
-          solver.DeclareFun(name, inputTpe.ToString(), outputTpe.ToString());
+          smtEngine.DeclareFun(name, inputTpe.ToString(), outputTpe.ToString());
         case Assumption(e) =>
-          solver.Assume(e.ToString());
+          smtEngine.Assume(e.ToString());
       }
       assumptions := B.Cons(context, assumptions);
       assumptionsStacks := assumptionsStacks.(
@@ -133,7 +133,7 @@ module Solvers {
 
     method DeclareSymbol(name: string, inputTpe: SExpr, outputTpe: SExpr)
       requires Valid()
-      modifies this, solver, solver.process
+      modifies this, smtEngine, smtEngine.process
       ensures Valid()
       ensures assumptions == B.Cons(Declaration(name, inputTpe, outputTpe), old(assumptions))
       ensures assumptionsStacks.head.Cons?
@@ -145,7 +145,7 @@ module Solvers {
     // In-place extension
     method Extend(e: SExpr)
       requires Valid()
-      modifies this, solver, solver.process
+      modifies this, smtEngine, smtEngine.process
       ensures Valid()
       ensures assumptions == B.Cons(Assumption(e), old(assumptions))
       ensures assumptionsStacks.head.Cons?
@@ -158,17 +158,17 @@ module Solvers {
     method Prove(e: SExpr) returns (result: ProofResult)
       requires Valid()
       ensures Valid()
-      modifies this, solver, solver.process
+      modifies this, smtEngine, smtEngine.process
       ensures assumptions == old(assumptions)
     {
       Push();
-      assert assumptionsSyncCommands(assumptionsStacks.tail, solver.CommandStacks().tail);
+      assert assumptionsSyncCommands(assumptionsStacks.tail, smtEngine.CommandStacks().tail);
       Extend(SExpr.Negation(e));
-      var satness := solver.CheckSat();
+      var satness := smtEngine.CheckSat();
       if satness == "unsat" {
         result := Proved;
       } else {
-        var model := solver.GetModel();
+        var model := smtEngine.GetModel();
         result := Unproved(satness + "\n" + model);
       }
       Pop();
@@ -188,8 +188,8 @@ module Solvers {
       ensures fresh(newSolverState)
       ensures newSolverState.ValidFor(this)
     {
-      var newSolver := Z3SmtSolver.CreateZ3Solver();
-      newSolverState := new SolverState(newSolver);
+      var newSmtEngine := Z3SmtSolver.CreateZ3SolverEngine();
+      newSolverState := new SolverState(newSmtEngine);
       assert newSolverState.ValidFor(Solver([]));
       for i := 0 to |assumptions|
         invariant newSolverState.ValidFor(Solver(assumptions[0..i]))
@@ -203,7 +203,7 @@ module Solvers {
     method Extend(e: SExpr, s: SolverState) returns (newSolver: Solver)
       requires s.Valid()
       requires s.ValidFor(this)
-      modifies s, s.solver, s.solver.process
+      modifies s, s.smtEngine, s.smtEngine.process
       ensures s.ValidFor(newSolver)
       ensures s.Valid()
     {
@@ -213,7 +213,7 @@ module Solvers {
 
     method Prove(e: SExpr, s: SolverState)
       requires s.Valid() && s.ValidFor(this)
-      modifies s, s.solver, s.solver.process
+      modifies s, s.smtEngine, s.smtEngine.process
       ensures s.Valid() && s.ValidFor(this)
     {
       // TODO

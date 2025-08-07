@@ -36,8 +36,8 @@ module Smt {
       ensures cmd != CMD_EXIT ==> !Disposed()
   }
 
-  // Trait for SMT solvers with incremental solving capabilities
-  class Solver {
+  // SMT engine (containing an SMT process) with incremental solving capabilities
+  class SolverEngine {
     const process: SmtProcess
     constructor(process: SmtProcess)
       requires !process.Disposed()
