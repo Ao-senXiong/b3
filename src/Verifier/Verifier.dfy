@@ -4,9 +4,8 @@ module Verifier {
   import opened Ast
   import opened SolverExpr
   import Solvers
-  import Smt
-  import Z3SmtSolver
   import WF = WellFormednessConsequences
+  import opened RSolvers
 
   export
     provides Verify
@@ -30,38 +29,35 @@ module Verifier {
     requires proc.WellFormed()
   {
     // TODO: For now, do something basic in order to connect with the Solver
-    var z3 := Z3SmtSolver.CreateZ3Solver();
-    var ss := new Solvers.SolverState(z3);
-    var solver := Solvers.Solver.Empty();
+    var o := RSolvers.Create();
+    assert allocated(o.Repr()); // strangely, needed
 
     // Create incarnations for parameters in the pre-state
     var preIncarnations, bodyIncarnations := CreateProcIncarnations(proc.Parameters);
 
     // Assume precondition (TODO: should also vet precondition)
     for i := 0 to |proc.Pre|
-      invariant ss.Valid() && ss.ValidFor(solver)
-      invariant fresh({ss, ss.solver, ss.solver.process})
+      invariant o.Valid() && allocated(o.Repr()) && fresh(o.Repr())
     {
       match proc.Pre[i]
       case AExpr(e) =>
-        solver := solver.Extend(preIncarnations.Eval(e), ss);
+        o := o.Extend(preIncarnations.REval(e));
       case _ => // TODO
     }
 
     if proc.Body.Some? {
       var cp;
-      bodyIncarnations, solver, cp := ProcessStmt(proc.Body.value, bodyIncarnations, solver, ss);
+      bodyIncarnations, o, cp := ProcessStmt(proc.Body.value, bodyIncarnations, o);
       expect cp == Normal; // TODO: this holds if all exit in the body go to defined labels
     }
 
     // Check postcondition (TODO: should also vet postcondition)
     for i := 0 to |proc.Post|
-      invariant ss.Valid() && ss.ValidFor(solver)
-      invariant fresh({ss, ss.solver, ss.solver.process})
+      invariant o.Valid() && allocated(o.Repr()) && fresh(o.Repr())
     {
       match proc.Post[i]
       case AExpr(e) =>
-        solver.Prove(bodyIncarnations.Eval(e), ss);
+        o.Prove(bodyIncarnations.REval(e));
       case _ => // TODO
     }
   }
@@ -96,6 +92,20 @@ module Verifier {
       incarnations := this[v := x];
     }
 
+    function REval(expr: Expr): RExpr {
+      match expr
+      case BConst(value) => RExpr.Boolean(value)
+      case IConst(value) => RExpr.Integer(value)
+      case IdExpr(v) =>
+        assume {:axiom} v in this; // TODO
+        RExpr.Id(this[v])
+      case BinaryExpr(op, e0, e1) =>
+        var s0, s1 := REval(e0), REval(e1);
+        match op {
+          case Eq => RExpr.Eq(s0, s1)
+        }
+    }
+
     function Eval(expr: Expr): SExpr {
       match expr
       case BConst(value) => SExpr.Boolean(value)
@@ -119,32 +129,33 @@ module Verifier {
     | Normal
     | Abrupt(lbl: Label)
 
-  method ProcessStmt(stmt: Stmt, incarnations_in: Incarnations, solver_in: Solvers.Solver, ss: Solvers.SolverState)
-      returns (incarnations: Incarnations, o: Solvers.Solver, cp: ContinuationPoint)
-    requires ss.Valid() && ss.ValidFor(solver_in)
-    modifies ss, ss.solver, ss.solver.process
-    ensures ss.Valid() && ss.ValidFor(o)
+  method ProcessStmt(stmt: Stmt, incarnations_in: Incarnations, o_in: RSolver)
+      returns (incarnations: Incarnations, o: RSolver, cp: ContinuationPoint)
+    requires o_in.Valid()
+    modifies o_in.Repr()
+    ensures o.Valid() && allocated(o.Repr()) && fresh(o.Repr() - o_in.Repr())
   {
-    incarnations, o, cp := incarnations_in, solver_in, Normal;
+    assert allocated(o_in.Repr()); // strangely, needed
+    incarnations, o, cp := incarnations_in, o_in, Normal;
     match stmt
     case VarDecl(v, init, body) =>
       var sv;
       incarnations, sv := incarnations.Update(v);
       if init.Some? {
-        var sRhs := incarnations.Eval(init.value);
-        o := o.Extend(SExpr.Eq(SExpr.Id(sv), sRhs), ss);
+        var sRhs := incarnations.REval(init.value);
+        o := o.Extend(RExpr.Eq(RExpr.Id(sv), sRhs));
       }
-      incarnations, o, cp := ProcessStmt(body, incarnations, o, ss);
+      incarnations, o, cp := ProcessStmt(body, incarnations, o);
     case Assign(lhs, rhs) =>
-      var sRhs := incarnations.Eval(rhs);
+      var sRhs := incarnations.REval(rhs);
       var sLhs;
       incarnations, sLhs := incarnations.Update(lhs);
-      o := o.Extend(SExpr.Eq(SExpr.Id(sLhs), sRhs), ss);
+      o := o.Extend(RExpr.Eq(RExpr.Id(sLhs), sRhs));
     case Block(stmts) =>
       for i := 0 to |stmts|
-        invariant ss.Valid() && ss.ValidFor(o)
+        invariant o.Valid() && allocated(o.Repr()) && fresh(o.Repr() - o_in.Repr())
       {
-        incarnations, o, cp := ProcessStmt(stmts[i], incarnations, o, ss);
+        incarnations, o, cp := ProcessStmt(stmts[i], incarnations, o);
         if cp.Abrupt? {
           return;
         }
@@ -152,13 +163,13 @@ module Verifier {
     case Call(_, _) =>
       print "UNHANDLED STATEMENT: Call\n"; // TODO
     case Check(cond) =>
-      o.Prove(incarnations.Eval(cond), ss);
+      o.Prove(incarnations.REval(cond));
     case Assume(cond) =>
-      o := o.Extend(incarnations.Eval(cond), ss);
+      o := o.Extend(incarnations.REval(cond));
     case Assert(cond) =>
-      var e := incarnations.Eval(cond);
-      o.Prove(e, ss);
-      o := o.Extend(e, ss);
+      var e := incarnations.REval(cond);
+      o.Prove(e);
+      o := o.Extend(e);
     case AForall(_, _) =>
       print "UNHANDLED STATEMENT: AForall\n"; // TODO
     case Choice(_) =>
@@ -166,14 +177,14 @@ module Verifier {
     case Loop(_, _) =>
       print "UNHANDLED STATEMENT: Loop\n"; // TODO
     case LabeledStmt(lbl, body) =>
-      incarnations, o, cp := ProcessStmt(body, incarnations, o, ss);
+      incarnations, o, cp := ProcessStmt(body, incarnations, o);
       if cp == Abrupt(lbl) {
         cp := Normal;
       }
     case Exit(lbl) =>
       cp := Abrupt(lbl);
     case Probe(e) =>
-      o := o.Record(incarnations.Eval(e));
+      o := o.Record(incarnations.REval(e));
   }
 
 /*

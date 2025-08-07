@@ -6,7 +6,7 @@ module SolverExpr {
     reveals SVar, SVar.name
     reveals SExprPrintConfig
     provides SExpr, SExpr.ToString
-    provides SExpr.Boolean, SExpr.Integer, SExpr.Id, SExpr.Eq, SExpr.Negation, SExpr.BigAnd
+    provides SExpr.Boolean, SExpr.Integer, SExpr.Id, SExpr.FuncAppl, SExpr.Eq, SExpr.Negation, SExpr.BigAnd
 
   class SVar {
     const name: string
@@ -27,8 +27,7 @@ module SolverExpr {
     }
   }
 
-  datatype SExpr // pun: solver expression
-    =
+  datatype SExpr = // pun: solver expression
     | S(string) // Single name
     | PP(seq<SExpr>) // Parentheses
   {
@@ -63,6 +62,9 @@ module SolverExpr {
     }
     static function Id(x: SVar): SExpr {
       S(x.name)
+    }
+    static function FuncAppl(op: string, args: seq<SExpr>): SExpr {
+      PP([S(op)] + args)
     }
     static function Eq(e0: SExpr, e1: SExpr): SExpr {
       PP([S(EQ), e0, e1])
