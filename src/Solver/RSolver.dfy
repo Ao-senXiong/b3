@@ -12,7 +12,7 @@ module RSolvers {
     provides SolverExpr, Solvers
 
   method Create() returns (r: RSolver)
-    ensures r.Valid() && fresh(r.Repr())
+    ensures r.Valid() && fresh(r.Repr)
   {
     var z3 := Z3SmtSolver.CreateZ3Solver();
     var state := new Solvers.SolverState(z3);
@@ -41,20 +41,18 @@ module RSolvers {
 
   datatype RSolver = RSolver(solver: Solvers.Solver, state: Solvers.SolverState)
   {
-    function Repr(): set<object> {
-      { state, state.solver, state.solver.process }
-    }
+    ghost const Repr: set<object> := { state, state.solver, state.solver.process }
 
     ghost predicate Valid()
-      reads Repr()
+      reads Repr
     {
       state.Valid() && state.ValidFor(solver)
     }
 
     method Extend(expr: RExpr) returns (r: RSolver)
       requires Valid()
-      modifies Repr()
-      ensures r.Valid() && r.Repr() == Repr()
+      modifies Repr
+      ensures r.Valid() && fresh(r.Repr - Repr)
     {
       var solver := this.solver;
       // TODO: declare the new symbols in "expr"
@@ -64,7 +62,7 @@ module RSolvers {
 
     method Prove(expr: RExpr)
       requires Valid()
-      modifies Repr()
+      modifies Repr
       ensures Valid()
     {
       // TODO: declare the new symbols in "expr"
@@ -73,8 +71,8 @@ module RSolvers {
 
     method Record(expr: RExpr) returns (r: RSolver)
       requires Valid()
-      modifies Repr()
-      ensures r.Valid() && r.Repr() == Repr()
+      modifies Repr
+      ensures r.Valid() && fresh(r.Repr - Repr)
     {
       // TODO: declare the new symbols in "expr"
       var solver := solver.Record(expr.ToSExpr());

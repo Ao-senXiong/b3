@@ -30,17 +30,17 @@ module Verifier {
   {
     // TODO: For now, do something basic in order to connect with the Solver
     var o := RSolvers.Create();
-    assert allocated(o.Repr()); // strangely, needed
 
     // Create incarnations for parameters in the pre-state
     var preIncarnations, bodyIncarnations := CreateProcIncarnations(proc.Parameters);
 
     // Assume precondition (TODO: should also vet precondition)
     for i := 0 to |proc.Pre|
-      invariant o.Valid() && allocated(o.Repr()) && fresh(o.Repr())
+      invariant o.Valid() && fresh(o.Repr)
     {
       match proc.Pre[i]
       case AExpr(e) =>
+        var o' := o;
         o := o.Extend(preIncarnations.REval(e));
       case _ => // TODO
     }
@@ -53,7 +53,7 @@ module Verifier {
 
     // Check postcondition (TODO: should also vet postcondition)
     for i := 0 to |proc.Post|
-      invariant o.Valid() && allocated(o.Repr()) && fresh(o.Repr())
+      invariant o.Valid() && fresh(o.Repr)
     {
       match proc.Post[i]
       case AExpr(e) =>
@@ -132,10 +132,9 @@ module Verifier {
   method ProcessStmt(stmt: Stmt, incarnations_in: Incarnations, o_in: RSolver)
       returns (incarnations: Incarnations, o: RSolver, cp: ContinuationPoint)
     requires o_in.Valid()
-    modifies o_in.Repr()
-    ensures o.Valid() && allocated(o.Repr()) && fresh(o.Repr() - o_in.Repr())
+    modifies o_in.Repr
+    ensures o.Valid() && fresh(o.Repr - o_in.Repr)
   {
-    assert allocated(o_in.Repr()); // strangely, needed
     incarnations, o, cp := incarnations_in, o_in, Normal;
     match stmt
     case VarDecl(v, init, body) =>
@@ -153,7 +152,7 @@ module Verifier {
       o := o.Extend(RExpr.Eq(RExpr.Id(sLhs), sRhs));
     case Block(stmts) =>
       for i := 0 to |stmts|
-        invariant o.Valid() && allocated(o.Repr()) && fresh(o.Repr() - o_in.Repr())
+        invariant o.Valid() && fresh(o.Repr - o_in.Repr)
       {
         incarnations, o, cp := ProcessStmt(stmts[i], incarnations, o);
         if cp.Abrupt? {
