@@ -1,169 +1,92 @@
 module Solvers {
-  import Smt
-  import Z3SmtSolver // TODO: Use solver factories?
-  export
-    provides Solver, Solver.Extend, Solver.Prove, Solver.Record, Solver.Empty
-    reveals SolverState
-    reveals Context
-    provides SolverState.smtEngine, SolverState.Valid, SolverState.assumptions
-    provides SolverState.ValidFor
-    provides Smt
-    provides B
-    provides SolverExpr
-
+  import opened Basics
   import opened SolverExpr
-  import B = Basics
+  import Smt
+
+  export
+    reveals SolverState, ProofResult
+    provides SolverState.Repr, SolverState.Valid, SolverState.memos
+    provides SolverState.Push, SolverState.Pop
+    provides SolverState.DeclareSymbol, SolverState.AddAssumption, SolverState.Prove
+    provides Smt, Basics, SolverExpr
 
   datatype ProofResult =
     | Proved
     | Unproved(reason: string)
   
-  datatype Context =
-    | Assumption(assumed: SExpr)
-    | Declaration(name: string, inputType: SExpr, outputType: SExpr)
-  {
-    function ToSmt(): Smt.Context {
-      match this {
-        case Assumption(assumed) =>
-          Smt.Assumption(assumed.ToString())
-        case Declaration(name, inputType, outputTpe) =>
-          Smt.Declaration(name, inputType.ToString(), outputType.ToString())
-      }
-    }
-    function ToString(): string {
-      ToSmt().ToString()
-    }
-  }
-
-  // This solver state can backtrack, however, it cannot spawn new Z3 instances
-  class SolverState {
-    ghost var assumptions: B.List<Context>
-    ghost var assumptionsStacks: B.List<B.List<Context>>
+  /// This solver state can backtrack, however, it cannot spawn new SMT instances.
+  /// The solver state includes a stack of memos, which allows the solver to be shared
+  /// (in a sequential fashion) among several clients. The clients then update the stack
+  /// of memos to keep track of what has been given to the underlying SMT solver.
+  class SolverState<Memo> {
+    ghost const Repr: set<object>
 
     const smtEngine: Smt.SolverEngine
+    var memos: List<Memo>
 
-    constructor(smtEngine: Smt.SolverEngine)
-    // Should be a fresh solver
-      requires smtEngine.CommandStacks() == B.Cons(B.Nil, B.Nil)
-      requires smtEngine.Valid()
-      ensures smtEngine == this.smtEngine
-      ensures this.Valid()
-      ensures this.ValidFor(Solver.Empty())
+    constructor (smtEngine: Smt.SolverEngine)
+      requires smtEngine.Valid() && smtEngine.CommandStacks() == Cons(Nil, Nil)
+      ensures Valid() && fresh(Repr - {smtEngine, smtEngine.process})
     {
       this.smtEngine := smtEngine;
-      this.assumptions := B.Nil;
-      this.assumptionsStacks := B.Cons(B.Nil, B.Nil);
+      this.memos := Nil;
+      this.Repr := {this, smtEngine, smtEngine.process};
     }
 
-    ghost predicate ValidFor(s: Solver) reads this {
-      s.assumptions == this.assumptions.ToReverseSeq()
-    }
-    
-    static ghost predicate assumptionsSyncCommands(
-      assumptionsStacks: B.List<B.List<Context>>,
-      commandStacks: B.List<B.List<string>>
-    ) {
-      || (assumptionsStacks.Nil? && commandStacks.Nil?)
-      || (assumptionsStacks.Cons? && commandStacks.Cons?
-        && commandStacks.head == assumptionsStacks.head.Map((a: Context) => a.ToSmt().ToString())
-        && assumptionsSyncCommands(assumptionsStacks.tail, commandStacks.tail)
-      )
-    }
-
-    ghost predicate Valid() reads this, smtEngine, smtEngine.process
+    ghost predicate Valid()
+      reads this, Repr
+      ensures Valid() ==> this in Repr
     {
-      smtEngine.Valid()
-      && this as object !in {smtEngine, smtEngine.process}
-      && B.ListFlatten(assumptionsStacks) == assumptions
-      && assumptionsSyncCommands(assumptionsStacks, smtEngine.CommandStacks())
+      && this in Repr
+      && smtEngine in Repr
+      && smtEngine.process in Repr
+      && this !in {smtEngine, smtEngine.process}
+      && smtEngine.Valid()
+      && memos.Length() + 1 == smtEngine.CommandStacks().Length()
     }
 
-    ghost predicate ValidBeforePop() reads this, smtEngine, smtEngine.process
-    {
-      smtEngine.Valid()
-      && this as object !in {smtEngine, smtEngine.process}
-      && B.ListFlatten(assumptionsStacks) == assumptions
-      && assumptionsStacks.Cons?
-      && assumptionsSyncCommands(assumptionsStacks.tail, smtEngine.CommandStacks().tail)
-    }
-
-    method Push()
+    method Push(memo: Memo)
       requires Valid()
-      modifies this, smtEngine, smtEngine.process
-      ensures Valid()
-      ensures assumptions == old(assumptions)
-      ensures assumptionsStacks.tail == old(assumptionsStacks)
+      modifies Repr
+      ensures Valid() && memos == Cons(memo, old(memos))
     {
       smtEngine.Push();
-      assumptionsStacks := B.Cons(B.Nil, assumptionsStacks);
+      memos := Cons(memo, memos);
     }
 
     method Pop()
-      requires ValidBeforePop()
-      requires smtEngine.CommandStacks().DoubleCons?
-      modifies smtEngine, smtEngine.process
-      modifies this
-      ensures Valid()
-      ensures assumptionsStacks == old(this.assumptionsStacks.tail)
+      requires Valid() && memos.Cons?
+      modifies Repr
+      ensures Valid() && memos == old(memos).tail
     {
+      smtEngine.CommandStacks().AboutDoubleCons();
       smtEngine.Pop();
-      assumptions := assumptions.DropAsMuchAsHeadOf(assumptionsStacks);
-      assumptionsStacks := assumptionsStacks.tail;
+      memos := memos.tail;
     }
 
-    method AddContext(context: Context)
+    method AddAssumption(expr: SExpr)
       requires Valid()
-      modifies this, smtEngine, smtEngine.process
-      ensures Valid()
-      ensures assumptions == B.Cons(context, old(assumptions))
-      ensures assumptionsStacks.head.Cons?
-      ensures assumptionsStacks == old(assumptionsStacks.(
-        head := B.Cons(context, assumptionsStacks.head)))
+      modifies Repr
+      ensures Valid() && memos == old(memos)
     {
-      match context {
-        case Declaration(name, inputTpe, outputTpe) =>
-          smtEngine.DeclareFun(name, inputTpe.ToString(), outputTpe.ToString());
-        case Assumption(e) =>
-          smtEngine.Assume(e.ToString());
-      }
-      assumptions := B.Cons(context, assumptions);
-      assumptionsStacks := assumptionsStacks.(
-        head := B.Cons(context, assumptionsStacks.head));
+      smtEngine.Assume(expr.ToString());
     }
 
     method DeclareSymbol(name: string, inputTpe: SExpr, outputTpe: SExpr)
       requires Valid()
-      modifies this, smtEngine, smtEngine.process
-      ensures Valid()
-      ensures assumptions == B.Cons(Declaration(name, inputTpe, outputTpe), old(assumptions))
-      ensures assumptionsStacks.head.Cons?
-      ensures assumptionsStacks == old(assumptionsStacks.(
-        head := B.Cons(Declaration(name, inputTpe, outputTpe), assumptionsStacks.head)))
+      modifies Repr
+      ensures Valid() && memos == old(memos)
     {
-      AddContext(Declaration(name, inputTpe, outputTpe));
-    }
-    // In-place extension
-    method Extend(e: SExpr)
-      requires Valid()
-      modifies this, smtEngine, smtEngine.process
-      ensures Valid()
-      ensures assumptions == B.Cons(Assumption(e), old(assumptions))
-      ensures assumptionsStacks.head.Cons?
-      ensures assumptionsStacks == old(assumptionsStacks.(
-        head := B.Cons(Assumption(e), assumptionsStacks.head)))
-    {
-      AddContext(Assumption(e));
+      smtEngine.DeclareFun(name, inputTpe.ToString(), outputTpe.ToString());
     }
 
-    method Prove(e: SExpr) returns (result: ProofResult)
+    method Prove(expr: SExpr) returns (result: ProofResult)
       requires Valid()
-      ensures Valid()
-      modifies this, smtEngine, smtEngine.process
-      ensures assumptions == old(assumptions)
+      modifies Repr
+      ensures Valid() && memos == old(memos)
     {
-      Push();
-      assert assumptionsSyncCommands(assumptionsStacks.tail, smtEngine.CommandStacks().tail);
-      Extend(SExpr.Negation(e));
+      smtEngine.Push();
+      smtEngine.Assume(SExpr.Negation(expr).ToString());
       var satness := smtEngine.CheckSat();
       if satness == "unsat" {
         result := Proved;
@@ -171,66 +94,7 @@ module Solvers {
         var model := smtEngine.GetModel();
         result := Unproved(satness + "\n" + model);
       }
-      Pop();
-    }
-  }
-
-  datatype Solver =
-    Solver(assumptions: seq<Context>)
-  {
-    static function Empty(): Solver {
-      Solver([])
-    }
-    // Forking is costly as it creates a new SMT process
-    // and it will replay all assumptions till then
-    // but it is necessary if we plan on verifying in a previous solver state.
-    method Fork() returns (newSolverState: SolverState)
-      ensures fresh(newSolverState)
-      ensures newSolverState.ValidFor(this)
-    {
-      var newSmtEngine := Z3SmtSolver.CreateZ3SolverEngine();
-      newSolverState := new SolverState(newSmtEngine);
-      assert newSolverState.ValidFor(Solver([]));
-      for i := 0 to |assumptions|
-        invariant newSolverState.ValidFor(Solver(assumptions[0..i]))
-        invariant newSolverState.Valid()
-      {
-        newSolverState.AddContext(assumptions[i]);
-      }
-      assert assumptions[0..|assumptions|] == assumptions;
-      assert newSolverState.ValidFor(this);
-    }
-    method Extend(e: SExpr, s: SolverState) returns (newSolver: Solver)
-      requires s.Valid()
-      requires s.ValidFor(this)
-      modifies s, s.smtEngine, s.smtEngine.process
-      ensures s.ValidFor(newSolver)
-      ensures s.Valid()
-    {
-      newSolver := Solver(assumptions + [Assumption(e)]);
-      s.Extend(e);
-    }
-
-    method Prove(e: SExpr, s: SolverState)
-      requires s.Valid() && s.ValidFor(this)
-      modifies s, s.smtEngine, s.smtEngine.process
-      ensures s.Valid() && s.ValidFor(this)
-    {
-      // TODO
-      print "----- Proof obligation:\n";
-      for i := 0 to |assumptions| {
-        print "  ", assumptions[i].ToString(), "\n";
-      }
-      print "  |-\n";
-      print "  ", e.ToString(), "\n";
-      var proofResult := s.Prove(e);
-      print "Result:", proofResult, "\n";
-    }
-
-    method Record(e: SExpr) returns (solver: Solver)
-      ensures forall s: SolverState :: s.ValidFor(this) ==> s.ValidFor(solver)
-    {
-      solver := this; // TODO
+      smtEngine.Pop();
     }
   }
 }

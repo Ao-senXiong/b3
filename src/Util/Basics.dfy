@@ -9,6 +9,11 @@ module Basics {
     }
     const DoubleCons? := Cons? && tail.Cons?
 
+    lemma AboutDoubleCons()
+      ensures DoubleCons? <==> 2 <= Length()
+    {
+    }
+
     function Length(): nat {
       if this == Nil then 0 else 1 + tail.Length()
     }
@@ -122,5 +127,14 @@ module Basics {
       var prefix := Int2StringNoLeadingZero(x / 10);
       var digit := (x % 10) as char + '0';
       prefix + [digit]
+  }
+
+  function Comma(s: seq<string>, comma: string): string {
+    if 2 <= |s| then
+      s[0] + comma + Comma(s[1..], comma)
+    else if |s| == 1 then
+      s[0]
+    else
+      ""
   }
 }

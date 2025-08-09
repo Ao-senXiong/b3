@@ -3,9 +3,7 @@ module Verifier {
   import opened Basics
   import opened Ast
   import opened SolverExpr
-  import Solvers
-  import WF = WellFormednessConsequences
-  import opened RSolvers
+  import RSolvers
 
   export
     provides Verify
@@ -28,36 +26,35 @@ module Verifier {
   method VerifyProcedure(proc: Ast.Procedure)
     requires proc.WellFormed()
   {
-    // TODO: For now, do something basic in order to connect with the Solver
-    var o := RSolvers.Create();
+    var smtEngine := RSolvers.CreateEngine();
+    var context := RSolvers.CreateEmptyContext();
 
     // Create incarnations for parameters in the pre-state
     var preIncarnations, bodyIncarnations := CreateProcIncarnations(proc.Parameters);
 
     // Assume precondition (TODO: should also vet precondition)
     for i := 0 to |proc.Pre|
-      invariant o.Valid() && fresh(o.Repr)
+      invariant smtEngine.Valid()
     {
       match proc.Pre[i]
       case AExpr(e) =>
-        var o' := o;
-        o := o.Extend(preIncarnations.REval(e));
+        context := RSolvers.Extend(context, preIncarnations.REval(e));
       case _ => // TODO
     }
 
     if proc.Body.Some? {
       var cp;
-      bodyIncarnations, o, cp := ProcessStmt(proc.Body.value, bodyIncarnations, o);
+      bodyIncarnations, context, cp := ProcessStmt(proc.Body.value, bodyIncarnations, context, smtEngine);
       expect cp == Normal; // TODO: this holds if all exit in the body go to defined labels
     }
 
     // Check postcondition (TODO: should also vet postcondition)
     for i := 0 to |proc.Post|
-      invariant o.Valid() && fresh(o.Repr)
+      invariant smtEngine.Valid()
     {
       match proc.Post[i]
       case AExpr(e) =>
-        o.Prove(bodyIncarnations.REval(e));
+        smtEngine.Prove(context, bodyIncarnations.REval(e));
       case _ => // TODO
     }
   }
@@ -84,6 +81,8 @@ module Verifier {
     }
   }
 
+  type RExpr = RSolvers.RExpr
+
   newtype Incarnations = map<Variable, SVar>
   {
     method Update(v: Variable) returns (incarnations: Incarnations, x: SVar) {
@@ -92,7 +91,7 @@ module Verifier {
       incarnations := this[v := x];
     }
 
-    function REval(expr: Expr): RExpr {
+    function REval(expr: Expr): RSolvers.RExpr {
       match expr
       case BConst(value) => RExpr.Boolean(value)
       case IConst(value) => RExpr.Integer(value)
@@ -129,32 +128,32 @@ module Verifier {
     | Normal
     | Abrupt(lbl: Label)
 
-  method ProcessStmt(stmt: Stmt, incarnations_in: Incarnations, o_in: RSolver)
-      returns (incarnations: Incarnations, o: RSolver, cp: ContinuationPoint)
-    requires o_in.Valid()
-    modifies o_in.Repr
-    ensures o.Valid() && fresh(o.Repr - o_in.Repr)
+  method ProcessStmt(stmt: Stmt, incarnations_in: Incarnations, context_in: RSolvers.RContext, smtEngine: RSolvers.REngine)
+      returns (incarnations: Incarnations, context: RSolvers.RContext, cp: ContinuationPoint)
+    requires smtEngine.Valid()
+    modifies smtEngine.Repr
+    ensures smtEngine.Valid()
   {
-    incarnations, o, cp := incarnations_in, o_in, Normal;
+    incarnations, context, cp := incarnations_in, context_in, Normal;
     match stmt
     case VarDecl(v, init, body) =>
       var sv;
       incarnations, sv := incarnations.Update(v);
       if init.Some? {
         var sRhs := incarnations.REval(init.value);
-        o := o.Extend(RExpr.Eq(RExpr.Id(sv), sRhs));
+        context := RSolvers.Extend(context, RExpr.Eq(RExpr.Id(sv), sRhs));
       }
-      incarnations, o, cp := ProcessStmt(body, incarnations, o);
+      incarnations, context, cp := ProcessStmt(body, incarnations, context, smtEngine);
     case Assign(lhs, rhs) =>
       var sRhs := incarnations.REval(rhs);
       var sLhs;
       incarnations, sLhs := incarnations.Update(lhs);
-      o := o.Extend(RExpr.Eq(RExpr.Id(sLhs), sRhs));
+      context := RSolvers.Extend(context, RExpr.Eq(RExpr.Id(sLhs), sRhs));
     case Block(stmts) =>
       for i := 0 to |stmts|
-        invariant o.Valid() && fresh(o.Repr - o_in.Repr)
+        invariant smtEngine.Valid()
       {
-        incarnations, o, cp := ProcessStmt(stmts[i], incarnations, o);
+        incarnations, context, cp := ProcessStmt(stmts[i], incarnations, context, smtEngine);
         if cp.Abrupt? {
           return;
         }
@@ -162,13 +161,13 @@ module Verifier {
     case Call(_, _) =>
       print "UNHANDLED STATEMENT: Call\n"; // TODO
     case Check(cond) =>
-      o.Prove(incarnations.REval(cond));
+      smtEngine.Prove(context, incarnations.REval(cond));
     case Assume(cond) =>
-      o := o.Extend(incarnations.REval(cond));
+      context := RSolvers.Extend(context, incarnations.REval(cond));
     case Assert(cond) =>
       var e := incarnations.REval(cond);
-      o.Prove(e);
-      o := o.Extend(e);
+      smtEngine.Prove(context, e);
+      context := RSolvers.Extend(context, e);
     case AForall(_, _) =>
       print "UNHANDLED STATEMENT: AForall\n"; // TODO
     case Choice(_) =>
@@ -176,14 +175,14 @@ module Verifier {
     case Loop(_, _) =>
       print "UNHANDLED STATEMENT: Loop\n"; // TODO
     case LabeledStmt(lbl, body) =>
-      incarnations, o, cp := ProcessStmt(body, incarnations, o);
+      incarnations, context, cp := ProcessStmt(body, incarnations, context, smtEngine);
       if cp == Abrupt(lbl) {
         cp := Normal;
       }
     case Exit(lbl) =>
       cp := Abrupt(lbl);
     case Probe(e) =>
-      o := o.Record(incarnations.REval(e));
+      context := RSolvers.Record(context, incarnations.REval(e));
   }
 
 /*

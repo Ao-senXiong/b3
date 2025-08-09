@@ -7,18 +7,15 @@ module RSolvers {
   import Solvers
   import Z3SmtSolver
   import opened Std.Wrappers
+  import opened Basics
 
   export
     reveals RExpr
     provides RExpr.Eq
-    provides RContext, CreateEmptyContext
+    provides RContext, CreateEmptyContext, Extend, Record
     reveals REngine
     provides CreateEngine, REngine.Repr, REngine.Valid, REngine.Prove
-    // ...
-    provides RSolver, RSolver.Repr, RSolver.Valid
-    provides Create
-    provides RSolver.Extend, RSolver.Prove, RSolver.Record
-    provides SolverExpr, Solvers
+    provides SolverExpr
 
   // ===== RExpr =====
 
@@ -33,11 +30,23 @@ module RSolvers {
       case Boolean(b) => SolverExpr.SExpr.Boolean(b)
       case Integer(x) => SolverExpr.SExpr.Integer(x)
       case Id(v) => SolverExpr.SExpr.Id(v)
-      case FuncAppl(op, args) => SolverExpr.SExpr.FuncAppl(op, seq(|args|, i requires 0 <= i < |args| => args[i].ToSExpr()))
+      case FuncAppl(op, args) =>
+        var sargs := SeqMap(args, (arg: RExpr) requires arg < this => arg.ToSExpr());
+        SolverExpr.SExpr.FuncAppl(op, sargs)
     }
 
     static function Eq(r0: RExpr, r1: RExpr): RExpr {
       FuncAppl("=", [r0, r1])
+    }
+
+    function ToString(): string {
+      match this
+      case Boolean(b) => if b then "true" else "false"
+      case Integer(x) => Int2String(x)
+      case Id(v) => v.name
+      case FuncAppl(op, args) =>
+        var argStrings := SeqMap(args, (arg: RExpr) requires arg < this => arg.ToString());
+        op + "(" + Comma(argStrings, ", ") + ")"
     }
   }
 
@@ -46,6 +55,10 @@ module RSolvers {
   trait RContext_ extends object {
     const depth: nat
     ghost predicate Valid()
+
+    method Print()
+      requires Valid()
+      decreases depth
   }
 
   class RContextRoot extends RContext_ {
@@ -57,6 +70,12 @@ module RSolvers {
       ensures Valid()
     {
       depth := 0;
+    }
+
+    method Print()
+      requires Valid()
+      decreases depth
+    {
     }
   }
 
@@ -75,9 +94,24 @@ module RSolvers {
       this.parent := parent;
       this.expr := expr;
     }
+
+    method Print()
+      requires Valid()
+      decreases depth
+    {
+      parent.Print();
+      print "  ", expr.ToString(), "\n";
+    }
   }
 
   type RContext = r: RContext_ | r.Valid() witness *
+
+  method PrintProofObligation(context: RContext, expr: RExpr) {
+    print "----- Proof obligation:\n";
+    context.Print();
+    print "  |-\n";
+    print "  ", expr.ToString(), "\n";
+  }
 
   method CreateEmptyContext() returns (context: RContext) {
     context := new RContextRoot();
@@ -87,25 +121,56 @@ module RSolvers {
     r := new RContextNode(context, expr);
   }
 
+  method Record(context: RContext, expr: RExpr) returns (r: RContext) {
+    var name := "probe%" + Int2String(context.depth);
+    var p := new SolverExpr.SVar(name);
+    var eq := RExpr.Eq(RExpr.Id(p), expr);
+    r := Extend(context, eq);
+  }
+
   // ===== REngine =====
 
   class REngine {
-    const Repr: set<object>
+    ghost const Repr: set<object>
+    const state: Solvers.SolverState<RContext>
+
     ghost predicate Valid()
       reads Repr
       ensures Valid() ==> this in Repr
     {
-      this in Repr
+      && this in Repr
+      && state in Repr && state.Repr <= Repr && this !in state.Repr
+      && state.Valid()
     }
 
     // This constructor is given a name, so that it doesn't automatically get exported just because the class is revealed
-    constructor New(state: Solvers.SolverState)
-      ensures Valid() && fresh(Repr)
+    constructor New(state: Solvers.SolverState<RContext>)
+      requires state.Valid()
+      ensures Valid() && fresh(Repr - state.Repr)
     {
-      Repr := {this};
+      this.state := state;
+      Repr := {this} + state.Repr;
     }
 
     method Prove(context: RContext, expr: RExpr)
+      requires Valid()
+      modifies Repr
+      ensures Valid()
+    {
+      PrintProofObligation(context, expr);
+      SetContext(context);
+      var result := state.Prove(expr.ToSExpr());
+      // TODO: do something with `result` (other than just printing it)
+      print "Result:", result, "\n";
+    }
+
+    method SetContext(context: RContext)
+      requires Valid()
+      modifies Repr
+      ensures Valid()
+    {
+      // TODO
+    }
   }
 
   method CreateEngine() returns (r: REngine)
@@ -133,7 +198,7 @@ module RSolvers {
 
 
 
-
+/*************************
   method Create() returns (r: RSolver)
     ensures r.Valid() && fresh(r.Repr)
   {
@@ -188,4 +253,5 @@ module RSolvers {
       return RSolver(solver, state, depth + 1, Some(this));
     }
   }
+*************************/
 }
