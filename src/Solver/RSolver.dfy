@@ -56,6 +56,9 @@ module RSolvers {
     const depth: nat
     ghost predicate Valid()
 
+    lemma JustTwoSubtypes()
+      ensures this is RContextRoot || this is RContextNode
+
     method Print()
       requires Valid()
       decreases depth
@@ -75,6 +78,11 @@ module RSolvers {
     method Print()
       requires Valid()
       decreases depth
+    {
+    }
+
+    lemma JustTwoSubtypes()
+      ensures this is RContextRoot
     {
     }
   }
@@ -101,6 +109,11 @@ module RSolvers {
     {
       parent.Print();
       print "  ", expr.ToString(), "\n";
+    }
+
+    lemma JustTwoSubtypes()
+      ensures this is RContextNode
+    {
     }
   }
 
@@ -169,7 +182,52 @@ module RSolvers {
       modifies Repr
       ensures Valid()
     {
-      // TODO
+      var memoCount := state.memos.Length();
+      // First, trim down memo length to be no greater than the context depth
+      while context.depth < memoCount
+        invariant Valid() && memoCount == state.memos.Length()
+        decreases memoCount
+      {
+        state.Pop();
+        memoCount := memoCount - 1;
+      }
+
+      AdjustContext(context);
+    }
+
+    method AdjustContext(context: RContext)
+      requires Valid() && state.memos.Length() <= context.depth
+      modifies Repr
+      ensures Valid() && (state.memos.Length() == context.depth == 0 || state.IsTopMemo(context))
+      decreases context.depth
+    {
+      if context.depth == 0 {
+        // done
+        return;
+      }
+
+      var contextx := context as RContextNode by {
+        var bug := contextx; // BUG: This Dafny scoping rule is wrong. It should not include the newly declared variables
+        assert context is RContextNode by {
+          context.JustTwoSubtypes();
+          if context is RContextRoot {
+            // proof by contradiction
+            assert (context as RContextRoot).depth == 0;
+          }
+        }
+      }
+      if state.memos.Length() < contextx.depth {
+        AdjustContext(contextx.parent);
+      } else if state.IsTopMemo(contextx) {
+        return;
+      } else {
+        state.Pop();
+        AdjustContext(contextx.parent);
+      }
+
+      state.Push(contextx);
+      // TODO: declare the symbols in contextx.expr
+      state.AddAssumption(contextx.expr.ToSExpr());
     }
   }
 

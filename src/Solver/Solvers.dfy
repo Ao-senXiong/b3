@@ -5,7 +5,9 @@ module Solvers {
 
   export
     reveals SolverState, ProofResult
-    provides SolverState.Repr, SolverState.Valid, SolverState.memos
+    provides SolverState.Repr, SolverState.Valid
+    provides SolverState.memos
+    reveals SolverState.IsTopMemo
     provides SolverState.Push, SolverState.Pop
     provides SolverState.DeclareSymbol, SolverState.AddAssumption, SolverState.Prove
     provides Smt, Basics, SolverExpr
@@ -18,7 +20,7 @@ module Solvers {
   /// The solver state includes a stack of memos, which allows the solver to be shared
   /// (in a sequential fashion) among several clients. The clients then update the stack
   /// of memos to keep track of what has been given to the underlying SMT solver.
-  class SolverState<Memo> {
+  class SolverState<Memo(==)> {
     ghost const Repr: set<object>
 
     const smtEngine: Smt.SolverEngine
@@ -43,6 +45,12 @@ module Solvers {
       && this !in {smtEngine, smtEngine.process}
       && smtEngine.Valid()
       && memos.Length() + 1 == smtEngine.CommandStacks().Length()
+    }
+
+    predicate IsTopMemo(m: Memo)
+      reads this
+    {
+      memos.Cons? && memos.head == m
     }
 
     method Push(memo: Memo)
