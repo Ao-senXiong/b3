@@ -55,6 +55,7 @@ module RSolvers {
   trait RContext_ extends object {
     const depth: nat
     ghost predicate Valid()
+      decreases depth
 
     lemma JustTwoSubtypes()
       ensures this is RContextRoot || this is RContextNode
@@ -65,7 +66,9 @@ module RSolvers {
   }
 
   class RContextRoot extends RContext_ {
-    ghost predicate Valid() {
+    ghost predicate Valid()
+      decreases depth
+    {
       depth == 0
     }
 
@@ -88,11 +91,14 @@ module RSolvers {
   }
 
   class RContextNode extends RContext_ {
-    const parent: RContext
+    const parent: RContext_
     const expr: RExpr
 
-    ghost predicate Valid() {
-      depth == parent.depth + 1
+    ghost predicate Valid()
+      decreases depth
+    {
+      depth == parent.depth + 1 &&
+      parent.Valid()
     }
 
     constructor (parent: RContext, expr: RExpr)
