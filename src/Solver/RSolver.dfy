@@ -136,7 +136,7 @@ module RSolvers {
 
   method Record(context: RContext, expr: RExpr) returns (r: RContext) {
     var name := "probe%" + Int2String(context.depth);
-    var p := new SolverExpr.SVar(name);
+    var p := new SolverExpr.SVar(name, SolverExpr.SBool); // TODO: use the type of `expr`
     var eq := RExpr.Eq(RExpr.Id(p), expr);
     r := Extend(context, eq);
   }
@@ -172,7 +172,12 @@ module RSolvers {
     {
       PrintProofObligation(context, expr);
       SetContext(context);
+
+      state.Push(context); // do another Push; the parameter here is irrelevant and will soon be popped off again
+      DeclareNewSymbols(expr);
       var result := state.Prove(expr.ToSExpr());
+      state.Pop();
+
       // TODO: do something with `result` (other than just printing it)
       print "Result:", result, "\n";
     }
@@ -224,10 +229,29 @@ module RSolvers {
         state.Pop();
         AdjustContext(contextx.parent);
       }
-
       state.Push(contextx);
-      // TODO: declare the symbols in contextx.expr
+      DeclareNewSymbols(contextx.expr);
       state.AddAssumption(contextx.expr.ToSExpr());
+    }
+
+    method DeclareNewSymbols(r: RExpr)
+      requires Valid()
+      modifies Repr
+      ensures Valid() && state.memos == old(state.memos)
+    {
+      match r
+      case Boolean(_) =>
+      case Integer(_) =>
+      case Id(v) =>
+        if v !in state.declarations {
+          state.DeclareSymbol(v);
+        }
+      case FuncAppl(op, args) =>
+        for i := 0 to |args|
+          invariant Valid() && state.memos == old(state.memos)
+        {
+          DeclareNewSymbols(args[i]);
+        }
     }
   }
 

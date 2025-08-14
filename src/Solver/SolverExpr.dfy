@@ -1,17 +1,66 @@
 module SolverExpr {
+  import opened Std.Wrappers
   import Std.Collections.Seq
   import opened Basics
 
   export
-    reveals SVar, SVar.name
+    reveals SDeclaration, SDeclaration.name
+    reveals SType
+    provides SType.SplitInputsOutput, SType.TypesToSExpr, SType.ToSExpr
+    reveals STypedDeclaration, STypedDeclaration.typ
+    reveals SVar
     reveals SExprPrintConfig
     provides SExpr, SExpr.ToString
     provides SExpr.Boolean, SExpr.Integer, SExpr.Id, SExpr.FuncAppl, SExpr.Eq, SExpr.Negation, SExpr.BigAnd
+    provides Wrappers
 
-  class SVar {
+  trait SDeclaration extends object {
     const name: string
+  }
+
+  class STypeDecl extends SDeclaration {
     constructor (name: string) {
       this.name := name;
+    }
+  }
+
+  datatype SType =
+    | SBool
+    | SInt
+    | SArrow(inputs: seq<SType>, output: SType)
+  {
+    function SplitInputsOutput(): (seq<SType>, SType) {
+      match this
+      case SArrow(inputs, output) => (inputs, output)
+      case _ => ([], this)
+    }
+
+    static function TypesToSExpr(types: seq<SType>, ghost parent: SType := SArrow(types, SBool)): SExpr
+      requires forall typ <- types :: typ < parent
+      decreases parent, 0
+    {
+      PP(SeqMap(types, (typ: SType) requires typ < parent => typ.ToSExpr()))
+    }
+
+    function ToSExpr(): SExpr {
+      match this
+      case SBool => S("Bool")
+      case SInt => S("Int")
+      case SArrow(inputs, output) =>
+        // Actually, we don't expect this ever to happen, because SMTLib does not support types like this
+        var ins := TypesToSExpr(inputs, this);
+        PP([ins, output.ToSExpr()])
+    }
+  }
+
+  trait STypedDeclaration extends SDeclaration {
+    const typ: SType
+  }
+
+  class SVar extends STypedDeclaration {
+    constructor (name: string, typ: SType) {
+      this.name := name;
+      this.typ := typ;
     }
   }
 

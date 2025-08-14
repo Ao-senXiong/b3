@@ -45,7 +45,7 @@ module Verifier {
     if proc.Body.Some? {
       var cp;
       bodyIncarnations, context, cp := ProcessStmt(proc.Body.value, bodyIncarnations, context, smtEngine);
-      expect cp == Normal; // TODO: this holds if all exit in the body go to defined labels
+      expect cp == Normal, cp; // TODO: this holds if all exit in the body go to defined labels
     }
 
     // Check postcondition (TODO: should also vet postcondition)
@@ -67,27 +67,36 @@ module Verifier {
       var parameter := parameters[i];
       match parameter.mode
       case In =>
-        var v := new SVar(parameter.name);
+        var v := new SVar(parameter.name, Type2SType(parameter.typ));
         preIncarnations := preIncarnations[parameter := v];
         bodyIncarnations := bodyIncarnations[parameter := v];
       case InOut =>
-        var vOld := new SVar(parameter.name + "%old");
+        var vOld := new SVar(parameter.name + "%old", Type2SType(parameter.typ));
         preIncarnations := preIncarnations[parameter := vOld];
         bodyIncarnations := bodyIncarnations[parameter.oldInOut.value := vOld];
         bodyIncarnations := bodyIncarnations[parameter := vOld];
       case out =>
-        var v := new SVar(parameter.name);
+        var v := new SVar(parameter.name, Type2SType(parameter.typ));
         bodyIncarnations := bodyIncarnations[parameter := v];
     }
   }
 
   type RExpr = RSolvers.RExpr
 
+  function Type2SType(typ: Type): SType {
+    if typ.IsBool() then
+      SBool
+    else if typ.IsInt() then
+      SInt
+    else
+      SInt // TODO
+  }
+
   newtype Incarnations = map<Variable, SVar>
   {
     method Update(v: Variable) returns (incarnations: Incarnations, x: SVar) {
       var sequenceNumber := Int2String(|this|);
-      x := new SVar(v.name + "%" + sequenceNumber);
+      x := new SVar(v.name + "%" + sequenceNumber, Type2SType(v.typ));
       incarnations := this[v := x];
     }
 
@@ -102,20 +111,6 @@ module Verifier {
         var s0, s1 := REval(e0), REval(e1);
         match op {
           case Eq => RExpr.Eq(s0, s1)
-        }
-    }
-
-    function Eval(expr: Expr): SExpr {
-      match expr
-      case BConst(value) => SExpr.Boolean(value)
-      case IConst(value) => SExpr.Integer(value)
-      case IdExpr(v) =>
-        assume {:axiom} v in this; // TODO
-        SExpr.Id(this[v])
-      case BinaryExpr(op, e0, e1) =>
-        var s0, s1 := Eval(e0), Eval(e1);
-        match op {
-          case Eq => SExpr.Eq(s0, s1)
         }
     }
 
@@ -150,10 +145,11 @@ module Verifier {
       incarnations, sLhs := incarnations.Update(lhs);
       context := RSolvers.Extend(context, RExpr.Eq(RExpr.Id(sLhs), sRhs));
     case Block(stmts) =>
+      var bc := context;
       for i := 0 to |stmts|
         invariant smtEngine.Valid()
       {
-        incarnations, context, cp := ProcessStmt(stmts[i], incarnations, context, smtEngine);
+        incarnations, bc, cp := ProcessStmt(stmts[i], incarnations, bc, smtEngine);
         if cp.Abrupt? {
           return;
         }

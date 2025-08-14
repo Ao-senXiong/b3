@@ -87,6 +87,8 @@ module Smt {
       ensures cmd != CMD_PUSH && cmd != CMD_POP ==>
                 CommandStacks() == AddCommand(old(CommandStacks()), cmd)
     {
+      // print ">> ", cmd, "\n"; // for debugging
+
       response := process.SendCmd(cmd);
       assume {:axiom} old(allocated(CommandStacks()));
       assume {:axiom} cmd == CMD_PUSH ==> CommandStacks() == PushCommandStack(old(CommandStacks()));

@@ -1,4 +1,5 @@
 module Solvers {
+  import opened Std.Wrappers
   import opened Basics
   import opened SolverExpr
   import Smt
@@ -6,7 +7,7 @@ module Solvers {
   export
     reveals SolverState, ProofResult
     provides SolverState.Repr, SolverState.Valid
-    provides SolverState.memos
+    provides SolverState.memos, SolverState.declarations
     reveals SolverState.IsTopMemo
     provides SolverState.Push, SolverState.Pop
     provides SolverState.DeclareSymbol, SolverState.AddAssumption, SolverState.Prove
@@ -24,7 +25,15 @@ module Solvers {
     ghost const Repr: set<object>
 
     const smtEngine: Smt.SolverEngine
-    var memos: List<Memo>
+    var memos: List<(Memo, set<STypedDeclaration>)> // TODO: rename this field
+
+    function CurrentMemo(): Option<Memo>
+      reads this
+    {
+      if memos == Nil then None else Some(memos.head.0)
+    }
+
+    var declarations: set<STypedDeclaration>
 
     constructor (smtEngine: Smt.SolverEngine)
       requires smtEngine.Valid() && smtEngine.CommandStacks() == Cons(Nil, Nil)
@@ -32,6 +41,7 @@ module Solvers {
     {
       this.smtEngine := smtEngine;
       this.memos := Nil;
+      this.declarations := {};
       this.Repr := {this, smtEngine, smtEngine.process};
     }
 
@@ -50,16 +60,16 @@ module Solvers {
     predicate IsTopMemo(m: Memo)
       reads this
     {
-      memos.Cons? && memos.head == m
+      memos.Cons? && memos.head.0 == m
     }
 
     method Push(memo: Memo)
       requires Valid()
       modifies Repr
-      ensures Valid() && memos == Cons(memo, old(memos))
+      ensures Valid() && memos == Cons((memo, declarations), old(memos))
     {
       smtEngine.Push();
-      memos := Cons(memo, memos);
+      memos := Cons((memo, declarations), memos);
     }
 
     method Pop()
@@ -69,7 +79,9 @@ module Solvers {
     {
       smtEngine.CommandStacks().AboutDoubleCons();
       smtEngine.Pop();
+      var (_, decls) := memos.head;
       memos := memos.tail;
+      declarations := decls;
     }
 
     method AddAssumption(expr: SExpr)
@@ -80,7 +92,17 @@ module Solvers {
       smtEngine.Assume(expr.ToString());
     }
 
-    method DeclareSymbol(name: string, inputTpe: SExpr, outputTpe: SExpr)
+    method DeclareSymbol(decl: STypedDeclaration)
+      requires Valid()
+      modifies Repr
+      ensures Valid() && memos == old(memos)
+    {
+      var (inputTypes, outputType) := decl.typ.SplitInputsOutput();
+      DeclareSymbolByName(decl.name, SType.TypesToSExpr(inputTypes), outputType.ToSExpr());
+      declarations := declarations + {decl};
+    }
+
+    method DeclareSymbolByName(name: string, inputTpe: SExpr, outputTpe: SExpr)
       requires Valid()
       modifies Repr
       ensures Valid() && memos == old(memos)
