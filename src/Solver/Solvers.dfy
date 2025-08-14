@@ -7,7 +7,7 @@ module Solvers {
   export
     reveals SolverState, ProofResult
     provides SolverState.Repr, SolverState.Valid
-    provides SolverState.memos, SolverState.declarations
+    provides SolverState.stack, SolverState.declarations
     reveals SolverState.IsTopMemo
     provides SolverState.Push, SolverState.Pop
     provides SolverState.DeclareSymbol, SolverState.AddAssumption, SolverState.Prove
@@ -18,20 +18,14 @@ module Solvers {
     | Unproved(reason: string)
   
   /// This solver state can backtrack, however, it cannot spawn new SMT instances.
-  /// The solver state includes a stack of memos, which allows the solver to be shared
-  /// (in a sequential fashion) among several clients. The clients then update the stack
-  /// of memos to keep track of what has been given to the underlying SMT solver.
+  /// The solver state includes a stack of memo/declaration-set pairs, which allows the solver
+  /// to be shared (in a sequential fashion) among several clients. The clients then update
+  /// the stack to keep track of what has been given to the underlying SMT solver.
   class SolverState<Memo(==)> {
     ghost const Repr: set<object>
 
     const smtEngine: Smt.SolverEngine
-    var memos: List<(Memo, set<STypedDeclaration>)> // TODO: rename this field
-
-    function CurrentMemo(): Option<Memo>
-      reads this
-    {
-      if memos == Nil then None else Some(memos.head.0)
-    }
+    var stack: List<(Memo, set<STypedDeclaration>)>
 
     var declarations: set<STypedDeclaration>
 
@@ -40,7 +34,7 @@ module Solvers {
       ensures Valid() && fresh(Repr - {smtEngine, smtEngine.process})
     {
       this.smtEngine := smtEngine;
-      this.memos := Nil;
+      this.stack := Nil;
       this.declarations := {};
       this.Repr := {this, smtEngine, smtEngine.process};
     }
@@ -54,40 +48,40 @@ module Solvers {
       && smtEngine.process in Repr
       && this !in {smtEngine, smtEngine.process}
       && smtEngine.Valid()
-      && memos.Length() + 1 == smtEngine.CommandStacks().Length()
+      && stack.Length() + 1 == smtEngine.CommandStacks().Length()
     }
 
     predicate IsTopMemo(m: Memo)
       reads this
     {
-      memos.Cons? && memos.head.0 == m
+      stack.Cons? && stack.head.0 == m
     }
 
     method Push(memo: Memo)
       requires Valid()
       modifies Repr
-      ensures Valid() && memos == Cons((memo, declarations), old(memos))
+      ensures Valid() && stack == Cons((memo, declarations), old(stack))
     {
       smtEngine.Push();
-      memos := Cons((memo, declarations), memos);
+      stack := Cons((memo, declarations), stack);
     }
 
     method Pop()
-      requires Valid() && memos.Cons?
+      requires Valid() && stack.Cons?
       modifies Repr
-      ensures Valid() && memos == old(memos).tail
+      ensures Valid() && stack == old(stack).tail
     {
       smtEngine.CommandStacks().AboutDoubleCons();
       smtEngine.Pop();
-      var (_, decls) := memos.head;
-      memos := memos.tail;
+      var (_, decls) := stack.head;
+      stack := stack.tail;
       declarations := decls;
     }
 
     method AddAssumption(expr: SExpr)
       requires Valid()
       modifies Repr
-      ensures Valid() && memos == old(memos)
+      ensures Valid() && stack == old(stack)
     {
       smtEngine.Assume(expr.ToString());
     }
@@ -95,7 +89,7 @@ module Solvers {
     method DeclareSymbol(decl: STypedDeclaration)
       requires Valid()
       modifies Repr
-      ensures Valid() && memos == old(memos)
+      ensures Valid() && stack == old(stack)
     {
       var (inputTypes, outputType) := decl.typ.SplitInputsOutput();
       DeclareSymbolByName(decl.name, SType.TypesToSExpr(inputTypes), outputType.ToSExpr());
@@ -105,7 +99,7 @@ module Solvers {
     method DeclareSymbolByName(name: string, inputTpe: SExpr, outputTpe: SExpr)
       requires Valid()
       modifies Repr
-      ensures Valid() && memos == old(memos)
+      ensures Valid() && stack == old(stack)
     {
       smtEngine.DeclareFun(name, inputTpe.ToString(), outputTpe.ToString());
     }
@@ -113,7 +107,7 @@ module Solvers {
     method Prove(expr: SExpr) returns (result: ProofResult)
       requires Valid()
       modifies Repr
-      ensures Valid() && memos == old(memos)
+      ensures Valid() && stack == old(stack)
     {
       smtEngine.Push();
       smtEngine.Assume(SExpr.Negation(expr).ToString());

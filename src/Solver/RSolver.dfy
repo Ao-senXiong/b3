@@ -193,10 +193,10 @@ module RSolvers {
       modifies Repr
       ensures Valid()
     {
-      var memoCount := state.memos.Length();
+      var memoCount := state.stack.Length();
       // First, trim down memo length to be no greater than the context depth
       while context.depth < memoCount
-        invariant Valid() && memoCount == state.memos.Length()
+        invariant Valid() && memoCount == state.stack.Length()
         decreases memoCount
       {
         state.Pop();
@@ -207,9 +207,9 @@ module RSolvers {
     }
 
     method AdjustContext(context: RContext)
-      requires Valid() && state.memos.Length() <= context.depth
+      requires Valid() && state.stack.Length() <= context.depth
       modifies Repr
-      ensures Valid() && (state.memos.Length() == context.depth == 0 || state.IsTopMemo(context))
+      ensures Valid() && (state.stack.Length() == context.depth == 0 || state.IsTopMemo(context))
       decreases context.depth
     {
       if context.depth == 0 {
@@ -227,7 +227,7 @@ module RSolvers {
           }
         }
       }
-      if state.memos.Length() < contextx.depth {
+      if state.stack.Length() < contextx.depth {
         AdjustContext(contextx.parent);
       } else if state.IsTopMemo(contextx) {
         return;
@@ -243,7 +243,7 @@ module RSolvers {
     method DeclareNewSymbols(r: RExpr)
       requires Valid()
       modifies Repr
-      ensures Valid() && state.memos == old(state.memos)
+      ensures Valid() && state.stack == old(state.stack)
     {
       match r
       case Boolean(_) =>
@@ -254,7 +254,7 @@ module RSolvers {
         }
       case FuncAppl(op, args) =>
         for i := 0 to |args|
-          invariant Valid() && state.memos == old(state.memos)
+          invariant Valid() && state.stack == old(state.stack)
         {
           DeclareNewSymbols(args[i]);
         }
