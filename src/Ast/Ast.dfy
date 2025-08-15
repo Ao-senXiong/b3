@@ -5,6 +5,22 @@ module Ast {
   import Raw = RawAst
   import opened Values
 
+  export
+    reveals Program, Type, Variable, Expr, Operator, Procedure, Label, Parameter, ParameterMode, AExpr, Stmt, CallArgument, LocalVariable
+    reveals Program.WellFormed, Procedure.WellFormed, Parameter.WellFormed, AExpr.WellFormed, Stmt.WellFormed, Expr.WellFormed, CallArgument.WellFormed
+    reveals CallArgument.CorrespondingMode
+    provides Procedure.Name, Procedure.Parameters, Procedure.Pre, Procedure.Post, Procedure.Body
+    reveals Procedure.SignatureWellFormed
+    provides Variable.name, Variable.typ
+    provides Variable.IsMutable, LocalVariable.IsMutable, Parameter.IsMutable
+    provides Parameter.mode, Parameter.oldInOut
+    provides Label.name
+    reveals Expr.HasType
+    provides Expr.ToString
+    provides Expr.CreateTrue, Expr.CreateFalse, Expr.CreateNegation, Expr.CreateLet, Expr.CreateForall
+    provides Expr.CreateAnd, Expr.CreateBigAnd, Expr.CreateOr, Expr.CreateBigOr
+    provides Raw, Types, Wrappers
+
   type Type = Types.Type
   datatype Program = Program(types: set<Type>, procedures: set<Procedure>)
   {
