@@ -175,8 +175,13 @@ module Verifier {
       var e := incarnations.REval(cond);
       ProveAndReport(context, e, cond, smtEngine);
       context := RSolvers.Extend(context, e);
-    case AForall(_, _) =>
-      print "UNHANDLED STATEMENT: AForall\n"; // TODO
+    case AForall(v, body) =>
+      var bodyIncarnations, _ := incarnations.Update(v);
+      bodyIncarnations, context, cp := ProcessStmt(body, bodyIncarnations, context, smtEngine);
+      expect cp.Normal?; // TODO: prove that this follows from the AForall statement satisfying its static checks
+      expect !StaticConsistency.ContainsNonAssertions(stmt); // TODO: ditto
+      var L := Learn(stmt);
+      context := RSolvers.Extend(context, incarnations.REval(L));
     case Choice(_) =>
       print "UNHANDLED STATEMENT: Choice\n"; // TODO
     case Loop(_, _) =>
