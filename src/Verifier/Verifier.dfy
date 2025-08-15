@@ -68,16 +68,19 @@ module Verifier {
       match parameter.mode
       case In =>
         var v := new SVar(parameter.name, Type2SType(parameter.typ));
-        preIncarnations := preIncarnations[parameter := v];
-        bodyIncarnations := bodyIncarnations[parameter := v];
+        var w := (0, v);
+        preIncarnations := preIncarnations[parameter := w];
+        bodyIncarnations := bodyIncarnations[parameter := w];
       case InOut =>
         var vOld := new SVar(parameter.name + "%old", Type2SType(parameter.typ));
-        preIncarnations := preIncarnations[parameter := vOld];
-        bodyIncarnations := bodyIncarnations[parameter.oldInOut.value := vOld];
-        bodyIncarnations := bodyIncarnations[parameter := vOld];
+        var w := (0, vOld);
+        preIncarnations := preIncarnations[parameter := w];
+        bodyIncarnations := bodyIncarnations[parameter.oldInOut.value := w];
+        bodyIncarnations := bodyIncarnations[parameter := w];
       case out =>
         var v := new SVar(parameter.name, Type2SType(parameter.typ));
-        bodyIncarnations := bodyIncarnations[parameter := v];
+        var w := (0, v);
+        bodyIncarnations := bodyIncarnations[parameter := w];
     }
   }
 
@@ -92,12 +95,19 @@ module Verifier {
       SInt // TODO
   }
 
-  newtype Incarnations = map<Variable, SVar>
+  newtype Incarnations = map<Variable, (nat, SVar)>
   {
     method Update(v: Variable) returns (incarnations: Incarnations, x: SVar) {
-      var sequenceNumber := Int2String(|this|);
-      x := new SVar(v.name + "%" + sequenceNumber, Type2SType(v.typ));
-      incarnations := this[v := x];
+      var sequenceNumber;
+      if v !in Keys {
+        sequenceNumber := 0;
+      } else {
+        var (prev, _) := this[v];
+        sequenceNumber := prev + 1;
+      }
+      var n := Int2String(sequenceNumber);
+      x := new SVar(v.name + "%" + n, Type2SType(v.typ));
+      incarnations := this[v := (sequenceNumber, x)];
     }
 
     function REval(expr: Expr): RSolvers.RExpr {
@@ -106,7 +116,7 @@ module Verifier {
       case IConst(value) => RExpr.Integer(value)
       case IdExpr(v) =>
         assume {:axiom} v in this; // TODO
-        RExpr.Id(this[v])
+        RExpr.Id(this[v].1)
       case BinaryExpr(op, e0, e1) =>
         var s0, s1 := REval(e0), REval(e1);
         match op {
