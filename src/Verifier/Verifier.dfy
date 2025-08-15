@@ -193,7 +193,11 @@ module Verifier {
 
   // `errorReportingInfo` is currently an expression that gets printed if `context ==> expr` cannot be proved
   // by `smtEngine`. TODO: This should be improved to instead use source locations.
-  method ProveAndReport(context: RSolvers.RContext, expr: RExpr, errorReportingInfo: Expr, smtEngine: RSolvers.REngine) {
+  method ProveAndReport(context: RSolvers.RContext, expr: RExpr, errorReportingInfo: Expr, smtEngine: RSolvers.REngine)
+    requires smtEngine.Valid()
+    modifies smtEngine.Repr
+    ensures smtEngine.Valid()
+  {
     var result := smtEngine.Prove(context, expr);
     match result
     case Proved =>
