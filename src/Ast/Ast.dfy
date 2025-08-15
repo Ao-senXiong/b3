@@ -207,6 +207,23 @@ module Ast {
       true // TODO
     }
 
+    function ToString(contextStrength: nat := 0): string {
+      match this
+      case BConst(value) => if value then "true" else "false"
+      case IConst(value) => Int2String(value)
+      case IdExpr(v) => v.name
+      case BinaryExpr(op, e0, e1) =>
+        var opStrength := op.BindingStrength();
+        ParenthesisWrap(e0.ToString(opStrength) + " " + op.ToString() + " " + e1.ToString(opStrength), opStrength <= contextStrength)
+    }
+
+    function ParenthesisWrap(s: string, useParentheses: bool): string {
+      if useParentheses then
+        "(" + s + ")"
+      else
+        s
+    }
+
     function Eval(vals: Valuation): Value // TODO: either make Option<Value> or require Type(...).Some?
     { 3 } // TODO
     static function CreateNegation(e: Expr): Expr

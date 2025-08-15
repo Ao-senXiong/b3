@@ -54,7 +54,7 @@ module Verifier {
     {
       match proc.Post[i]
       case AExpr(e) =>
-        smtEngine.Prove(context, bodyIncarnations.REval(e));
+        ProveAndReport(context, bodyIncarnations.REval(e), e, smtEngine);
       case _ => // TODO
     }
   }
@@ -157,12 +157,12 @@ module Verifier {
     case Call(_, _) =>
       print "UNHANDLED STATEMENT: Call\n"; // TODO
     case Check(cond) =>
-      smtEngine.Prove(context, incarnations.REval(cond));
+      ProveAndReport(context, incarnations.REval(cond), cond, smtEngine);
     case Assume(cond) =>
       context := RSolvers.Extend(context, incarnations.REval(cond));
     case Assert(cond) =>
       var e := incarnations.REval(cond);
-      smtEngine.Prove(context, e);
+      ProveAndReport(context, e, cond, smtEngine);
       context := RSolvers.Extend(context, e);
     case AForall(_, _) =>
       print "UNHANDLED STATEMENT: AForall\n"; // TODO
@@ -179,6 +179,17 @@ module Verifier {
       cp := Abrupt(lbl);
     case Probe(e) =>
       context := RSolvers.Record(context, incarnations.REval(e));
+  }
+
+  // `errorReportingInfo` is currently an expression that gets printed if `context ==> expr` cannot be proved
+  // by `smtEngine`. TODO: This should be improved to instead use source locations.
+  method ProveAndReport(context: RSolvers.RContext, expr: RExpr, errorReportingInfo: Expr, smtEngine: RSolvers.REngine) {
+    var result := smtEngine.Prove(context, expr);
+    match result
+    case Proved =>
+    case Unproved(reason) =>
+      print "Error: Failed to prove ", errorReportingInfo.ToString(), "\n";
+      print "Reason: ", reason, "\n";
   }
 
 /*

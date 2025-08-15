@@ -15,7 +15,7 @@ module RSolvers {
     provides RContext, CreateEmptyContext, Extend, Record
     reveals REngine
     provides CreateEngine, REngine.Repr, REngine.Valid, REngine.Prove
-    provides SolverExpr
+    provides SolverExpr, Solvers
 
   // ===== RExpr =====
 
@@ -171,7 +171,7 @@ module RSolvers {
       Repr := {this} + state.Repr;
     }
 
-    method Prove(context: RContext, expr: RExpr)
+    method Prove(context: RContext, expr: RExpr) returns (result: Solvers.ProofResult)
       requires Valid()
       modifies Repr
       ensures Valid()
@@ -181,11 +181,8 @@ module RSolvers {
 
       state.Push(context); // do another Push; the parameter here is irrelevant and will soon be popped off again
       DeclareNewSymbols(expr);
-      var result := state.Prove(expr.ToSExpr());
+      result := state.Prove(expr.ToSExpr());
       state.Pop();
-
-      // TODO: do something with `result` (other than just printing it)
-      print "Result:", result, "\n";
     }
 
     method SetContext(context: RContext)

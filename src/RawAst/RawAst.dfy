@@ -345,6 +345,11 @@ module RawAst {
       match this
       case Eq => "=="
     }
+
+    function BindingStrength(): nat {
+      match this
+      case Eq => 10
+    }
   }
 
   datatype Expr =
