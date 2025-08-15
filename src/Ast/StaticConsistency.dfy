@@ -73,8 +73,8 @@ module StaticConsistency {
 
   predicate ContainsNonAssertions(stmt: Stmt) {
     match stmt
-    case VarDecl(v, _, body) =>
-      v.IsMutable() || ContainsNonAssertions(body)
+    case VarDecl(v, init, body) =>
+      v.IsMutable() || init == None || ContainsNonAssertions(body)
     case Assign(_, _) => true
     case Block(stmts) =>
       exists stmt <- stmts :: ContainsNonAssertions(stmt)
@@ -187,9 +187,12 @@ module StaticConsistency {
     ensures outcome.Pass? ==> !ContainsNonAssertions(stmt)
   {
     match stmt {
-      case VarDecl(v, _, body) =>
+      case VarDecl(v, init, body) =>
         if v.IsMutable() {
           return Fail("assertion is allowed to declare a mutable variable: '" + v.name + "'");
+        }
+        if init == None {
+          return Fail("immutable variable declarations in assertions must have initializer: '" + v.name + "'");
         }
         :- CheckCanBeUsedInAssertion(body);
       case Block(stmts) =>
