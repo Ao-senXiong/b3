@@ -4,6 +4,7 @@ module Verifier {
   import opened Ast
   import opened SolverExpr
   import RSolvers
+  import StaticConsistency
 
   export
     provides Verify
@@ -204,6 +205,30 @@ module Verifier {
     case Unproved(reason) =>
       print "Error: Failed to prove ", errorReportingInfo.ToString(), "\n";
       print "Reason: ", reason, "\n";
+  }
+
+  function Learn(stmt: Stmt): Expr
+    requires !StaticConsistency.ContainsNonAssertions(stmt)
+  {
+    match stmt
+    case VarDecl(v, Some(rhs), body) =>
+      Expr.CreateLet(v, rhs, Learn(body))
+    case Block(stmts) =>
+      var ll := SeqMap(stmts, (s: Stmt) requires s in stmts => Learn(s));
+      Expr.CreateBigAnd(ll)
+    case Check(_) =>
+      Expr.CreateTrue()
+    case Assume(e) =>
+      e
+    case Assert(e) =>
+      e
+    case AForall(v, body) =>
+      Expr.CreateForall(v, Learn(body))
+    case Choice(branches) =>
+      var ll := SeqMap(branches, (s: Stmt) requires s in branches => Learn(s));
+      Expr.CreateBigOr(ll)
+    case Probe(_) =>
+      Expr.CreateTrue()
   }
 
 /*

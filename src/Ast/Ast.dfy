@@ -242,7 +242,36 @@ module Ast {
 
     function Eval(vals: Valuation): Value // TODO: either make Option<Value> or require Type(...).Some?
     { 3 } // TODO
+
+    static function CreateTrue(): Expr
+    { BConst(true) }
+
+    static function CreateFalse(): Expr
+    { BConst(false) }
+
     static function CreateNegation(e: Expr): Expr
     { if e.BConst? then BConst(!e.bvalue) else e } // TODO
+
+    static function CreateLet(v: Variable, rhs: Expr, body: Expr): Expr
+    { body } // TODO
+
+    static function CreateForall(v: Variable, body: Expr): Expr
+    { body } // TODO
+
+    static function CreateAnd(e0: Expr, e1: Expr): Expr {
+      e0 // TODO
+    }
+
+    static function CreateOr(e0: Expr, e1: Expr): Expr {
+      e0 // TODO
+    }
+
+    static function CreateBigAnd(exprs: seq<Expr>): Expr {
+      if exprs == [] then CreateTrue() else CreateAnd(exprs[0], CreateBigAnd(exprs[1..]))
+    }
+
+    static function CreateBigOr(exprs: seq<Expr>): Expr {
+      if exprs == [] then CreateFalse() else CreateOr(exprs[0], CreateBigOr(exprs[1..]))
+    }
   }
 }
