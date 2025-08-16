@@ -34,14 +34,7 @@ module Verifier {
     var preIncarnations, bodyIncarnations := CreateProcIncarnations(proc.Parameters);
 
     // Assume precondition (TODO: should also vet precondition)
-    for i := 0 to |proc.Pre|
-      invariant smtEngine.Valid()
-    {
-      match proc.Pre[i]
-      case AExpr(e) =>
-        context := RSolvers.Extend(context, preIncarnations.REval(e));
-      case _ => // TODO
-    }
+    context := AssumeAExprs(proc.Post, preIncarnations, context, smtEngine);
 
     if proc.Body.Some? {
       var cp;
@@ -50,14 +43,7 @@ module Verifier {
     }
 
     // Check postcondition (TODO: should also vet postcondition)
-    for i := 0 to |proc.Post|
-      invariant smtEngine.Valid()
-    {
-      match proc.Post[i]
-      case AExpr(e) =>
-        ProveAndReport(context, bodyIncarnations.REval(e), e, smtEngine);
-      case _ => // TODO
-    }
+    CheckAExprs(proc.Post, bodyIncarnations, context, smtEngine, "postcondition");
   }
 
   method CreateProcIncarnations(parameters: seq<Parameter>) returns (preIncarnations: Incarnations, bodyIncarnations: Incarnations)
@@ -161,19 +147,19 @@ module Verifier {
         invariant smtEngine.Valid()
       {
         incarnations, bc, cp := ProcessStmt(stmts[i], incarnations, bc, smtEngine);
-        if cp.Abrupt? {
+        if cp != Normal {
           return;
         }
       }
     case Call(_, _) =>
       print "UNHANDLED STATEMENT: Call\n"; // TODO
     case Check(cond) =>
-      ProveAndReport(context, incarnations.REval(cond), cond, smtEngine);
+      ProveAndReport(context, incarnations.REval(cond), "check", cond, smtEngine);
     case Assume(cond) =>
       context := RSolvers.Extend(context, incarnations.REval(cond));
     case Assert(cond) =>
       var e := incarnations.REval(cond);
-      ProveAndReport(context, e, cond, smtEngine);
+      ProveAndReport(context, e, "assert", cond, smtEngine);
       context := RSolvers.Extend(context, e);
     case AForall(v, body) =>
       var bodyIncarnations, _ := incarnations.Update(v);
@@ -197,9 +183,42 @@ module Verifier {
       context := RSolvers.Record(context, incarnations.REval(e));
   }
 
-  // `errorReportingInfo` is currently an expression that gets printed if `context ==> expr` cannot be proved
-  // by `smtEngine`. TODO: This should be improved to instead use source locations.
-  method ProveAndReport(context: RSolvers.RContext, expr: RExpr, errorReportingInfo: Expr, smtEngine: RSolvers.REngine)
+  method CheckAExprs(aexprs: seq<AExpr>, incarnations: Incarnations, context: RSolvers.RContext, smtEngine: RSolvers.REngine, errorText: string)
+    requires smtEngine.Valid()
+    modifies smtEngine.Repr
+    ensures smtEngine.Valid()
+  {
+    for i := 0 to |aexprs|
+      invariant smtEngine.Valid()
+    {
+      match aexprs[i]
+      case AExpr(e) =>
+        ProveAndReport(context, incarnations.REval(e), errorText, e, smtEngine);
+      case _ => // TODO
+    }
+  }
+
+  method AssumeAExprs(aexprs: seq<AExpr>, incarnations: Incarnations, context_in: RSolvers.RContext, smtEngine: RSolvers.REngine)
+      returns (context: RSolvers.RContext)
+    requires smtEngine.Valid()
+    modifies smtEngine.Repr
+    ensures smtEngine.Valid()
+  {
+    context := context_in;
+    for i := 0 to |aexprs|
+      invariant smtEngine.Valid()
+    {
+      match aexprs[i]
+      case AExpr(e) =>
+        context := RSolvers.Extend(context, incarnations.REval(e));
+      case _ => // TODO
+    }
+  }
+
+  // `errorReportingInfo` is currently an expression that, together with `errorText`, gets printed
+  // if `context ==> expr` cannot be proved by `smtEngine`.
+  // TODO: This should be improved to instead use source locations.
+  method ProveAndReport(context: RSolvers.RContext, expr: RExpr, errorText: string, errorReportingInfo: Expr, smtEngine: RSolvers.REngine)
     requires smtEngine.Valid()
     modifies smtEngine.Repr
     ensures smtEngine.Valid()
@@ -208,7 +227,7 @@ module Verifier {
     match result
     case Proved =>
     case Unproved(reason) =>
-      print "Error: Failed to prove ", errorReportingInfo.ToString(), "\n";
+      print "Error: Failed to prove ", errorText, " ", errorReportingInfo.ToString(), "\n";
       print "Reason: ", reason, "\n";
   }
 
