@@ -50,25 +50,22 @@ module Verifier {
   method CreateProcIncarnations(parameters: seq<Parameter>) returns (preIncarnations: Incarnations, bodyIncarnations: Incarnations)
     requires forall i :: 0 <= i < |parameters| ==> parameters[i].WellFormed()
   {
-    preIncarnations, bodyIncarnations := map[], map[];
+    preIncarnations, bodyIncarnations := Incarnations.Empty(), Incarnations.Empty();
     for i := 0 to |parameters| {
       var parameter := parameters[i];
       match parameter.mode
       case In =>
         var v := new SVar(parameter.name, Type2SType(parameter.typ));
-        var w := (0, v);
-        preIncarnations := preIncarnations[parameter := w];
-        bodyIncarnations := bodyIncarnations[parameter := w];
+        preIncarnations := preIncarnations.Set(parameter, v);
+        bodyIncarnations := bodyIncarnations.Set(parameter, v);
       case InOut =>
         var vOld := new SVar(parameter.name + "%old", Type2SType(parameter.typ));
-        var w := (0, vOld);
-        preIncarnations := preIncarnations[parameter := w];
-        bodyIncarnations := bodyIncarnations[parameter.oldInOut.value := w];
-        bodyIncarnations := bodyIncarnations[parameter := w];
+        preIncarnations := preIncarnations.Set(parameter, vOld);
+        bodyIncarnations := bodyIncarnations.Set(parameter.oldInOut.value, vOld);
+        bodyIncarnations := bodyIncarnations.Set(parameter, vOld);
       case out =>
         var v := new SVar(parameter.name, Type2SType(parameter.typ));
-        var w := (0, v);
-        bodyIncarnations := bodyIncarnations[parameter := w];
+        bodyIncarnations := bodyIncarnations.Set(parameter, v);
     }
   }
 
@@ -83,19 +80,29 @@ module Verifier {
       SInt // TODO
   }
 
-  newtype Incarnations = map<Variable, (nat, SVar)>
+  datatype Incarnations = Incarnations(nextSequenceCount: map<string, nat>, m: map<Variable, SVar>)
   {
+    static function Empty(): Incarnations {
+      Incarnations(map[], map[])
+    }
+
+    // `Set` is intended to be used only during custom initializations of an Incarnations.
+    function Set(v: Variable, sv: SVar): Incarnations {
+      Incarnations(map[v.name := 0] + nextSequenceCount, m[v := sv])
+    }
+
     method Update(v: Variable) returns (incarnations: Incarnations, x: SVar) {
-      var sequenceNumber;
-      if v !in Keys {
-        sequenceNumber := 0;
+      var name := v.name;
+      var nextSequenceNumber;
+      if name in nextSequenceCount.Keys {
+        var n := nextSequenceCount[name];
+        name := name + "%" + Int2String(n);
+        nextSequenceNumber := n + 1;
       } else {
-        var (prev, _) := this[v];
-        sequenceNumber := prev + 1;
+        nextSequenceNumber := 0;
       }
-      var n := Int2String(sequenceNumber);
-      x := new SVar(v.name + "%" + n, Type2SType(v.typ));
-      incarnations := this[v := (sequenceNumber, x)];
+      x := new SVar(name, Type2SType(v.typ));
+      incarnations := Incarnations(nextSequenceCount[v.name := nextSequenceNumber], m[v := x]);
     }
 
     function REval(expr: Expr): RSolvers.RExpr {
@@ -103,17 +110,13 @@ module Verifier {
       case BConst(value) => RExpr.Boolean(value)
       case IConst(value) => RExpr.Integer(value)
       case IdExpr(v) =>
-        assume {:axiom} v in this; // TODO
-        RExpr.Id(this[v].1)
+        assume {:axiom} v in m; // TODO
+        RExpr.Id(m[v])
       case BinaryExpr(op, e0, e1) =>
         var s0, s1 := REval(e0), REval(e1);
         match op {
           case Eq => RExpr.Eq(s0, s1)
         }
-    }
-
-    function DomainRestrict(s: set<Variable>): Incarnations {
-      map v | v in this && v in s :: this[v]
     }
   }
 
