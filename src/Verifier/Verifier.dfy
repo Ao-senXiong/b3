@@ -5,6 +5,7 @@ module Verifier {
   import opened SolverExpr
   import RSolvers
   import StaticConsistency
+  import AssignmentTargets
 
   export
     provides Verify
@@ -119,12 +120,14 @@ module Verifier {
   datatype ContinuationPoint =
     | Normal
     | Abrupt(lbl: Label)
+    | NoExit
 
   method ProcessStmt(stmt: Stmt, incarnations_in: Incarnations, context_in: RSolvers.RContext, smtEngine: RSolvers.REngine)
       returns (incarnations: Incarnations, context: RSolvers.RContext, cp: ContinuationPoint)
     requires smtEngine.Valid()
     modifies smtEngine.Repr
     ensures smtEngine.Valid()
+    decreases stmt
   {
     incarnations, context, cp := incarnations_in, context_in, Normal;
     match stmt
@@ -170,8 +173,11 @@ module Verifier {
       context := RSolvers.Extend(context, incarnations.REval(L));
     case Choice(_) =>
       print "UNHANDLED STATEMENT: Choice\n"; // TODO
-    case Loop(_, _) =>
-      print "UNHANDLED STATEMENT: Loop\n"; // TODO
+    case Loop(invariants, body) =>
+      incarnations, context, cp := ProcessLoop(stmt, incarnations, context, smtEngine);
+      if cp == Normal {
+        cp := NoExit;
+      }
     case LabeledStmt(lbl, body) =>
       incarnations, context, cp := ProcessStmt(body, incarnations, context, smtEngine);
       if cp == Abrupt(lbl) {
@@ -181,6 +187,42 @@ module Verifier {
       cp := Abrupt(lbl);
     case Probe(e) =>
       context := RSolvers.Record(context, incarnations.REval(e));
+  }
+
+  method ProcessLoop(stmt: Stmt, incarnations_in: Incarnations, context_in: RSolvers.RContext, smtEngine: RSolvers.REngine)
+      returns (incarnations: Incarnations, context: RSolvers.RContext, cp: ContinuationPoint)
+    requires stmt.Loop? && smtEngine.Valid()
+    modifies smtEngine.Repr
+    ensures smtEngine.Valid()
+    decreases stmt, 0
+  {
+    incarnations, context, cp := incarnations_in, context_in, Normal;
+
+    // Check invariants on entry
+    CheckAExprs(stmt.invariants, incarnations, context, smtEngine, "invariant on entry");
+
+    // Havoc the assignment targets of the loop body
+    var assignmentTargets := AssignmentTargets.Compute(stmt.body);
+    while assignmentTargets != {}
+      invariant smtEngine.Valid()
+    {
+      var v :| v in assignmentTargets;
+      assignmentTargets := assignmentTargets - {v};
+      var sv;
+      incarnations, sv := incarnations.Update(v);
+    }
+
+    // TODO: should also vet the invariants
+
+    // Assume invariants
+    context := AssumeAExprs(stmt.invariants, incarnations, context, smtEngine);
+    // Process body
+    incarnations, context, cp := ProcessStmt(stmt.body, incarnations, context, smtEngine);
+    if cp != Normal {
+      return;
+    }
+    // Check that invariants are maintained
+    CheckAExprs(stmt.invariants, incarnations, context, smtEngine, "invariant maintained");
   }
 
   method CheckAExprs(aexprs: seq<AExpr>, incarnations: Incarnations, context: RSolvers.RContext, smtEngine: RSolvers.REngine, errorText: string)
