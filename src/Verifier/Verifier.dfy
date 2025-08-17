@@ -200,7 +200,7 @@ module Verifier {
       BC.StmtPairMeasure(body, Exit(lbl));
       Process([body, Exit(lbl)], incarnations, context, B', smtEngine);
     case Exit(lbl) =>
-      expect lbl in B; // TODO
+      expect lbl in B, lbl.name; // TODO
       var c := B[lbl];
       var variablesInScope, cont := c.variablesInScope, c.continuation;
       var incarnations' := incarnations.DomainRestrict(variablesInScope);

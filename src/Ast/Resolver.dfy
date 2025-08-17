@@ -226,7 +226,7 @@ module Resolver {
       body := None;
     } else {
       var b :- ResolveStmt(proc.body.value, rs, ls);
-      body := Some(b);
+      body := Some(LabeledStmt(returnLabel, b));
     }
 
     rproc.Pre := pre;
