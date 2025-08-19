@@ -34,6 +34,10 @@
     predicate DefinedOn(s: State) {
       forall v <- FVars() :: v in s.Keys
     }
+
+    ghost predicate Holds() {
+      forall s: State :: DefinedOn(s) ==> s.Eval(this)
+    }
   }
 
   function Eq(e1: Expr, e2: Expr): Expr {
@@ -67,7 +71,7 @@
     
   // datatype State = State(m: map<string, Value>) {
     function Eval(e: Expr): Value 
-      requires e.FVars() <= Keys 
+      requires e.DefinedOn(this)
       decreases e
     {
       match e
@@ -85,10 +89,6 @@
       // State(m[v := val])
     }
   }
-
-  // ghost predicate Holds(e: Expr) {
-  //   forall s: State :: e.FVars() <= s.Keys ==> s.Eval(e)
-  // }
 
   datatype Except<+T> =
     | Ok(res: T)
@@ -131,7 +131,6 @@
       && rhs.DefinedOn(a) 
       && a.Eval(rhs) 
       && z == Ok(a.Update(lhs, a.Eval(rhs)))
-  }
     // case While(guard, inv, body) =>
     //   if a.Eval(guard) then
     //     BigStep(Seq(body, While(guard, inv, body)), a, z)
@@ -141,11 +140,22 @@
     //     BigStep(thn, a, z)
     //   else
     //     BigStep(els, a, z)
+  }
 
+    function Conj(ctx: seq<Expr>): Expr 
+    {
+      if ctx == [] then BConst(true) else And(ctx[0], Conj(ctx[1..]))
+    }
 
   class Context {
     var ctx: seq<Expr>
     var incarnation : map<Variable, Variable>
+
+    ghost predicate Valid() 
+      reads this
+    {
+      incarnation.Values <= Conj(ctx).FVars()
+    }
 
     constructor () {
       ctx := [];
@@ -160,17 +170,6 @@
     //     // var u :| v !in incarnation.Keys;
     //     // v := u;
     // }
-
-    function Conj(ctx: seq<Expr>): Expr 
-      reads this
-    {
-      if ctx == [] then BConst(true) else And(ctx[0], Conj(ctx[1..]))
-      // BConst(true)
-      // // if |ctx| == 0 then BConst(true)
-      // // else
-      // //   var x: Expr :| x in ctx;
-      // //   And(x, Conj(ctx - {x}))
-    }
 
     function Substitute(e: Expr): Expr 
       reads this
@@ -189,6 +188,16 @@
       case Implies(e0, e1) => 
         Implies(Substitute(e0), Substitute(e1))
       case _ => e
+    }
+
+    function SubstituteStmt(s: Stmt): Stmt 
+      reads this
+    {
+      match s
+      case Check(e) => Check(Substitute(e))
+      case Assume(e) => Assume(Substitute(e))
+      case Seq(s0, s1) => Seq(SubstituteStmt(s0), SubstituteStmt(s1))
+      case Assign(lhs, rhs) => Assign(lhs, Substitute(rhs))
     }
 
     function MkEntailment(e: Expr): Expr 
@@ -215,7 +224,7 @@
     ghost predicate DefinedOn(s: State) 
       reads this
     {
-      forall e <- ctx :: e.FVars() <= s.Keys
+      forall e <- ctx :: e.DefinedOn(s)
     }
 
     ghost predicate IsModeled(s: State) 
@@ -230,30 +239,77 @@
       forall s: State ::  
         e.DefinedOn(s) && IsModeled(s) ==> s.Eval(e)
     }
+  lemma FVarsSubsituteLemma(e: Expr)
+    ensures Substitute(e).FVars() <= e.FVars() + incarnation.Values
+  {  }
   }
+
+
+
+  lemma DefinedOnAndLemma(e0: Expr, e1: Expr, s: State)
+    requires e0.DefinedOn(s) && e1.DefinedOn(s)
+    ensures And(e0, e1).DefinedOn(s) { }
+
+  lemma DefinedOnConjLemma(ctx: seq<Expr>, s: State)
+    requires forall e <- ctx :: e.DefinedOn(s)
+    ensures Conj(ctx).DefinedOn(s)
+    {
+      if ctx != [] { DefinedOnAndLemma(ctx[0], Conj(ctx[1..]), s); }
+    }
+
+  // Q: How to get rid of one of the pre conditions?
+  // they are equivalent, but one is needed for Eval in 1 and the other in 2
+  lemma EvalConjLemma(ctx: seq<Expr>, s: State)
+    requires Conj(ctx).DefinedOn(s)
+    requires forall e <- ctx :: e.DefinedOn(s)
+    requires forall e <- ctx :: s.Eval(e) // 1
+    ensures s.Eval(Conj(ctx))             // 2
+  {  }
+
+  lemma MkEntailmentLemma(e: Expr, context: Context)
+    requires context.Valid()
+    ensures 
+      context.MkEntailment(e).Holds() ==> 
+      forall s: State :: 
+        context.IsModeled(s) && context.Substitute(e).DefinedOn(s) ==> s.Eval(context.Substitute(e)) {
+      if context.MkEntailment(e).Holds() {
+        forall s: State | context.IsModeled(s) && context.Substitute(e).DefinedOn(s)
+          ensures s.Eval(context.Substitute(e)) {
+            DefinedOnConjLemma(context.ctx, s);
+            context.FVarsSubsituteLemma(e);
+            assert context.MkEntailment(e).DefinedOn(s);
+            EvalConjLemma(context.ctx, s);
+      }
+    }
+  }
+
 
   method VCGenAux(s: Stmt, context: Context) 
   returns (result: set<Expr>) 
+  requires context.Valid()
+  requires s.Check? || s.Assume?
+  ensures context.Valid()
   ensures 
-    (forall e <- result :: context.Entails(e)) ==> 
+    (forall e <- result :: e.Holds()) ==> 
       forall st: State, out: Except<State> :: 
         context.IsModeled(st) ==>
-        BigStep(s, st, out)   ==> out.Ok?
+        BigStep(context.SubstituteStmt(s), st, out) ==> out.Ok?
     modifies context
   {
     match s
     case Check(e) =>
       result := {context.MkEntailment(e)};
+      MkEntailmentLemma(e, context);
     case Assume(e) =>
       context.Add(e);
       result := {};
-    case Seq(s0, s1) =>
-      var r0 := VCGenAux(s0, context);
-      var r1 := VCGenAux(s1, context);
-      result := r0 + r1;
-    case Assign(lhs, rhs) =>
-      context.AddEq(lhs, rhs);
-      result := {};
+    // case Seq(s0, s1) =>
+    //   var r0 := VCGenAux(s0, context);
+    //   var r1 := VCGenAux(s1, context);
+    //   result := r0 + r1;
+    // case Assign(lhs, rhs) =>
+    //   context.AddEq(lhs, rhs);
+    //   result := {};
     // case While(guard, inv, body) =>
     //   var invIn := context.MkEntailment(inv);
 
