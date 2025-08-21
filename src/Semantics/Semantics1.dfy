@@ -1,4 +1,4 @@
- module Semantic { 
+module Semantic { 
   import opened Values
 
   // class Variable
@@ -74,7 +74,6 @@
 
   newtype State = map<Variable, Value> {
     
-  // datatype State = State(m: map<string, Value>) {
     function Eval(e: Expr): Value 
       requires e.IsDefinedOn(this.Keys)
       decreases e
@@ -90,8 +89,6 @@
     }
     function Update(v: Variable, val: Value): State {
       this[v := val]
-      // this.(m := m[v := val])
-      // State(m[v := val])
     }
   }
 
@@ -152,51 +149,41 @@
     if ctx == [] then BConst(true) else And(ctx[0], Conj(ctx[1..]))
   }
 
+  lemma ConjFVarsMonotonicity(ctx1: seq<Expr>, ctx2: seq<Expr>)
+    requires ctx1 <= ctx2
+    ensures Conj(ctx1).FVars() <= Conj(ctx2).FVars()
+  {  }
 
   lemma FVarsConjUnionLemma(ctx1: seq<Expr>, ctx2: seq<Expr>)
     ensures Conj(ctx1 + ctx2).FVars() == Conj(ctx1).FVars() + Conj(ctx2).FVars()
   {
     if ctx1 == [] {
-      assert [] + ctx2 == ctx2; // if I remove this everything breaks
+      assert [] + ctx2 == ctx2;
     } else {
       assert ctx1 + ctx2 == [ctx1[0]] + (ctx1[1..] + ctx2);
     }
   }
 
-  // lemma FVarsConjSingleLemma(e: Expr)
-  //   ensures Conj([e]).FVars() == e.FVars()
-  // {  }
-
-  class Context {
-    var ctx: seq<Expr>
-    var incarnation : map<Variable, Variable>
-
+  datatype Context = Context(ctx: seq<Expr>, incarnation: map<Variable, Variable>) {
     ghost predicate Valid() 
-      reads this
     {
       incarnation.Values <= Conj(ctx).FVars()
     }
 
-    constructor () {
-      ctx := [];
-      incarnation := map[];
-    }
-
     // How to prove that `v !in incarnation.Keys` is satisfiable?
-    method FreshVar() returns (v: Variable) 
-      ensures v !in incarnation.Keys
-    {
-        // assert !incarnation.Keys != {};
-        // assert {:axiom} exists v :: v !in incarnation.Keys;
-        v :| v !in incarnation.Keys by {
-          // Prove existence here
-          assume {:axiom} false;
-          // loop increasing length
-        }
-    }
+    function FreshVar(): Variable
+      ensures {:axiom} FreshVar() !in incarnation.Keys
+    // {
+    //     // // assert !incarnation.Keys != {};
+    //     // // assert {:axiom} exists v :: v !in incarnation.Keys;
+    //     // v :| v !in incarnation.Keys by {
+    //     //   // Prove existence here
+    //     //   assume {:axiom} false;
+    //     //   // loop increasing length
+    //     // }
+    // }
 
     function Substitute(e: Expr): Expr 
-      reads `incarnation
     {
       match e
       case Var(v) =>
@@ -216,7 +203,6 @@
 
     function SubstituteStmt(s: Stmt): Stmt 
       requires s.IsDefinedOn(incarnation.Keys)
-      reads this
     {
       match s
       case Check(e) => Check(Substitute(e))
@@ -226,60 +212,47 @@
     }
 
     function MkEntailment(e: Expr): Expr 
-      reads this
     {
       Implies(Conj(ctx), Substitute(e))
     }
 
-    lemma SeqAppendLemma(x: seq<Expr>, y: seq<Expr>)
-      ensures y <= x + y
-    {
-      if x == [] {
-      } else {
 
-      }
-    }
-
-    method Add(e: Expr) 
+    function Add(e: Expr): Context
       requires Valid()
       ensures Valid()
-      ensures incarnation == old(incarnation)
-      ensures old(ctx) <= ctx
-      modifies this
+      // ensures incarnation == Add(e).incarnation
+      // ensures ctx <= Add(e).ctx
     {
-      ctx := [Substitute(e)] + ctx;
-      SeqAppendLemma([Substitute(e)], old(ctx));
+      var ctx := ctx + [Substitute(e)];
+      Context(ctx, incarnation)
     }
 
-    method AddEq(v: Variable, e: Expr) 
+    function AddEq(v: Variable, e: Expr): Context
       requires v in incarnation.Keys
       requires Valid()
-      ensures Valid()
-      ensures old(ctx) <= ctx
-      ensures incarnation.Keys == old(incarnation.Keys)
-      modifies this
+      ensures AddEq(v, e).Valid()
+      ensures incarnation.Keys == AddEq(v, e).incarnation.Keys
+      ensures ctx <= AddEq(v, e).ctx
     {
       var vNew := FreshVar();
-      ctx := [Eq(Var(vNew), Substitute(e))] + ctx;
+      var ctx' := ctx + [Eq(Var(vNew), Substitute(e))];
       FVarsEqLemma(Var(vNew), Substitute(e));
-      incarnation := incarnation[v := vNew];
-      SeqAppendLemma([Substitute(e)], old(ctx));
+      FVarsConjUnionLemma(ctx, [Eq(Var(vNew), Substitute(e))]);
+      var incarnation' := incarnation[v := vNew];
+      Context(ctx', incarnation')
     }
 
     ghost predicate IsDefinedOn(s: set<Variable>) 
-      reads this
     {
       forall e <- ctx :: e.IsDefinedOn(s)
     }
 
     ghost predicate IsSatisfiedOn(s: State) 
-      reads this
     {
       IsDefinedOn(s.Keys) && forall e <- ctx :: s.Eval(e)
     }
 
     ghost predicate Entails(e: Expr) 
-      reads this
     {
       forall s: State ::  
         e.IsDefinedOn(s.Keys) && IsSatisfiedOn(s) ==> s.Eval(e)
@@ -302,11 +275,11 @@
     {
       if ctx != [] { IsDefinedOnAndLemma(ctx[0], Conj(ctx[1..]), s); }
     }
+
   lemma EvalConjLemma(ctx: seq<Expr>, s: State)
-    // requires Conj(ctx).IsDefinedOn(s.Keys)
     requires forall e <- ctx :: e.IsDefinedOn(s.Keys)
-    requires forall e <- ctx :: s.Eval(e) // 1
-    ensures (IsDefinedOnConjLemma(ctx, s); s.Eval(Conj(ctx)))             // 2
+    requires forall e <- ctx :: s.Eval(e)
+    ensures (IsDefinedOnConjLemma(ctx, s); s.Eval(Conj(ctx)))
   {  }
 
   lemma MkEntailmentLemma(e: Expr, context: Context)
@@ -326,47 +299,79 @@
     }
   }
 
-method VCGenAux(s: Stmt, context: Context) returns (result: set<Expr>) 
-    requires context.Valid()
-    requires s.IsDefinedOn(context.incarnation.Keys)
+/*
+  []
+
+
+  x := 0
+  x := 1 
+  assume x == 1
+
+  ----
+  [x -> x']
+  x' = 0
+
+  x := 0
+  assume x == 0
+  
+*/
+
+/*
+Plan for adding: 
+    - VarDecl
+    - If 
+    - While
+*/
+
+method VCGenAux(s: Stmt, context_in: Context) returns (result: set<Expr>, context: Context) 
+    requires context_in.Valid()
+    requires s.IsDefinedOn(context_in.incarnation.Keys)
     ensures context.Valid()
-    ensures old(context.incarnation.Keys) == context.incarnation.Keys
-    ensures old(context.ctx) <= context.ctx
+    ensures context_in.incarnation.Keys == context.incarnation.Keys
     ensures 
       (forall e <- result :: e.Holds()) ==> 
         forall st: State, out: Except<State> :: 
-          // Q: why old(context).IsSatisfiedOn(st) does not work?
-          old(context.IsSatisfiedOn(st)) ==>
-          BigStep(old(context.SubstituteStmt(s)), st, out) ==> out.Ok?
-    modifies context
+          context_in.IsSatisfiedOn(st) ==>
+          BigStep(context_in.SubstituteStmt(s), st, out) ==> 
+            && out.Ok?
+            // && (exists stOut: State :: 
+            //   && context.IsSatisfiedOn(stOut)
+            //   && (forall e <- st.Keys))
   {
+    context := context_in;
     match s
     case Check(e) =>
       result := {context.MkEntailment(e)};
       MkEntailmentLemma(e, context);
     case Assume(e) =>
-      context.Add(e);
+      context := context.Add(e);
       result := {};
+      FVarsConjUnionLemma(context_in.ctx, [context_in.Substitute(e)]);
     case Assign(lhs, rhs) =>
-      context.AddEq(lhs, rhs);
+      context := context.AddEq(lhs, rhs);
       result := {};
     case Seq(s0, s1) =>
-      // assume {:axiom} false;
-      var r0 := VCGenAux(s0, context);
-      ghost var ctx := context.ctx;
-      var r1 := VCGenAux(s1, context);
-      assert ctx <= context.ctx;
-      assert 
-        (forall e <- r0 :: e.Holds()) ==> 
-          forall st: State, out: Except<State> :: 
-            old(context.IsSatisfiedOn(st)) ==>
-            BigStep(old(context.SubstituteStmt(s0)), st, out) ==> out.Ok?;
-      assert 
-        (forall e <- r0 :: e.Holds()) ==> 
-          forall st: State, out: Except<State> :: 
-            old(context.IsSatisfiedOn(st)) ==>
-            BigStep(old(context.SubstituteStmt(s0)), st, out) ==> out.Ok?;
+      var r0, context' := VCGenAux(s0, context);
+      var r1;
+      r1, context := VCGenAux(s1, context');
       result := r0 + r1;
+      if (forall e <- r0 + r1 :: e.Holds()) {
+        forall st: State, out: Except<State> | context_in.IsSatisfiedOn(st) && BigStep(context_in.SubstituteStmt(Seq(s0, s1)), st, out)
+          ensures out.Ok? {
+            var st' :| 
+              BigStep(context_in.SubstituteStmt(s0), st, Ok(st')) && 
+              context_in.SubstituteStmt(s1).IsDefinedOn(st'.Keys) &&
+              BigStep(context_in.SubstituteStmt(s1), st', out);
+            assert (forall e <- r1 :: e.Holds());
+            var st'' :|
+              context'.IsSatisfiedOn(st'') &&
+              BigStep(context'.SubstituteStmt(s1), st'', out) by  {
+
+            }
+          }
+      }
+    case _ => assume {:axiom} false;
+
     // case While(guard, inv, body) =>
     //   var invIn := context.MkEntailment(inv);
 
@@ -384,6 +389,8 @@ method VCGenAux(s: Stmt, context: Context) returns (result: set<Expr>)
       // result := r0 + r1;
   }
 
+}
+/*
   method VCGenAux(s: Stmt, context: Context) returns (result: set<Expr>) 
     requires context.Valid()
     requires s.IsDefinedOn(context.incarnation.Keys)
@@ -441,4 +448,4 @@ method VCGenAux(s: Stmt, context: Context) returns (result: set<Expr>)
       // var r1 := VCGenAux(els, ctx);
       // result := r0 + r1;
   }
-}
+}*/
