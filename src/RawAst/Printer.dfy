@@ -245,8 +245,8 @@ module Printer {
 
   method Expression(e: Expr) {
     match e
-    case BConst(value) => print value;
-    case IConst(value) => print value;
+    case BLiteral(value) => print value;
+    case ILiteral(value) => print value;
     case CustomLiteral(s, typ) => print "|", s, ": ", typ, "|";
     case IdExpr(name) => print name;
     case OperatorExpr(op, args) =>

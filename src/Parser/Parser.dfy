@@ -421,9 +421,9 @@ module Parser {
 
   function parseAtomicExpr(c: ExprRecSel): B<Expr> {
     Or([
-      T("false").M(_ => BConst(false)),
-      T("true").M(_ => BConst(true)),
-      Nat.I_e(W).M(n => IConst(n)),
+      T("false").M(_ => BLiteral(false)),
+      T("true").M(_ => BLiteral(true)),
+      Nat.I_e(W).M(n => ILiteral(n)),
       Sym("|").e_I(parseCustomLiteral).I_e(Sym(":")).I_I(parseType).I_e(Sym("|")).M2(MId, (lit, typ) => CustomLiteral(lit, typ)),
       parseId.Then(name =>
         Or([

@@ -97,8 +97,8 @@ module TypeChecker {
     requires expr.WellFormed()
   {
     match expr
-    case BConst(_) => true
-    case IConst(_) => true
+    case BLiteral(_) => true
+    case ILiteral(_) => true
     case CustomLiteral(_, _) => true
     case IdExpr(_) => true
     case OperatorExpr(op, args) =>
@@ -250,9 +250,9 @@ module TypeChecker {
     ensures r.Success? ==> TypeCorrectExpr(expr) && expr.HasType(r.value)
   {
     match expr
-    case BConst(_) =>
+    case BLiteral(_) =>
       return Success(BoolType);
-    case IConst(_) =>
+    case ILiteral(_) =>
       return Success(IntType);
     case CustomLiteral(_, typ) =>
       return Success(typ);

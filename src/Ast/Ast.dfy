@@ -225,8 +225,8 @@ module Ast {
   type Operator = Raw.Operator
 
   datatype Expr =
-    | BConst(bvalue: bool)
-    | IConst(ivalue: int)
+    | BLiteral(bvalue: bool)
+    | ILiteral(ivalue: int)
     | CustomLiteral(s: string, typ: Type)
     | IdExpr(v: Variable)
     | OperatorExpr(op: Operator, args: seq<Expr>)
@@ -237,8 +237,8 @@ module Ast {
   {
     function ExprType(): Type {
       match this
-      case BConst(_) => Types.BoolType
-      case IConst(_) => Types.IntType
+      case BLiteral(_) => Types.BoolType
+      case ILiteral(_) => Types.IntType
       case CustomLiteral(_, typ) => typ
       case IdExpr(v) => v.typ
       case OperatorExpr(op, args) =>
@@ -264,8 +264,8 @@ module Ast {
 
     predicate WellFormed() {
       match this
-      case BConst(_) => true
-      case IConst(_) => true
+      case BLiteral(_) => true
+      case ILiteral(_) => true
       case CustomLiteral(_, typ) => typ != Types.BoolType && typ != Types.IntType
       case IdExpr(_) => true
       case OperatorExpr(op, args) =>
@@ -284,8 +284,8 @@ module Ast {
 
     function ToString(contextStrength: nat := 0): string {
       match this
-      case BConst(value) => if value then "true" else "false"
-      case IConst(value) => Int2String(value)
+      case BLiteral(value) => if value then "true" else "false"
+      case ILiteral(value) => Int2String(value)
       case CustomLiteral(s, typ) => CustomLiteralToString(s, typ.ToString())
       case IdExpr(v) => v.name
       case OperatorExpr(op, args) =>
@@ -338,11 +338,11 @@ module Ast {
 
     static function CreateTrue(): (r: Expr)
       ensures r.WellFormed()
-    { BConst(true) }
+    { BLiteral(true) }
 
     static function CreateFalse(): (r: Expr)
       ensures r.WellFormed()
-    { BConst(false) }
+    { BLiteral(false) }
 
     static function CreateNegation(e: Expr): (r: Expr)
       requires e.WellFormed()
