@@ -13,12 +13,10 @@ module Resolver {
   method Resolve(b3: Raw.Program) returns (r: Result<Ast.Program, string>)
     ensures r.Success? ==> b3.WellFormed() && r.value.WellFormed()
   {
-    var boolType := new Type(BoolTypeName);
-    var intType := new Type(IntTypeName);
-    var typeMap := map[BoolTypeName := boolType, IntTypeName := intType];
+    var typeMap: map<string, TypeDecl> := map[];
     for n := 0 to |b3.types|
-      // typeMap maps built-in types and the user-defined types seen so far to distinct type-declaration objects
-      invariant typeMap.Keys == BuiltInTypes + set typename <- b3.types[..n]
+      // typeMap maps user-defined types seen so far to distinct type-declaration objects
+      invariant typeMap.Keys == set typename <- b3.types[..n]
       invariant MapIsInjective(typeMap)
       // typeMap organizes type-declaration objects correctly according to their names
       invariant forall typename <- typeMap.Keys :: typeMap[typename].Name == typename
@@ -28,11 +26,13 @@ module Resolver {
       invariant forall i, j :: 0 <= i < j < n ==> b3.types[i] != b3.types[j]
     {
       var name := b3.types[n];
-      if name in typeMap.Keys {
+      if name in BuiltInTypes {
+        return Failure("user-defined type is not allowed to have the name of a built-in type: " + name);
+      } else if name in typeMap.Keys {
         return Failure("duplicate type name: " + name);
       }
-      var typ := new Type(name);
-      typeMap := typeMap[name := typ];
+      var decl := new TypeDecl(name);
+      typeMap := typeMap[name := decl];
     }
 
     var procMap: map<string, Procedure> := map[];
@@ -72,8 +72,8 @@ module Resolver {
     return Success(r3);
   }
 
-  method ResolveProcedureSignature(proc: Raw.Procedure, b3: Raw.Program, typeMap: map<string, Type>) returns (r: Result<Procedure, string>)
-    requires forall typename :: b3.IsType(typename) <==> typename in typeMap
+  method ResolveProcedureSignature(proc: Raw.Procedure, b3: Raw.Program, typeMap: map<string, TypeDecl>) returns (r: Result<Procedure, string>)
+    requires forall typename :: b3.IsType(typename) <==> typename in BuiltInTypes || typename in typeMap
     ensures r.Success? ==> proc.SignatureWellFormed(b3)
     ensures r.Success? ==> fresh(r.value) && r.value.SignatureWellFormed(proc)
   {
@@ -118,19 +118,25 @@ module Resolver {
     return Success(rproc);
   }
 
-  method ResolveType(typename: string, typeMap: map<string, Type>) returns (r: Result<Type, string>)
-    ensures r.Success? ==> typename in typeMap
+  method ResolveType(typename: string, typeMap: map<string, TypeDecl>) returns (r: Result<Type, string>)
+    ensures r.Success? ==> typename in BuiltInTypes || typename in typeMap
   {
+    if typename == BoolTypeName {
+      return Success(BoolType);
+    } else if typename == IntTypeName {
+      return Success(IntType);
+    }
+
     if typename !in typeMap {
       return Failure("unknown type: " + typename);
     }
-    return Success(typeMap[typename]);
+    return Success(UserType(typeMap[typename]));
   }
 
-  datatype ResolverState = ResolverState(b3: Raw.Program, typeMap: map<string, Type>, procMap: map<string, Procedure>)
+  datatype ResolverState = ResolverState(b3: Raw.Program, typeMap: map<string, TypeDecl>, procMap: map<string, Procedure>)
   {
     ghost predicate Valid() {
-      && (forall typename :: b3.IsType(typename) <==> typename in typeMap)
+      && (forall typename :: b3.IsType(typename) <==> typename in BuiltInTypes || typename in typeMap)
       && (forall procname <- procMap :: exists proc <- b3.procedures :: proc.name == procname)
       && (forall rawProc <- b3.procedures ::
             rawProc.name in procMap &&
@@ -425,7 +431,7 @@ module Resolver {
       invariant forall i :: 0 <= i < n ==> args[i].mode == rawProc.parameters[i].mode
       invariant forall i :: 0 <= i < n ==> args[i].arg.WellFormed(rs.b3, ls.varMap.Keys)
       invariant |aa| == n
-      invariant forall i :: 0 <= i < n ==> aa[i].CorrespondingMode() == proc.Parameters[i].mode
+      invariant forall i :: 0 <= i < n ==> aa[i].CorrespondingMode() == proc.Parameters[i].mode && aa[i].WellFormed()
     {
       if args[n].mode != proc.Parameters[n].mode {
         return Failure("mismatched parameter mode in call to procedure " + name);
@@ -445,7 +451,10 @@ module Resolver {
     return Success(Call(proc, aa));
   }
 
-  function PrependAssumption(expr: Expr, stmt: Stmt): Stmt {
+  function PrependAssumption(expr: Expr, stmt: Stmt): (r: Stmt)
+    requires expr.WellFormed() && stmt.WellFormed()
+    ensures r.WellFormed()
+  {
     if stmt.Block? then
       Block([Assume(expr)] + stmt.stmts)
     else
@@ -467,11 +476,75 @@ module Resolver {
           return Failure("undeclared variable: " + name);
         }
         r := IdExpr(varMap[name]);
-      case BinaryExpr(op, e0, e1) =>
-        var r0 :- ResolveExpr(e0, rs, varMap);
-        var r1 :- ResolveExpr(e1, rs, varMap);
-        r := BinaryExpr(op, r0, r1);
+      case OperatorExpr(op, args) =>
+        if |args| != op.ArgumentCount() {
+          return Failure("operator " + op.ToString() + " expects " + Int2String(op.ArgumentCount()) + " arguments, got " + Int2String(|args|));
+        }
+        var resolvedArgs :- ResolveExprList(args, rs, varMap);
+        r := OperatorExpr(op, resolvedArgs);
+      case FunctionCallExpr(name, args) =>
+        var func := new Function(name); // TODO: This is bogus. It should instead look up the already declared function
+        var resolvedArgs :- ResolveExprList(args, rs, varMap);
+        r := FunctionCallExpr(func, resolvedArgs);
+      case LabeledExpr(name, body) =>
+        var lbl := new Label(name);
+        var b :- ResolveExpr(body, rs, varMap);
+        r := LabeledExpr(lbl, b);
+      case LetExpr(name, typeName, rhs, body) =>
+        if !Raw.LegalVariableName(name) {
+          return Failure("illegal variable name: " + name);
+        }
+        var typ :- ResolveType(typeName, rs.typeMap);
+        var letVariable := new LocalVariable(name, false, typ);
+        var rRhs :- ResolveExpr(rhs, rs, varMap);
+        var varMap' := varMap[name := letVariable];
+        assert varMap'.Keys == varMap.Keys + {name};
+        var rBody :- ResolveExpr(body, rs, varMap');
+        r := LetExpr(letVariable, rRhs, rBody);
+      case QuantifierExpr(univ, name, typeName, triggers, body) =>
+        if !Raw.LegalVariableName(name) {
+          return Failure("illegal variable name: " + name);
+        }
+        var typ :- ResolveType(typeName, rs.typeMap);
+        var quantifiedVariable := new LocalVariable(name, false, typ);
+        var varMap' := varMap[name := quantifiedVariable];
+        assert varMap'.Keys == varMap.Keys + {name};
+        var b :- ResolveExpr(body, rs, varMap');
+        var trs :- ResolveTriggers(triggers, rs, varMap');
+        r := QuantifierExpr(univ, quantifiedVariable, trs, b);
     }
     return Success(r);
+  }
+
+  method ResolveExprList(exprs: seq<Raw.Expr>, rs: ResolverState, varMap: map<string, Variable>) returns (result: Result<seq<Expr>, string>)
+    ensures result.Success? ==> forall expr <- exprs :: expr.WellFormed(rs.b3, varMap.Keys)
+    ensures result.Success? ==> |result.value| == |exprs|
+    ensures result.Success? ==> forall expr <- result.value :: expr.WellFormed()
+  {
+    var resolvedExprs := [];
+    for n := 0 to |exprs|
+      invariant forall expr <- exprs[..n] :: expr.WellFormed(rs.b3, varMap.Keys)
+      invariant |resolvedExprs| == n
+      invariant forall expr: Expr <- resolvedExprs :: expr.WellFormed()
+    {
+      var r :- ResolveExpr(exprs[n], rs, varMap);
+      resolvedExprs := resolvedExprs + [r];
+    }
+    return Success(resolvedExprs);
+  }
+
+  method ResolveTriggers(triggers: seq<Raw.Trigger>, rs: ResolverState, varMap: map<string, Variable>) returns (result: Result<seq<Trigger>, string>)
+    ensures result.Success? ==> forall tr <- triggers :: tr.WellFormed(rs.b3, varMap.Keys)
+    ensures result.Success? ==> forall tr <- result.value :: tr.WellFormed()
+  {
+    var resolvedTriggers := [];
+    for n := 0 to |triggers|
+      invariant forall tr <- triggers[..n] :: tr.WellFormed(rs.b3, varMap.Keys)
+      invariant forall tr: Trigger <- resolvedTriggers :: tr.WellFormed()
+    {
+      var exprs :- ResolveExprList(triggers[n].exprs, rs, varMap);
+      resolvedTriggers := resolvedTriggers + [Trigger(exprs)];
+    }
+    return Success(resolvedTriggers);
   }
 }

@@ -7,21 +7,26 @@ module Types {
   const IntTypeName := "int"
   const BuiltInTypes: set<TypeName> := {BoolTypeName, IntTypeName}
 
-  class Type {
+  datatype Type =
+    | BoolType
+    | IntType
+    | UserType(decl: TypeDecl)
+  {
+    function ToString(): string {
+      match this
+      case BoolType => BoolTypeName
+      case IntType => IntTypeName
+      case UserType(decl) => decl.Name
+    }
+  }
+
+  class TypeDecl {
     const Name: string
     
     constructor (name: string)
       ensures Name == name
     {
       Name := name;
-    }
-
-    predicate IsBool() {
-      Name == BoolTypeName
-    }
-
-    predicate IsInt() {
-      Name == IntTypeName
     }
   }
 }

@@ -109,7 +109,7 @@ module Parser {
   }
 
   function parseCommaDelimitedSeq<X>(parser: B<X>): B<seq<X>> {
-    parser.RepSep(S(",").I_e(W))
+    parser.RepSep(Sym(","))
   }
 
   function Unfold3l<X, Y, Z>(r: ((X, Y), Z)): (X, Y, Z) {
@@ -144,12 +144,12 @@ module Parser {
         parseParenthesized(
           parseCommaDelimitedSeq(parseFormal)).Then(
           formals =>
-            var c := GetRecMapSel(gallery);
+            var c := GetRecMapSel(stmtGallery);
             parseAExprSeq("requires", c).Then(
               pre =>
                 parseAExprSeq("ensures", c).Then(
                   post =>
-                    RecMap(gallery, "block").Option().M(
+                    RecMap(stmtGallery, "block").Option().M(
                       optBody =>
                         Procedure(name, formals, pre, post, optBody)
                     )
@@ -176,16 +176,22 @@ module Parser {
 
   // ----- Parsing gallery
 
-  type RecSel = RecMapSel<Stmt>
+  type StmtRecSel = RecMapSel<Stmt>
+  type ExprRecSel = RecMapSel<Expr>
 
-  const gallery: map<string, RecMapDef<Stmt>> :=
+  const stmtGallery: map<string, RecMapDef<Stmt>> :=
     map[
       "block" := RecMapDef(
-        0, (c: RecSel) =>
+        0, (c: StmtRecSel) =>
           Sym("{").e_I(RepTill(parseStmt(c), Sym("}"))).M(stmts => Block(stmts))),
-      "stmt" := RecMapDef(1, (c: RecSel) => parseStmt(c)),
-      "if-cont" := RecMapDef(0, (c: RecSel) => parseIfCont(c)),
-      "loop" := RecMapDef(0, (c: RecSel) => parseLoop(c))
+      "stmt" := RecMapDef(1, (c: StmtRecSel) => parseStmt(c)),
+      "if-cont" := RecMapDef(0, (c: StmtRecSel) => parseIfCont(c)),
+      "loop" := RecMapDef(0, (c: StmtRecSel) => parseLoop(c))
+    ]
+
+  const exprGallery: map<string, RecMapDef<Expr>> :=
+    map[
+      "expr" := RecMapDef(1, (c: ExprRecSel) => parseEquivExpr(c))
     ]
 
   function GetRecMapSel<R(!new)>(underlying: map<string, RecMapDef<R>>): RecMapSel<R> {
@@ -194,7 +200,7 @@ module Parser {
 
   // ----- Statements
 
-  function parseStmt(c: RecSel): B<Stmt> {
+  function parseStmt(c: StmtRecSel): B<Stmt> {
     Or([
          T("var").e_I(parseVariableDeclaration(true, c)),
          T("val").e_I(parseVariableDeclaration(false, c)),
@@ -214,7 +220,7 @@ module Parser {
        ])
   }
 
-  function parseVariableDeclaration(isMutable: bool, c: RecSel): B<Stmt> {
+  function parseVariableDeclaration(isMutable: bool, c: StmtRecSel): B<Stmt> {
     parseIdType.M2(MId, (name: string, typ: string) => Variable(name, isMutable, typ)).
     I_I(Sym(":=").e_I(parseExpr).Option()).
     I_I(c("stmt").Rep()).M3(Unfold3l, (v, init, stmts) =>
@@ -227,26 +233,26 @@ module Parser {
     )
   }
 
-  function parseIfCont(c: RecSel): B<Stmt> {
+  function parseIfCont(c: StmtRecSel): B<Stmt> {
     Or([
-         parseCase(c).I_I(parseCase(c).Rep()).M2(MId, (caseHead, caseTail) => IfCase([caseHead] + caseTail)),
-         parseExpr.I_I(c("block")).I_I(
-           Or([
-                T("else").e_I(
-                  Or([
-                       T("if").e_I(c("if-cont")),
-                       c("block")
-                     ])),
-                Nothing.M(_ => Block([]))
-              ])).M3(Unfold3l, (cond, thn, els) => If(cond, thn, els))
-       ])
+      parseCase(c).I_I(parseCase(c).Rep()).M2(MId, (caseHead, caseTail) => IfCase([caseHead] + caseTail)),
+      parseExpr.I_I(c("block")).I_I(
+        Or([
+          T("else").e_I(
+            Or([
+              T("if").e_I(c("if-cont")),
+              c("block")
+            ])),
+          Nothing.M(_ => Block([]))
+        ])).M3(Unfold3l, (cond, thn, els) => If(cond, thn, els))
+    ])
   }
 
-  function parseCase(c: RecSel): B<Case> {
+  function parseCase(c: StmtRecSel): B<Case> {
     T("case").e_I(parseExpr).I_I(c("block")).M2(MId, (cond, body) => Case(cond, body))
   }
 
-  function parseLoop(c: RecSel): B<Stmt> {
+  function parseLoop(c: StmtRecSel): B<Stmt> {
     T("loop")
     .e_I(parseAExprSeq("invariant", c))
     .I_I(c("block"))
@@ -262,11 +268,11 @@ module Parser {
 
   // ----- Expressions
 
-  function parseAExprSeq(keyword: string, c: RecSel): B<seq<AExpr>> {
+  function parseAExprSeq(keyword: string, c: StmtRecSel): B<seq<AExpr>> {
     parseAExpr(keyword, c).Rep()
   }
 
-  function parseAExpr(keyword: string, c: RecSel): B<AExpr> {
+  function parseAExpr(keyword: string, c: StmtRecSel): B<AExpr> {
     T(keyword).e_I(
       Or([
            c("block").M(stmt => AAssertion(stmt)),
@@ -274,24 +280,153 @@ module Parser {
          ]))
   }
 
-  const parseExpr: B<Expr> :=
-    parseAtomicExpr.Then(e0 =>
-      parseOperator.I_I(parseAtomicExpr).Option().M(opt =>
-        if opt == None then
-          e0
-        else
-          var Some((op, e1)) := opt;
-          BinaryExpr(op, e0, e1)
+  /* Here is the expression grammar (but not formulated as an LL(1) grammar).
+   *
+   * Expr ::= ( ImpExpExpr "<==>" )* ImpExpExpr                    // associates to the left
+   * ImpExpExpr ::= ImpliesExpr | ExpliesExpr                      // needs disambiguation after parsing one LogicalExpr
+   * ImpliesExpr ::= LogicalExpr "==>" ImpliesExpr                 // associates to the right
+   * ExpliesExpr ::= ( LogicalExpr "<==" )* LogicalExpr            // associates to the left
+   * LogicalExpr ::= AndExpr | OrExpr                              // needs disambiguation after parsing one JunctExpr
+   * AndExpr ::= ( JuctExpr "&&" )* JuctExpr                       // associates to the left
+   * OrExpr ::= ( JuctExpr "||" )* JuctExpr                        // associates to the left
+   * JuctExpr ::= TermExpr [ ( "==" | "!=" | "<" | "<=" | ">=" | ">" ) TermExpr ]
+   * TermExpr ::= ( FactorExpr ( "+" | "-" ))* FactorExpr          // associates to the left
+   * FactorExpr ::= ( UnaryExpr ( "*" | "/" | "%" ))* UnaryExpr    // associates to the left
+   * UnaryExpr ::= ( "!" | "-" )* PrimaryExpr
+   * PrimaryExpr ::= EndlessExpr
+   *               | AtomicExpr
+   * EndlessExpr ::= "if" Expr "then" Expr "else" Expr
+   *               | "var" Id ":" Type ":=" Expr ";" Expr
+   *               | ( "forall" | "exists" ) Id ":" Type ( "trigger" Expr*, )* "::" Expr
+   *               | Id ":" Expr
+   * AtomicExpr ::= "false" | "true"
+   *              | nat
+   *              | "[" literalString ":" Type "]"          // uninterpreted literals
+   *              | Id
+   *              | Id "(" Expr*, ")"
+   *              | "(" Expr ")"
+  */
+
+  const parseExpr: B<Expr> := RecMap(exprGallery, "expr")
+
+  function parseEquivExpr(c: ExprRecSel): B<Expr> {
+    parseImpExpExpr(c).Then(e0 =>
+      Sym("<==>").e_I(parseImpExpExpr(c)).Rep().M(exprs =>
+        FoldLeft(e0, exprs, (a, b) => OperatorExpr(Operator.Equiv, [a, b]))
+      )
+    )
+  }
+
+  function parseImpExpExpr(c: ExprRecSel): B<Expr> {
+    parseLogicalExpr(c).Then(e0 =>
+      Or([
+        Sym("==>").e_I(parseLogicalExpr(c).RepSep(Sym("==>")))
+          .M(exprs => FoldRight(exprs, e0, (a, b) => OperatorExpr(Operator.LogicalImp, [a, b]))),
+        Sym("<==").e_I(parseLogicalExpr(c).RepSep(Sym("<==")))
+          .M(exprs => FoldLeft(e0, exprs, (a, b) => OperatorExpr(Operator.LogicalImp, [b, a]))),
+        Nothing.M(_ => e0)
+      ])
+    )
+  }
+
+  function parseLogicalExpr(c: ExprRecSel): B<Expr> {
+    parseJuctExpr(c).Then(e0 =>
+      Or([
+        Sym("&&").e_I(parseJuctExpr(c).RepSep(Sym("&&")))
+          .M(exprs => FoldLeft(e0, exprs, (a, b) => OperatorExpr(Operator.LogicalAnd, [a, b]))),
+        Sym("||").e_I(parseJuctExpr(c).RepSep(Sym("||")))
+          .M(exprs => FoldLeft(e0, exprs, (a, b) => OperatorExpr(Operator.LogicalOr, [a, b]))),
+        Nothing.M(_ => e0)
+      ])
+    )
+  }
+
+  function parseJuctExpr(c: ExprRecSel): B<Expr> {
+    parseTermExpr(c).Then(e0 =>
+      parseComparisonOperator.I_I(parseTermExpr(c)).Option().M((opt: Option<((Operator, bool), Expr)>) =>
+        match opt
+        case None => e0
+        case Some(((op, false), e1)) => OperatorExpr(op, [e0, e1])
+        case Some(((op, true), e1)) => OperatorExpr(op, [e1, e0])
     ))
-
-  const parseOperator: B<Operator> :=
-    Sym("==").M(_ => Operator.Eq)
-
-  const parseAtomicExpr: B<Expr> :=
+  }
+  const parseComparisonOperator: B<(Operator, bool)> :=
     Or([
-         Nat.I_e(W).M(n => IConst(n)),
-         T("false").M(_ => BConst(false)),
-         T("true").M(_ => BConst(true)),
-         parseId.M(name => IdExpr(name))
-       ])
+      Sym("==").M(_ => (Operator.Eq, false)),
+      Sym("!=").M(_ => (Operator.Neq, false)),
+      Sym("<").M(_ => (Operator.Less, false)),
+      Sym("<=").M(_ => (Operator.AtMost, false)),
+      Sym(">=").M(_ => (Operator.AtMost, true)),
+      Sym(">").M(_ => (Operator.Less, true))
+    ])
+
+  function parseTermExpr(c: ExprRecSel): B<Expr> {
+    parseFactorExpr(c).Then(e0 =>
+      Or([
+        Sym("+").M(_ => Operator.Plus),
+        Sym("-").M(_ => Operator.Minus)
+      ]).I_I(parseFactorExpr(c)).Rep()
+      .M(opExprs => FoldLeft(e0, opExprs, (a, b: (Operator, Expr)) => OperatorExpr(b.0, [a, b.1])))
+    )
+  }
+
+  function parseFactorExpr(c: ExprRecSel): B<Expr> {
+    parseUnaryExpr(c).Then(e0 =>
+      Or([
+        Sym("*").M(_ => Operator.Times),
+        Sym("/").M(_ => Operator.Div),
+        Sym("%").M(_ => Operator.Mod)
+      ]).I_I(parseUnaryExpr(c)).Rep()
+      .M(opExprs => FoldLeft(e0, opExprs, (a, b: (Operator, Expr)) => OperatorExpr(b.0, [a, b.1])))
+    )
+  }
+
+  function parseUnaryExpr(c: ExprRecSel): B<Expr> {
+    Or([
+      Sym("!").M(_ => Operator.LogicalNot),
+      Sym("-").M(_ => Operator.UnaryMinus)
+    ]).Rep().I_I(parsePrimaryExpr(c)).M2(MId, (unaryOperators, expr) =>
+      FoldRight(unaryOperators, expr, (op, e) => OperatorExpr(op, [e]))
+    )
+  }
+
+  function parsePrimaryExpr(c: ExprRecSel): B<Expr> {
+    Or([
+      T("if").e_I(c("expr")).Then(guard =>
+        c("expr").I_I(T("else").e_I(c("expr"))).M2(MId, (thn, els) => OperatorExpr(IfThenElse, [guard, thn, els]))
+      ),
+      T("val").e_I(parseIdType.Then(p => var (name: string, typ: string) := p;
+        Sym(":=").e_I(c("expr")).I_I(c("expr")).M2(MId, (rhs, body) => LetExpr(name, typ, rhs, body)))
+      ),
+      Or([T("forall").M(_ => true), T("exists").M(_ => false)]).Then(universal =>
+        parseIdType.Then(p => var (name: string, typ: string) := p;
+          parseTrigger(c).Rep().Then(triggers =>
+            Sym("::").e_I(c("expr")).M(body => QuantifierExpr(universal, name, typ, triggers, body))
+          )
+        )
+      ),
+      parseAtomicExpr(c)
+    ])
+  }
+
+  function parseTrigger(c: ExprRecSel): B<Trigger> {
+    T("trigger").e_I(parseCommaDelimitedSeq(c("expr"))).M(exprs => Trigger(exprs))
+  }
+
+  function parseAtomicExpr(c: ExprRecSel): B<Expr> {
+    Or([
+      T("false").M(_ => BConst(false)),
+      T("true").M(_ => BConst(true)),
+      Nat.I_e(W).M(n => IConst(n)),
+      // TODO:  "[" literalString ":" Type "]"          // uninterpreted literals
+      parseId.Then(name =>
+        Or([
+          Sym("(").e_I(parseCommaDelimitedSeq(c("expr"))).I_e(Sym(")"))
+            .M(args => FunctionCallExpr(name, args)),
+          Sym(":").e_I(c("expr")).M(e => LabeledExpr(name, e)),
+          Nothing.M(_ => IdExpr(name))
+        ])),
+      Sym("(").e_I(c("expr")).I_e(Sym(")"))
+    ])
+  }
 }
