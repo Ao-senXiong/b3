@@ -19,7 +19,7 @@ module TypeChecker {
     {
       var proc: Procedure :| proc in procs;
       procs := procs - {proc};
-      :- TypeCheckingContext().CheckProcedure(proc);
+      :- CheckProcedure(proc);
     }
 
     return Pass;
@@ -128,233 +128,225 @@ module TypeChecker {
       TypeCorrectExpr(body) && body.HasType(BoolType)
   }
 
-  // TODO: TypeCheckingContext is no longer needed
-  datatype TypeCheckingContext = TypeCheckingContext()
+  method CheckProcedure(proc: Procedure) returns (outcome: Outcome<string>)
+    requires proc.WellFormed()
+    ensures outcome.Pass? ==> TypeCorrectProc(proc)
   {
-    ghost predicate Valid() {
-      true
+    :- CheckAExprs(proc.Pre);
+    :- CheckAExprs(proc.Post);
+    if proc.Body.Some? {
+      :- CheckStmt(proc.Body.value);
     }
+    return Pass;
+  }
 
-    method CheckProcedure(proc: Procedure) returns (outcome: Outcome<string>)
-      requires Valid() && proc.WellFormed()
-      ensures outcome.Pass? ==> TypeCorrectProc(proc)
+  method CheckAExprs(aexprs: seq<AExpr>) returns (outcome: Outcome<string>)
+    requires forall ae <- aexprs :: ae.WellFormed()
+    ensures outcome.Pass? ==> forall ae <- aexprs :: TypeCorrectAExpr(ae)
+  {
+    for n := 0 to |aexprs|
+      invariant forall ae <- aexprs[..n] :: TypeCorrectAExpr(ae)
     {
-      :- CheckAExprs(proc.Pre);
-      :- CheckAExprs(proc.Post);
-      if proc.Body.Some? {
-        :- CheckStmt(proc.Body.value);
-      }
-      return Pass;
-    }
-
-    method CheckAExprs(aexprs: seq<AExpr>) returns (outcome: Outcome<string>)
-      requires Valid() && forall ae <- aexprs :: ae.WellFormed()
-      ensures outcome.Pass? ==> forall ae <- aexprs :: TypeCorrectAExpr(ae)
-    {
-      for n := 0 to |aexprs|
-        invariant forall ae <- aexprs[..n] :: TypeCorrectAExpr(ae)
-      {
-        assert aexprs[n].WellFormed();
-        match aexprs[n]
-        case AExpr(e) =>
-          outcome := TypeCheckAs(e, BoolType);
-          if outcome.IsFailure() {
-            return Fail(outcome.error);
-          }
-        case AAssertion(s) =>
-          assert aexprs decreases to s by {
-            assert aexprs decreases to aexprs[n];
-            assert aexprs[n] decreases to s;
-          }
-          :- CheckStmt(s);
-      }
-      return Pass;
-    }
-
-    method TypeCheckAs(expr: Expr, expectedType: Type) returns (outcome: Outcome<string>)
-      requires Valid() && expr.WellFormed()
-      ensures outcome.Pass? ==> TypeCorrectExpr(expr) && expr.HasType(expectedType)
-    {
-      var r := CheckExpr(expr);
-      if r.IsFailure() {
-        return r.ToOutcome();
-      }
-      var typ := r.value;
-      outcome := ExpectType(typ, expectedType);
-    }
-
-    method ExpectType(typ: Type, expectedType: Type) returns (outcome: Outcome<string>)
-      ensures outcome.Pass? ==> typ == expectedType
-    {
-      if typ != expectedType {
-        return Fail("expect type '" + expectedType.ToString() + "', got type '" + typ.ToString() + "'");
-      }
-      return Pass;
-    }
-
-    method CheckStmt(stmt: Stmt) returns (outcome: Outcome<string>)
-      requires Valid() && stmt.WellFormed()
-      ensures outcome.Pass? ==> TypeCorrectStmt(stmt)
-    {
-      match stmt {
-        case VarDecl(variable, init, body) =>
-          if init.Some? {
-            :- TypeCheckAs(init.value, variable.typ);
-          }
-          :- CheckStmt(body);
-        case Assign(lhs, rhs) =>
-          :- TypeCheckAs(rhs, lhs.typ);
-        case Block(stmts) =>
-          for n := 0 to |stmts|
-            invariant forall s <- stmts[..n] :: TypeCorrectStmt(s)
-          {
-            :- CheckStmt(stmts[n]);
-          }
-        case Call(proc, args) =>
-          for n := 0 to |args|
-            invariant forall arg <- args[..n] :: TypeCorrectCallArg(arg)
-          {
-            var formal := proc.Parameters[n];
-            assert args[n].WellFormed();
-            match args[n]
-            case InArgument(e) =>
-              :- TypeCheckAs(e, formal.typ);
-            case OutgoingArgument(_, arg) =>
-              :- ExpectType(arg.typ, formal.typ);
-          }
-        case Check(cond) =>
-          :- TypeCheckAs(cond, BoolType);
-        case Assume(cond) =>
-          :- TypeCheckAs(cond, BoolType);
-        case Assert(cond) =>
-          :- TypeCheckAs(cond, BoolType);
-        case AForall(_, body) =>
-          :- CheckStmt(body);
-        case Choice(branches) =>
-          for n := 0 to |branches|
-            invariant forall branch <- branches[..n] :: TypeCorrectStmt(branch)
-          {
-            :- CheckStmt(branches[n]);
-          }
-        case Loop(invariants, body) =>
-          :- CheckAExprs(invariants);
-          :- CheckStmt(body);
-        case LabeledStmt(_, body) =>
-          :- CheckStmt(body);
-        case Exit(_) =>
-        case Probe(expr) =>
-          var r := CheckExpr(expr);
-          if r.IsFailure() {
-            return r.ToOutcome();
-          }
-      }
-      return Pass;
-    }
-
-    method CheckExpr(expr: Expr) returns (r: Result<Type, string>)
-      requires Valid() && expr.WellFormed()
-      ensures r.Success? ==> TypeCorrectExpr(expr) && expr.HasType(r.value)
-    {
-      match expr
-      case BConst(_) =>
-        return Success(BoolType);
-      case IConst(_) =>
-        return Success(IntType);
-      case IdExpr(v) =>
-        return Success(v.typ);
-      case OperatorExpr(op, args) =>
-        var types :- CheckExprList(args);
-        var typ;
-        match op {
-          case IfThenElse =>
-            if types[0] != BoolType {
-              return Result<Type, string>.Failure(
-                "if condition must have type '" + BoolTypeName + "'; got '" + types[0].ToString() + "'");
-            }
-            if types[1] != types[2] {
-              return Result<Type, string>.Failure(
-                "if-then-else expression requires the then-branch and else-branche to have the same type; got '" +
-                types[1].ToString() + "' and '" + types[2].ToString() + "'");
-            }
-            typ := types[1];
-          case Equiv | LogicalImp | LogicalAnd | LogicalOr | LogicalNot =>
-            var _ :- ExpectOperandTypes(op, types, BoolType);
-            typ := BoolType;
-          case Eq | Neq =>
-            if types[0] != types[1] {
-              return Result<Type, string>.Failure(
-                "operator " + op.ToString() + " requires both arguments to have the same type; got '" +
-                types[0].ToString() + "' and '" + types[1].ToString() + "'");
-            }
-            typ := BoolType;
-          case Less | AtMost =>
-            var _ :- ExpectOperandTypes(op, types, IntType);
-            typ := BoolType;
-          case Plus | Minus | Times | Div | Mod | UnaryMinus =>
-            var _ :- ExpectOperandTypes(op, types, IntType);
-            typ := IntType;
+      assert aexprs[n].WellFormed();
+      match aexprs[n]
+      case AExpr(e) =>
+        outcome := TypeCheckAs(e, BoolType);
+        if outcome.IsFailure() {
+          return Fail(outcome.error);
         }
-        return Success(typ);
-      case FunctionCallExpr(func, args) =>
-        var types :- CheckExprList(args);
-        return Success(expr.ExprType()); // TODO: look directly at declared result type of function here
-      case LabeledExpr(_, body) =>
-        r := CheckExpr(body);
-      case LetExpr(v, rhs, body) =>
-        var rhsType :- CheckExpr(rhs);
-        if v.typ != rhsType {
-          return Failure("types of bound variable and the RHS must agree; got " + v.typ.ToString() + " and " + rhsType.ToString());
+      case AAssertion(s) =>
+        assert aexprs decreases to s by {
+          assert aexprs decreases to aexprs[n];
+          assert aexprs[n] decreases to s;
         }
-        r := CheckExpr(body);
-      case QuantifierExpr(_, v, triggers, body) =>
-        for m := 0 to |triggers|
-          invariant forall tr <- triggers[..m], e <- tr.exprs :: assert tr.WellFormed(); TypeCorrectExpr(e)
+        :- CheckStmt(s);
+    }
+    return Pass;
+  }
+
+  method TypeCheckAs(expr: Expr, expectedType: Type) returns (outcome: Outcome<string>)
+    requires expr.WellFormed()
+    ensures outcome.Pass? ==> TypeCorrectExpr(expr) && expr.HasType(expectedType)
+  {
+    var r := CheckExpr(expr);
+    if r.IsFailure() {
+      return r.ToOutcome();
+    }
+    var typ := r.value;
+    outcome := ExpectType(typ, expectedType);
+  }
+
+  method ExpectType(typ: Type, expectedType: Type) returns (outcome: Outcome<string>)
+    ensures outcome.Pass? ==> typ == expectedType
+  {
+    if typ != expectedType {
+      return Fail("expect type '" + expectedType.ToString() + "', got type '" + typ.ToString() + "'");
+    }
+    return Pass;
+  }
+
+  method CheckStmt(stmt: Stmt) returns (outcome: Outcome<string>)
+    requires stmt.WellFormed()
+    ensures outcome.Pass? ==> TypeCorrectStmt(stmt)
+  {
+    match stmt {
+      case VarDecl(variable, init, body) =>
+        if init.Some? {
+          :- TypeCheckAs(init.value, variable.typ);
+        }
+        :- CheckStmt(body);
+      case Assign(lhs, rhs) =>
+        :- TypeCheckAs(rhs, lhs.typ);
+      case Block(stmts) =>
+        for n := 0 to |stmts|
+          invariant forall s <- stmts[..n] :: TypeCorrectStmt(s)
         {
-          var tr := triggers[m];
-          assert tr.WellFormed();
-          for n := 0 to |tr.exprs|
-            invariant forall e <- tr.exprs[..n] :: TypeCorrectExpr(e)
-          {
-            var e := tr.exprs[n];
-            var typ :- CheckExpr(e);
+          :- CheckStmt(stmts[n]);
+        }
+      case Call(proc, args) =>
+        for n := 0 to |args|
+          invariant forall arg <- args[..n] :: TypeCorrectCallArg(arg)
+        {
+          var formal := proc.Parameters[n];
+          assert args[n].WellFormed();
+          match args[n]
+          case InArgument(e) =>
+            :- TypeCheckAs(e, formal.typ);
+          case OutgoingArgument(_, arg) =>
+            :- ExpectType(arg.typ, formal.typ);
+        }
+      case Check(cond) =>
+        :- TypeCheckAs(cond, BoolType);
+      case Assume(cond) =>
+        :- TypeCheckAs(cond, BoolType);
+      case Assert(cond) =>
+        :- TypeCheckAs(cond, BoolType);
+      case AForall(_, body) =>
+        :- CheckStmt(body);
+      case Choice(branches) =>
+        for n := 0 to |branches|
+          invariant forall branch <- branches[..n] :: TypeCorrectStmt(branch)
+        {
+          :- CheckStmt(branches[n]);
+        }
+      case Loop(invariants, body) =>
+        :- CheckAExprs(invariants);
+        :- CheckStmt(body);
+      case LabeledStmt(_, body) =>
+        :- CheckStmt(body);
+      case Exit(_) =>
+      case Probe(expr) =>
+        var r := CheckExpr(expr);
+        if r.IsFailure() {
+          return r.ToOutcome();
+        }
+    }
+    return Pass;
+  }
+
+  method CheckExpr(expr: Expr) returns (r: Result<Type, string>)
+    requires expr.WellFormed()
+    ensures r.Success? ==> TypeCorrectExpr(expr) && expr.HasType(r.value)
+  {
+    match expr
+    case BConst(_) =>
+      return Success(BoolType);
+    case IConst(_) =>
+      return Success(IntType);
+    case IdExpr(v) =>
+      return Success(v.typ);
+    case OperatorExpr(op, args) =>
+      var types :- CheckExprList(args);
+      var typ;
+      match op {
+        case IfThenElse =>
+          if types[0] != BoolType {
+            return Result<Type, string>.Failure(
+              "if condition must have type '" + BoolTypeName + "'; got '" + types[0].ToString() + "'");
           }
-        }
-        var typ :- CheckExpr(body);
-        if typ != BoolType {
-          return Failure("body of quantifier expression must have type " + BoolTypeName + ", got " + typ.ToString());
-        }
-        return Success(typ);
-    }
-
-    method CheckExprList(exprs: seq<Expr>) returns (r: Result<seq<Type>, string>)
-      requires forall expr <- exprs :: expr.WellFormed()
-      ensures r.Success? ==> forall expr <- exprs :: TypeCorrectExpr(expr)
-      ensures r.Success? ==> |r.value| == |exprs|
-      ensures r.Success? ==> forall i :: 0 <= i < |exprs| ==> exprs[i].HasType(r.value[i])
-    {
-      var types := [];
-      for n := 0 to |exprs|
-        invariant forall expr <- exprs[..n] :: TypeCorrectExpr(expr)
-        invariant |types| == n
-        invariant forall i :: 0 <= i < n ==> exprs[i].HasType(types[i])
+          if types[1] != types[2] {
+            return Result<Type, string>.Failure(
+              "if-then-else expression requires the then-branch and else-branche to have the same type; got '" +
+              types[1].ToString() + "' and '" + types[2].ToString() + "'");
+          }
+          typ := types[1];
+        case Equiv | LogicalImp | LogicalAnd | LogicalOr | LogicalNot =>
+          var _ :- ExpectOperandTypes(op, types, BoolType);
+          typ := BoolType;
+        case Eq | Neq =>
+          if types[0] != types[1] {
+            return Result<Type, string>.Failure(
+              "operator " + op.ToString() + " requires both arguments to have the same type; got '" +
+              types[0].ToString() + "' and '" + types[1].ToString() + "'");
+          }
+          typ := BoolType;
+        case Less | AtMost =>
+          var _ :- ExpectOperandTypes(op, types, IntType);
+          typ := BoolType;
+        case Plus | Minus | Times | Div | Mod | UnaryMinus =>
+          var _ :- ExpectOperandTypes(op, types, IntType);
+          typ := IntType;
+      }
+      return Success(typ);
+    case FunctionCallExpr(func, args) =>
+      var types :- CheckExprList(args);
+      return Success(expr.ExprType()); // TODO: look directly at declared result type of function here
+    case LabeledExpr(_, body) =>
+      r := CheckExpr(body);
+    case LetExpr(v, rhs, body) =>
+      var rhsType :- CheckExpr(rhs);
+      if v.typ != rhsType {
+        return Failure("types of bound variable and the RHS must agree; got " + v.typ.ToString() + " and " + rhsType.ToString());
+      }
+      r := CheckExpr(body);
+    case QuantifierExpr(_, v, triggers, body) =>
+      for m := 0 to |triggers|
+        invariant forall tr <- triggers[..m], e <- tr.exprs :: assert tr.WellFormed(); TypeCorrectExpr(e)
       {
-        var typ :- CheckExpr(exprs[n]);
-        types := types + [typ];
-      }
-      return Success(types);
-    }
-
-    method ExpectOperandTypes(op: Operator, operandTypes: seq<Type>, expectedType: Type) returns (r: Result<(), string>)
-      ensures r.Success? ==> operandTypes == seq(|operandTypes|, _ => expectedType)
-    {
-      if i :| 0 <= i < |operandTypes| && operandTypes[i] != expectedType {
-        if operandTypes[i] != expectedType {
-          return Result<(), string>.Failure(
-            "operands of " + op.ToString() + " must have type '" +
-            expectedType.ToString() + "'; got '" + operandTypes[i].ToString() + "'");
+        var tr := triggers[m];
+        assert tr.WellFormed();
+        for n := 0 to |tr.exprs|
+          invariant forall e <- tr.exprs[..n] :: TypeCorrectExpr(e)
+        {
+          var e := tr.exprs[n];
+          var typ :- CheckExpr(e);
         }
       }
-      return Success(());
+      var typ :- CheckExpr(body);
+      if typ != BoolType {
+        return Failure("body of quantifier expression must have type " + BoolTypeName + ", got " + typ.ToString());
+      }
+      return Success(typ);
+  }
+
+  method CheckExprList(exprs: seq<Expr>) returns (r: Result<seq<Type>, string>)
+    requires forall expr <- exprs :: expr.WellFormed()
+    ensures r.Success? ==> forall expr <- exprs :: TypeCorrectExpr(expr)
+    ensures r.Success? ==> |r.value| == |exprs|
+    ensures r.Success? ==> forall i :: 0 <= i < |exprs| ==> exprs[i].HasType(r.value[i])
+  {
+    var types := [];
+    for n := 0 to |exprs|
+      invariant forall expr <- exprs[..n] :: TypeCorrectExpr(expr)
+      invariant |types| == n
+      invariant forall i :: 0 <= i < n ==> exprs[i].HasType(types[i])
+    {
+      var typ :- CheckExpr(exprs[n]);
+      types := types + [typ];
     }
+    return Success(types);
+  }
+
+  method ExpectOperandTypes(op: Operator, operandTypes: seq<Type>, expectedType: Type) returns (r: Result<(), string>)
+    ensures r.Success? ==> operandTypes == seq(|operandTypes|, _ => expectedType)
+  {
+    if i :| 0 <= i < |operandTypes| && operandTypes[i] != expectedType {
+      if operandTypes[i] != expectedType {
+        return Result<(), string>.Failure(
+          "operands of " + op.ToString() + " must have type '" +
+          expectedType.ToString() + "'; got '" + operandTypes[i].ToString() + "'");
+      }
+    }
+    return Success(());
   }
 }
