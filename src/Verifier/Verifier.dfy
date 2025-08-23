@@ -118,6 +118,7 @@ module Verifier {
       match expr
       case BConst(value) => RExpr.Boolean(value)
       case IConst(value) => RExpr.Integer(value)
+      case CustomLiteral(s, typ) => RExpr.CustomLiteral(s, Type2SType(typ))
       case IdExpr(v) =>
         assume {:axiom} v in m; // TODO: it would be nice to be able to keep the original variable if there's no incarnation; that would be the case for the bound variable in a let expression or quantifier
         RExpr.Id(m[v])

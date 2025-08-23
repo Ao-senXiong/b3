@@ -81,6 +81,7 @@ module Parser {
 
   const canStartIdentifierChar := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
   const identifierChar := canStartIdentifierChar + "0123456789_$."
+  const customLiteralChar := identifierChar + "+-*/@#!^"
 
   const parseIdentifierChar: B<char> := CharTest((c: char) => c in identifierChar, "identifier character")
   const parseIdentifierRaw: B<string> := // TODO: this should fail if the identifier is a keyword
@@ -88,6 +89,9 @@ module Parser {
       (c: char) =>
         parseIdentifierChar.Rep().M((s: string) => [c] + s))
   const parseId: B<string> := parseIdentifierRaw.I_e(W)
+
+  const parseCustomLiteralChar: B<char> := CharTest((c: char) => c in customLiteralChar, "custom literal character")
+  const parseCustomLiteral: B<string> := parseCustomLiteralChar.Then((c: char) => parseCustomLiteralChar.Rep().M((s: string) => [c] + s))
 
   // T = token, that is, the string `s` followed by some non-identifier character (the non-identifier character is not consumed)
   // The characters in `s` are expected to be identifier characters
@@ -172,7 +176,9 @@ module Parser {
     )
 
   const parseIdType: B<(string, string)> :=
-    parseId.I_e(Sym(":")).I_I(parseId)
+    parseId.I_e(Sym(":")).I_I(parseType)
+
+  const parseType: B<Types.TypeName> := parseId
 
   // ----- Parsing gallery
 
@@ -301,7 +307,7 @@ module Parser {
    *               | Id ":" Expr
    * AtomicExpr ::= "false" | "true"
    *              | nat
-   *              | "[" literalString ":" Type "]"          // uninterpreted literals
+   *              | "|" literalString ":" Type "|"          // custom (uninterpreted) literals
    *              | Id
    *              | Id "(" Expr*, ")"
    *              | "(" Expr ")"
@@ -395,11 +401,11 @@ module Parser {
       T("if").e_I(c("expr")).Then(guard =>
         c("expr").I_I(T("else").e_I(c("expr"))).M2(MId, (thn, els) => OperatorExpr(IfThenElse, [guard, thn, els]))
       ),
-      T("val").e_I(parseIdType.Then(p => var (name: string, typ: string) := p;
+      T("val").e_I(parseIdType.Then(p => var (name: string, typ: Types.TypeName) := p;
         Sym(":=").e_I(c("expr")).I_I(c("expr")).M2(MId, (rhs, body) => LetExpr(name, typ, rhs, body)))
       ),
       Or([T("forall").M(_ => true), T("exists").M(_ => false)]).Then(universal =>
-        parseIdType.Then(p => var (name: string, typ: string) := p;
+        parseIdType.Then(p => var (name: string, typ: Types.TypeName) := p;
           parseTrigger(c).Rep().Then(triggers =>
             Sym("::").e_I(c("expr")).M(body => QuantifierExpr(universal, name, typ, triggers, body))
           )
@@ -418,7 +424,7 @@ module Parser {
       T("false").M(_ => BConst(false)),
       T("true").M(_ => BConst(true)),
       Nat.I_e(W).M(n => IConst(n)),
-      // TODO:  "[" literalString ":" Type "]"          // uninterpreted literals
+      Sym("|").e_I(parseCustomLiteral).I_e(Sym(":")).I_I(parseType).I_e(Sym("|")).M2(MId, (lit, typ) => CustomLiteral(lit, typ)),
       parseId.Then(name =>
         Or([
           Sym("(").e_I(parseCommaDelimitedSeq(c("expr"))).I_e(Sym(")"))

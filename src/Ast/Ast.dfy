@@ -22,6 +22,7 @@ module Ast {
     provides Expr.CreateTrue, Expr.CreateFalse, Expr.CreateNegation, Expr.CreateLet, Expr.CreateForall
     provides Expr.CreateAnd, Expr.CreateBigAnd, Expr.CreateOr, Expr.CreateBigOr
     reveals Trigger, Trigger.WellFormed
+    provides CustomLiteralToString
     provides Raw, Types, Wrappers
 
   type Type = Types.Type
@@ -226,6 +227,7 @@ module Ast {
   datatype Expr =
     | BConst(bvalue: bool)
     | IConst(ivalue: int)
+    | CustomLiteral(s: string, typ: Type)
     | IdExpr(v: Variable)
     | OperatorExpr(op: Operator, args: seq<Expr>)
     | FunctionCallExpr(func: Function, args: seq<Expr>)
@@ -237,6 +239,7 @@ module Ast {
       match this
       case BConst(_) => Types.BoolType
       case IConst(_) => Types.IntType
+      case CustomLiteral(_, typ) => typ
       case IdExpr(v) => v.typ
       case OperatorExpr(op, args) =>
         match op {
@@ -263,6 +266,7 @@ module Ast {
       match this
       case BConst(_) => true
       case IConst(_) => true
+      case CustomLiteral(_, typ) => typ != Types.BoolType && typ != Types.IntType
       case IdExpr(_) => true
       case OperatorExpr(op, args) =>
         && |args| == op.ArgumentCount()
@@ -282,6 +286,7 @@ module Ast {
       match this
       case BConst(value) => if value then "true" else "false"
       case IConst(value) => Int2String(value)
+      case CustomLiteral(s, typ) => CustomLiteralToString(s, typ.ToString())
       case IdExpr(v) => v.name
       case OperatorExpr(op, args) =>
         var opStrength := op.BindingStrength();
@@ -395,5 +400,9 @@ module Ast {
       else
         " trigger " + Expr.ListToString(triggers[0].exprs) + ListToString(triggers[1..])
     }
+  }
+
+  function CustomLiteralToString(s: string, typeName: string): string {
+    "|" + s + ": " + typeName + "|"
   }
 }
