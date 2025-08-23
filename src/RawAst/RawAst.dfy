@@ -261,20 +261,6 @@ module RawAst {
     ghost predicate Valid() {
       AAssertion? ==> ValidAssertionStatement(s)
     }
-
-    function ToCheckStmt(): Stmt {
-      match this
-      case AExpr(e) => Assert(e)
-      case AAssertion(s) => s
-    }
-
-    function ToAssumeStmt(): Stmt
-      requires Valid()
-    {
-      match this
-      case AExpr(e) => Assume(e)
-      case AAssertion(s) => Assume(Learn(s))
-    }
   }
 
   // ValidAssertionStatement(s) is a deep version of !s.ContainsNonAssertions()
@@ -298,42 +284,6 @@ module RawAst {
       forall c <- cases :: ValidAssertionStatement(c.body)
     case _ =>
       false
-  }
-
-  function Learn(s: Stmt): Expr
-    requires ValidAssertionStatement(s)
-  {
-    match s
-    case VarDecl(v, Some(rhs), body) =>
-      Expr.CreateLet(v, rhs, Learn(body))
-    case Check(_) =>
-      Expr.CreateTrue()
-    case Assume(e) =>
-      e
-    case Assert(e) =>
-      e
-    case AForall(name, typ, body) =>
-      Expr.CreateForall(Variable(name, false, typ), Learn(body))
-    case Block(stmts) =>
-      LearnSeq(stmts)
-    case If(cond, thn, els) =>
-      Expr.CreateAnd(
-        Expr.CreateImplies(cond, Learn(thn)),
-        Expr.CreateImplies(Expr.CreateNegation(cond), Learn(els))
-      )
-    case IfCase(cases) =>
-     Expr.CreateBigOr(SeqMap(cases, (c: Case) requires c in cases => Expr.CreateAnd(c.cond, Learn(c.body))))
-  }
-
-  function LearnSeq(stmts: seq<Stmt>): Expr
-    requires forall s <- stmts :: ValidAssertionStatement(s)
-  {
-    if stmts == [] then
-      Expr.CreateTrue()
-    else
-      var s, tail := stmts[0], stmts[1..];
-      assert ValidAssertionStatement(s);
-      Expr.CreateAnd(Learn(s), LearnSeq(tail))
   }
 
   // Expressions
@@ -426,30 +376,6 @@ module RawAst {
         && (forall tr <- triggers :: tr.WellFormed(b3, scope'))
         && body.WellFormed(b3, scope')
     }
-
-    static function CreateTrue(): Expr { BLiteral(true) }
-    static function CreateFalse(): Expr { BLiteral(false) }
-
-    static function CreateNegation(e: Expr): Expr { OperatorExpr(LogicalNot, [e]) }
-
-    static function CreateAnd(e0: Expr, e1: Expr): Expr { OperatorExpr(LogicalAnd, [e0, e1]) }
-    static function CreateBigAnd(ee: seq<Expr>): Expr {
-      if |ee| == 0 then CreateTrue() else CreateAnd(ee[0], CreateBigAnd(ee[1..]))
-    }
-
-    static function CreateOr(e0: Expr, e1: Expr): Expr { OperatorExpr(LogicalOr, [e0, e1]) }
-    static function CreateBigOr(ee: seq<Expr>): Expr {
-      if |ee| == 0 then CreateFalse() else CreateOr(ee[0], CreateBigOr(ee[1..]))
-    }
-
-    static function CreateImplies(e0: Expr, e1: Expr): Expr {
-      CreateOr(CreateNegation(e0), e1) // TODO: would be nicer with a `==>` operator
-    }
-
-    static function CreateLet(v: Variable, rhs: Expr, body: Expr): Expr
-    { if body.ILiteral? then ILiteral(100 * body.ivalue) else body } // TODO
-    static function CreateForall(v: Variable, body: Expr): Expr
-    { if body.ILiteral? then ILiteral(1000 * body.ivalue) else body } // TODO
   }
 
   datatype Trigger = Trigger(exprs: seq<Expr>) {

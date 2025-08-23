@@ -333,9 +333,6 @@ module Ast {
         s
     }
 
-    function Eval(vals: Valuation): Value // TODO: either make Option<Value> or require Type(...).Some?
-    { 3 } // TODO
-
     static function CreateTrue(): (r: Expr)
       ensures r.WellFormed()
     { BLiteral(true) }
@@ -350,14 +347,14 @@ module Ast {
     { OperatorExpr(Operator.LogicalNot, [e]) }
 
     static function CreateLet(v: Variable, rhs: Expr, body: Expr): (r: Expr)
-      requires body.WellFormed()
+      requires rhs.WellFormed() && body.WellFormed()
       ensures r.WellFormed()
-    { body } // TODO
+    { LetExpr(v, rhs, body) }
 
     static function CreateForall(v: Variable, body: Expr): (r: Expr)
       requires body.WellFormed()
       ensures r.WellFormed()
-    { body } // TODO
+    { QuantifierExpr(true, v, [], body) }
 
     static function CreateAnd(e0: Expr, e1: Expr): (r: Expr)
       requires e0.WellFormed() && e1.WellFormed()
