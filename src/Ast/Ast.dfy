@@ -11,24 +11,26 @@ module Ast {
     reveals CallArgument.CorrespondingMode
     provides Procedure.Name, Procedure.Parameters, Procedure.Pre, Procedure.Post, Procedure.Body
     reveals Procedure.SignatureWellFormed
+    reveals Function
+    provides Function.Name
     provides Variable.name, Variable.typ
     provides Variable.IsMutable, LocalVariable.IsMutable, Parameter.IsMutable
     provides Parameter.mode, Parameter.oldInOut
-    provides Label.name
-    reveals Expr.HasType
+    provides Label.Name
+    reveals Expr.ExprType, Expr.HasType
     provides Expr.ToString
     provides Expr.CreateTrue, Expr.CreateFalse, Expr.CreateNegation, Expr.CreateLet, Expr.CreateForall
     provides Expr.CreateAnd, Expr.CreateBigAnd, Expr.CreateOr, Expr.CreateBigOr
+    reveals Trigger, Trigger.WellFormed
     provides Raw, Types, Wrappers
 
   type Type = Types.Type
-  datatype Program = Program(types: set<Type>, procedures: set<Procedure>)
+
+  datatype Program = Program(types: set<Types.TypeDecl>, procedures: set<Procedure>)
   {
     predicate WellFormed()
       reads procedures
     {
-      // the built-in types are included among the resolved-AST program's types
-      && Types.BuiltInTypes <= (set typ <- types :: typ.Name)
       // type declarations have distinct names
       && (forall typ0 <- types, typ1 <- types :: typ0.Name == typ1.Name ==> typ0 == typ1)
       // procedure declarations have distinct names
@@ -75,11 +77,21 @@ module Ast {
     }
   }
 
+  class Function {
+    const Name: string
+
+    constructor (name: string) {
+      Name := name;
+    }
+  }
+
   trait Variable extends object {
     const name: string
     const typ: Type
 
     predicate IsMutable()
+
+    function DeclToString(): string
   }
 
   class LocalVariable extends Variable {
@@ -92,6 +104,10 @@ module Ast {
 
     predicate IsMutable() {
       isMutable
+    }
+
+    function DeclToString(): string {
+      (if isMutable then "var " else "val ") + name + ": " + typ.ToString()
     }
   }
 
@@ -113,16 +129,21 @@ module Ast {
      predicate IsMutable() {
       mode != ParameterMode.In
     }
+
+    function DeclToString(): string {
+      name + ": " + typ.ToString()
+    }
   }
 
   type ParameterMode = Raw.ParameterMode
 
   class Label {
-    const name: string
+    const Name: string
+
     constructor (name: string)
-      ensures this.name == name
+      ensures Name == name
     {
-      this.name := name;
+      Name := name;
     }
   }
 
@@ -206,21 +227,55 @@ module Ast {
     | BConst(bvalue: bool)
     | IConst(ivalue: int)
     | IdExpr(v: Variable)
-    | BinaryExpr(op: Operator, 0: Expr, 1: Expr)
+    | OperatorExpr(op: Operator, args: seq<Expr>)
+    | FunctionCallExpr(func: Function, args: seq<Expr>)
+    | LabeledExpr(lbl: Label, body: Expr)
+    | LetExpr(v: Variable, rhs: Expr, body: Expr)
+    | QuantifierExpr(univ: bool, v: Variable, triggers: seq<Trigger>, body: Expr)
   {
-    predicate HasType(typ: Type) {
+    function ExprType(): Type {
       match this
-      case BConst(_) => typ.IsBool()
-      case IConst(_) => typ.IsInt()
-      case IdExpr(v) => v.typ == typ
-      case BinaryExpr(op, _, _) =>
+      case BConst(_) => Types.BoolType
+      case IConst(_) => Types.IntType
+      case IdExpr(v) => v.typ
+      case OperatorExpr(op, args) =>
         match op {
-          case Eq => typ.IsBool()
+          case IfThenElse =>
+            if op.ArgumentCount() == |args| then args[1].ExprType() else Types.BoolType // TODO: Rather than an `else` branch, use a WellFormed precondition
+          case Equiv | LogicalImp | LogicalAnd | LogicalOr | LogicalNot =>
+            Types.BoolType
+          case Eq | Neq | Less | AtMost =>
+            Types.BoolType
+          case Plus | Minus | Times | Div | Mod | UnaryMinus =>
+            Types.IntType
         }
+      case FunctionCallExpr(func, args) => Types.IntType // TODO: Bogus. Should look up the type in the function's definition
+      case LabeledExpr(_, body) => body.ExprType()
+      case LetExpr(_, _, body) => body.ExprType()
+      case QuantifierExpr(_, _, _, _) => Types.BoolType
+    }
+
+    predicate HasType(typ: Type) {
+      ExprType() == typ
     }
 
     predicate WellFormed() {
-      true // TODO
+      match this
+      case BConst(_) => true
+      case IConst(_) => true
+      case IdExpr(_) => true
+      case OperatorExpr(op, args) =>
+        && |args| == op.ArgumentCount()
+        && forall arg <- args :: arg.WellFormed()
+      case FunctionCallExpr(func, args) =>
+        forall arg <- args :: arg.WellFormed()
+      case LabeledExpr(_, body) =>
+        body.WellFormed()
+      case LetExpr(_, rhs, body) =>
+        rhs.WellFormed() && body.WellFormed()
+      case QuantifierExpr(_, _, triggers, body) =>
+        && (forall tr <- triggers :: tr.WellFormed())
+        && body.WellFormed()
     }
 
     function ToString(contextStrength: nat := 0): string {
@@ -228,12 +283,45 @@ module Ast {
       case BConst(value) => if value then "true" else "false"
       case IConst(value) => Int2String(value)
       case IdExpr(v) => v.name
-      case BinaryExpr(op, e0, e1) =>
+      case OperatorExpr(op, args) =>
         var opStrength := op.BindingStrength();
-        ParenthesisWrap(e0.ToString(opStrength) + " " + op.ToString() + " " + e1.ToString(opStrength), opStrength <= contextStrength)
+        ParenthesisWrap(opStrength <= contextStrength,
+          if op == Operator.IfThenElse && op.ArgumentCount() == |args| then
+            "if " + args[0].ToString() + " then " + args[1].ToString() + " els " + args[2].ToString(opStrength)
+          else if op.ArgumentCount() == 1 == |args| then
+            op.ToString() + args[0].ToString(opStrength)
+          else if op.ArgumentCount() == 2 == |args| then
+            args[0].ToString(opStrength) + " " + op.ToString() + " " + args[1].ToString(opStrength)
+          else
+            op.ToString() + ParenthesisWrap(true, ListToString(args)))
+      case FunctionCallExpr(func, args) =>
+        func.Name + ParenthesisWrap(true, ListToString(args))
+      case LabeledExpr(lbl, expr) =>
+        var opStrength := Operator.EndlessOperatorBindingStrength;
+        ParenthesisWrap(opStrength <= contextStrength, lbl.Name + ": " + expr.ToString(opStrength))
+      case LetExpr(v, rhs, body) =>
+        var opStrength := Operator.EndlessOperatorBindingStrength;
+        ParenthesisWrap(opStrength <= contextStrength,
+          v.DeclToString() + " := " + rhs.ToString() + " " + body.ToString(opStrength)
+        )
+      case QuantifierExpr(univ, v, triggers, body) =>
+        var opStrength := Operator.EndlessOperatorBindingStrength;
+        ParenthesisWrap(opStrength <= contextStrength,
+          var opStrength := Operator.EndlessOperatorBindingStrength;
+          (if univ then "forall " else "exists ") + v.DeclToString() + Trigger.ListToString(triggers) + " :: " + body.ToString(opStrength)
+        )
     }
 
-    function ParenthesisWrap(s: string, useParentheses: bool): string {
+    static function ListToString(exprs: seq<Expr>): string {
+      if |exprs| == 0 then
+        ""
+      else if |exprs| == 1 then
+        exprs[0].ToString()
+      else
+        exprs[0].ToString() + ", " + ListToString(exprs[1..])
+    }
+
+    static function ParenthesisWrap(useParentheses: bool, s: string): string {
       if useParentheses then
         "(" + s + ")"
       else
@@ -243,35 +331,69 @@ module Ast {
     function Eval(vals: Valuation): Value // TODO: either make Option<Value> or require Type(...).Some?
     { 3 } // TODO
 
-    static function CreateTrue(): Expr
+    static function CreateTrue(): (r: Expr)
+      ensures r.WellFormed()
     { BConst(true) }
 
-    static function CreateFalse(): Expr
+    static function CreateFalse(): (r: Expr)
+      ensures r.WellFormed()
     { BConst(false) }
 
-    static function CreateNegation(e: Expr): Expr
-    { if e.BConst? then BConst(!e.bvalue) else e } // TODO
+    static function CreateNegation(e: Expr): (r: Expr)
+      requires e.WellFormed()
+      ensures r.WellFormed()
+    { OperatorExpr(Operator.LogicalNot, [e]) }
 
-    static function CreateLet(v: Variable, rhs: Expr, body: Expr): Expr
+    static function CreateLet(v: Variable, rhs: Expr, body: Expr): (r: Expr)
+      requires body.WellFormed()
+      ensures r.WellFormed()
     { body } // TODO
 
-    static function CreateForall(v: Variable, body: Expr): Expr
+    static function CreateForall(v: Variable, body: Expr): (r: Expr)
+      requires body.WellFormed()
+      ensures r.WellFormed()
     { body } // TODO
 
-    static function CreateAnd(e0: Expr, e1: Expr): Expr {
-      e0 // TODO
+    static function CreateAnd(e0: Expr, e1: Expr): (r: Expr)
+      requires e0.WellFormed() && e1.WellFormed()
+      ensures r.WellFormed()
+    {
+      OperatorExpr(Operator.LogicalAnd, [e0, e1])
     }
 
-    static function CreateOr(e0: Expr, e1: Expr): Expr {
-      e0 // TODO
+    static function CreateOr(e0: Expr, e1: Expr): (r: Expr)
+      requires e0.WellFormed() && e1.WellFormed()
+      ensures r.WellFormed()
+    {
+      OperatorExpr(Operator.LogicalOr, [e0, e1])
     }
 
-    static function CreateBigAnd(exprs: seq<Expr>): Expr {
+    static function CreateBigAnd(exprs: seq<Expr>): (r: Expr)
+      requires forall e <- exprs :: e.WellFormed()
+      ensures r.WellFormed()
+    {
       if exprs == [] then CreateTrue() else CreateAnd(exprs[0], CreateBigAnd(exprs[1..]))
     }
 
-    static function CreateBigOr(exprs: seq<Expr>): Expr {
+    static function CreateBigOr(exprs: seq<Expr>): (r: Expr)
+      requires forall e <- exprs :: e.WellFormed()
+      ensures r.WellFormed()
+    {
       if exprs == [] then CreateFalse() else CreateOr(exprs[0], CreateBigOr(exprs[1..]))
+    }
+  }
+
+  datatype Trigger = Trigger(exprs: seq<Expr>)
+  {
+    predicate WellFormed() {
+      forall e <- exprs :: e.WellFormed()
+    }
+
+    static function ListToString(triggers: seq<Trigger>): string {
+      if triggers == [] then
+        ""
+      else
+        " trigger " + Expr.ListToString(triggers[0].exprs) + ListToString(triggers[1..])
     }
   }
 }

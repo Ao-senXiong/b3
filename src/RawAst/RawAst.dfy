@@ -338,17 +338,58 @@ module RawAst {
 
   // Expressions
 
-  // TODO
-  datatype Operator = Eq
+  datatype Operator =
+    // ternary operators
+    | IfThenElse
+    // binary operators
+    | Equiv
+    | LogicalImp
+    | LogicalAnd | LogicalOr
+    | Eq | Neq
+    | Less | AtMost
+    | Plus | Minus | Times | Div | Mod
+    // unary operators
+    | LogicalNot
+    | UnaryMinus
   {
+    function ArgumentCount(): nat {
+      match this
+      case IfThenElse => 3
+      case LogicalNot | UnaryMinus => 1
+      case _ => 2
+    }
+
     function ToString(): string {
       match this
+      case IfThenElse => "if-then-else" // this case can be used in output (e.g., error messages), but does not lead to parseable syntax
+      case Equiv => "<==>"
+      case LogicalImp => "==>"
+      case LogicalAnd => "&&"
+      case LogicalOr => "||"
       case Eq => "=="
+      case Neq => "!="
+      case Less => "<"
+      case AtMost => "<="
+      case Plus => "+"
+      case Minus | UnaryMinus => "-"
+      case Times => "*"
+      case Div => "/"
+      case Mod => "%"
+      case LogicalNot => "!"
     }
+
+    static const EndlessOperatorBindingStrength: nat := 10
 
     function BindingStrength(): nat {
       match this
-      case Eq => 10
+      case IfThenElse => EndlessOperatorBindingStrength
+      case Equiv => 20
+      case LogicalImp => 30
+      case LogicalAnd | LogicalOr => 40
+      case Eq | Neq | Less | AtMost => 50
+      case Plus | Minus => 60
+      case Times | Div | Mod => 70
+      case LogicalNot | UnaryMinus => 80
     }
   }
 
@@ -356,37 +397,62 @@ module RawAst {
     | BConst(bvalue: bool)
     | IConst(ivalue: int)
     | IdExpr(name: string)
-    | BinaryExpr(op: Operator, 0: Expr, 1: Expr)
+    | OperatorExpr(op: Operator, args: seq<Expr>)
+    | FunctionCallExpr(name: string, args: seq<Expr>)
+    | LabeledExpr(name: string, expr: Expr)
+    | LetExpr(name: string, typ: TypeName, rhs: Expr, body: Expr)
+    | QuantifierExpr(univ: bool, name: string, typ: TypeName, triggers: seq<Trigger>, body: Expr)
   {
     predicate WellFormed(b3: Program, scope: Scope) {
       match this
       case BConst(_) => true
       case IConst(_) => true
       case IdExpr(name) => name in scope
-      case BinaryExpr(_, e0, e1) => e0.WellFormed(b3, scope) && e1.WellFormed(b3, scope)
+      case OperatorExpr(_, args) =>
+        forall e <- args :: e.WellFormed(b3, scope)
+      case FunctionCallExpr(name, args) =>
+        // TODO: name
+        forall e <- args :: e.WellFormed(b3, scope)
+      case LabeledExpr(name, expr) =>
+        // TODO: name
+        expr.WellFormed(b3, scope)
+      case LetExpr(name, typ, rhs, body) =>
+        && rhs.WellFormed(b3, scope)
+        && body.WellFormed(b3, scope + {name})
+      case QuantifierExpr(_, name, typ, triggers, body) =>
+        var scope' := scope + {name};
+        && (forall tr <- triggers :: tr.WellFormed(b3, scope'))
+        && body.WellFormed(b3, scope')
     }
 
-    static function CreateTrue(): Expr
-    { BConst(true) }
-    static function CreateFalse(): Expr
-    { BConst(false) }
-    static function CreateNegation(e: Expr): Expr
-    { if e.BConst? then BConst(!e.bvalue) else e } // TODO
-    static function CreateAnd(e0: Expr, e1: Expr): Expr
-    { if e0.IConst? && e1.IConst? then IConst(e0.ivalue * e1.ivalue) else e0 } // TODO
+    static function CreateTrue(): Expr { BConst(true) }
+    static function CreateFalse(): Expr { BConst(false) }
+
+    static function CreateNegation(e: Expr): Expr { OperatorExpr(LogicalNot, [e]) }
+
+    static function CreateAnd(e0: Expr, e1: Expr): Expr { OperatorExpr(LogicalAnd, [e0, e1]) }
     static function CreateBigAnd(ee: seq<Expr>): Expr {
       if |ee| == 0 then CreateTrue() else CreateAnd(ee[0], CreateBigAnd(ee[1..]))
     }
-    static function CreateOr(e0: Expr, e1: Expr): Expr
-    { if e0.IConst? && e1.IConst? then IConst(e0.ivalue + e1.ivalue) else e0 } // TODO
+
+    static function CreateOr(e0: Expr, e1: Expr): Expr { OperatorExpr(LogicalOr, [e0, e1]) }
     static function CreateBigOr(ee: seq<Expr>): Expr {
       if |ee| == 0 then CreateFalse() else CreateOr(ee[0], CreateBigOr(ee[1..]))
     }
-    static function CreateImplies(e0: Expr, e1: Expr): Expr
-    { if e0.IConst? && e1.IConst? then IConst(-e0.ivalue + e1.ivalue) else e0 } // TODO
+
+    static function CreateImplies(e0: Expr, e1: Expr): Expr {
+      CreateOr(CreateNegation(e0), e1) // TODO: would be nicer with a `==>` operator
+    }
+
     static function CreateLet(v: Variable, rhs: Expr, body: Expr): Expr
     { if body.IConst? then IConst(100 * body.ivalue) else body } // TODO
     static function CreateForall(v: Variable, body: Expr): Expr
     { if body.IConst? then IConst(1000 * body.ivalue) else body } // TODO
+  }
+
+  datatype Trigger = Trigger(exprs: seq<Expr>) {
+    predicate WellFormed(b3: Program, scope: Scope) {
+      forall e <- exprs :: e.WellFormed(b3, scope)
+    }
   }
 }

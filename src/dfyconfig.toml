@@ -1,4 +1,5 @@
 includes = ["**/*.dfy", "../target/cs/src/Z3Interface.cs"]
+excludes = ["**/flycheck_*"]
 
 [options]
 type-system-refresh = true

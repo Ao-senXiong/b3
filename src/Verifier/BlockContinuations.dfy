@@ -4,6 +4,7 @@ module BlockContinuations {
   export
     reveals T, Continuation
     provides Empty
+    reveals Valid
     reveals StmtMeasure
     provides StmtSeqMeasure
     provides AboutStmtSeqMeasureSingleton, StmtPairMeasure, StmtMeasurePrepend, StmtMeasureSplit, AboutStmtSeqMeasureConcat, StmtSeqElement
@@ -14,7 +15,13 @@ module BlockContinuations {
 
   type T = map<Ast.Label, Continuation>
 
-  function Empty(): T {
+  predicate Valid(t: T) {
+    forall lbl <- t, stmt <- t[lbl].continuation :: stmt.WellFormed()
+  }
+
+  function Empty(): T
+    ensures Valid(Empty())
+  {
     map[]
   }
 

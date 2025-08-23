@@ -79,6 +79,27 @@ module Basics {
     seq(|s|, i requires 0 <= i < |s| => f(s[i]))
   }
 
+  function FoldLeft<X, Z>(z: Z, s: seq<X>, f: (Z, X) -> Z): Z {
+    if s == [] then
+      z
+    else
+      FoldLeft(f(z, s[0]), s[1..], f)
+  }
+
+  function FoldLeftNonempty<X>(s: seq<X>, f: (X, X) -> X): X
+    requires s != []
+  {
+    FoldLeft(s[0], s[1..], f)
+  }
+
+  function FoldRight<X, Z>(s: seq<X>, z: Z, f: (X, Z) -> Z): Z {
+    if s == [] then
+      z
+    else
+      var last := |s| - 1;
+      FoldRight(s[..last], f(s[last], z), f)
+  }
+
   function ListFlatten<X>(l: List<List<X>>): List<X> {
     if l.Nil? then Nil else l.head.Append(ListFlatten(l.tail))
   }

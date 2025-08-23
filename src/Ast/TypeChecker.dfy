@@ -13,35 +13,27 @@ module TypeChecker {
     requires b3.WellFormed()
     ensures outcome.Pass? ==> TypeCorrect(b3)
   {
-    var r := FindType(Types.BoolTypeName, b3);
-    :- TestSuccess(r);
-    var boolType := r.value;
-
-    r := FindType(Types.IntTypeName, b3);
-    :- TestSuccess(r);
-    var intType := r.value;
-
-    var context := TypeCheckingContext(boolType, intType);
-
     var procs := b3.procedures;
     while procs != {}
       invariant forall proc <- b3.procedures - procs :: TypeCorrectProc(proc)
     {
       var proc: Procedure :| proc in procs;
       procs := procs - {proc};
-      :- context.CheckProcedure(proc);
+      :- TypeCheckingContext().CheckProcedure(proc);
     }
 
     return Pass;
   }
 
   predicate TypeCorrect(b3: Program)
+    requires b3.WellFormed()
     reads b3.procedures
   {
     forall proc <- b3.procedures :: TypeCorrectProc(proc)
   }
 
   predicate TypeCorrectProc(proc: Procedure)
+    requires proc.WellFormed()
     reads proc
   {
     && (forall ae <- proc.Pre :: TypeCorrectAExpr(ae))
@@ -49,13 +41,19 @@ module TypeChecker {
     && (proc.Body.Some? ==> TypeCorrectStmt(proc.Body.value))
   }
 
-  predicate TypeCorrectAExpr(aexpr: AExpr) {
+  predicate TypeCorrectAExpr(aexpr: AExpr)
+    requires aexpr.WellFormed()
+  {
     match aexpr
-    case AExpr(e) => TypeCorrectExpr(e)
-    case AAssertion(s) => TypeCorrectStmt(s)
+    case AExpr(e) =>
+      TypeCorrectExpr(e) && e.HasType(BoolType)
+    case AAssertion(s) =>
+      TypeCorrectStmt(s)
   }
 
-  predicate TypeCorrectStmt(stmt: Stmt) {
+  predicate TypeCorrectStmt(stmt: Stmt)
+    requires stmt.WellFormed()
+  {
     match stmt
     case VarDecl(variable, init, body) =>
       && (init.Some? ==> TypeCorrectExpr(init.value))
@@ -87,44 +85,54 @@ module TypeChecker {
       TypeCorrectExpr(expr)
   }
 
-  predicate TypeCorrectCallArg(arg: CallArgument) {
+  predicate TypeCorrectCallArg(arg: CallArgument)
+    requires arg.WellFormed()
+  {
     match arg
     case InArgument(e) => TypeCorrectExpr(e)
     case OutgoingArgument(_, _) => true
   }
 
-  predicate TypeCorrectExpr(expr: Expr) {
+  predicate TypeCorrectExpr(expr: Expr)
+    requires expr.WellFormed()
+  {
     match expr
     case BConst(_) => true
     case IConst(_) => true
     case IdExpr(_) => true
-    case BinaryExpr(op, e0, e1) =>
-      && TypeCorrectExpr(e0)
-      && TypeCorrectExpr(e1)
+    case OperatorExpr(op, args) =>
+      && (forall arg <- args :: TypeCorrectExpr(arg))
       && match op {
-        case Eq => true // TODO
+          case IfThenElse =>
+            args[0].HasType(BoolType) && args[1].ExprType() == args[2].ExprType()
+          case Equiv | LogicalImp | LogicalAnd | LogicalOr =>
+            args[0].HasType(BoolType) && args[1].HasType(BoolType)
+          case Eq | Neq =>
+            args[0].ExprType() == args[1].ExprType()
+          case Less | AtMost | Plus | Minus | Times | Div | Mod =>
+            args[0].HasType(IntType) && args[1].HasType(IntType)
+          case LogicalNot =>
+            args[0].HasType(BoolType)
+          case UnaryMinus =>
+            args[0].HasType(IntType)
       }
+    case FunctionCallExpr(func, args) =>
+      (forall arg <- args :: TypeCorrectExpr(arg))
+      && true // TODO: check that types match those of the function
+    case LabeledExpr(lbl, body) =>
+      TypeCorrectExpr(body)
+    case LetExpr(v, rhs, body) =>
+      rhs.HasType(v.typ) && TypeCorrectExpr(body)
+    case QuantifierExpr(_, _, triggers, body) =>
+      (forall tr <- triggers, e <- tr.exprs :: assert tr.WellFormed(); TypeCorrectExpr(e)) &&
+      TypeCorrectExpr(body) && body.HasType(BoolType)
   }
 
-  function TestSuccess<R, E>(r: Result<R, E>): Outcome<E> {
-    if r.IsFailure() then Fail(r.error) else Pass
-  }
-
-  method FindType(typeName: string, b3: Program) returns (r: Result<Type, string>)
-    ensures r.Success? ==> r.value.Name == typeName
-  {
-    if typ :| typ in b3.types && typ.Name == typeName {
-      return Success(typ);
-    } else {
-      return Failure("cannot find built-in type '" + typeName + "'");
-    }
-  }
-
-  datatype TypeCheckingContext = TypeCheckingContext(boolType: Type, intType: Type)
+  // TODO: TypeCheckingContext is no longer needed
+  datatype TypeCheckingContext = TypeCheckingContext()
   {
     ghost predicate Valid() {
-      && boolType.Name == Types.BoolTypeName
-      && intType.Name == Types.IntTypeName
+      true
     }
 
     method CheckProcedure(proc: Procedure) returns (outcome: Outcome<string>)
@@ -149,7 +157,7 @@ module TypeChecker {
         assert aexprs[n].WellFormed();
         match aexprs[n]
         case AExpr(e) =>
-          outcome := TypeCheckAsBool(e);
+          outcome := TypeCheckAs(e, BoolType);
           if outcome.IsFailure() {
             return Fail(outcome.error);
           }
@@ -161,13 +169,6 @@ module TypeChecker {
           :- CheckStmt(s);
       }
       return Pass;
-    }
-
-    method TypeCheckAsBool(expr: Expr) returns (outcome: Outcome<string>)
-      requires Valid() && expr.WellFormed()
-      ensures outcome.Pass? ==> TypeCorrectExpr(expr)
-    {
-      outcome := TypeCheckAs(expr, boolType);
     }
 
     method TypeCheckAs(expr: Expr, expectedType: Type) returns (outcome: Outcome<string>)
@@ -186,7 +187,7 @@ module TypeChecker {
       ensures outcome.Pass? ==> typ == expectedType
     {
       if typ != expectedType {
-        return Fail("expect type '" + expectedType.Name + "', got type '" + typ.Name + "'");
+        return Fail("expect type '" + expectedType.ToString() + "', got type '" + typ.ToString() + "'");
       }
       return Pass;
     }
@@ -214,6 +215,7 @@ module TypeChecker {
             invariant forall arg <- args[..n] :: TypeCorrectCallArg(arg)
           {
             var formal := proc.Parameters[n];
+            assert args[n].WellFormed();
             match args[n]
             case InArgument(e) =>
               :- TypeCheckAs(e, formal.typ);
@@ -221,11 +223,11 @@ module TypeChecker {
               :- ExpectType(arg.typ, formal.typ);
           }
         case Check(cond) =>
-          :- TypeCheckAsBool(cond);
+          :- TypeCheckAs(cond, BoolType);
         case Assume(cond) =>
-          :- TypeCheckAsBool(cond);
+          :- TypeCheckAs(cond, BoolType);
         case Assert(cond) =>
-          :- TypeCheckAsBool(cond);
+          :- TypeCheckAs(cond, BoolType);
         case AForall(_, body) =>
           :- CheckStmt(body);
         case Choice(branches) =>
@@ -255,21 +257,104 @@ module TypeChecker {
     {
       match expr
       case BConst(_) =>
-        return Success(boolType);
+        return Success(BoolType);
       case IConst(_) =>
-        return Success(intType);
+        return Success(IntType);
       case IdExpr(v) =>
         return Success(v.typ);
-      case BinaryExpr(op, e0, e1) =>
-        var t0 :- CheckExpr(e0);
-        var t1 :- CheckExpr(e1);
+      case OperatorExpr(op, args) =>
+        var types :- CheckExprList(args);
+        var typ;
         match op {
-          case Eq =>
-            if t0 != t1 {
-              return Result<Type, string>.Failure("operator == requires both arguments to have the same type; got '" + t0.Name + "' and '" + t1.Name + "'");
+          case IfThenElse =>
+            if types[0] != BoolType {
+              return Result<Type, string>.Failure(
+                "if condition must have type '" + BoolTypeName + "'; got '" + types[0].ToString() + "'");
             }
+            if types[1] != types[2] {
+              return Result<Type, string>.Failure(
+                "if-then-else expression requires the then-branch and else-branche to have the same type; got '" +
+                types[1].ToString() + "' and '" + types[2].ToString() + "'");
+            }
+            typ := types[1];
+          case Equiv | LogicalImp | LogicalAnd | LogicalOr | LogicalNot =>
+            var _ :- ExpectOperandTypes(op, types, BoolType);
+            typ := BoolType;
+          case Eq | Neq =>
+            if types[0] != types[1] {
+              return Result<Type, string>.Failure(
+                "operator " + op.ToString() + " requires both arguments to have the same type; got '" +
+                types[0].ToString() + "' and '" + types[1].ToString() + "'");
+            }
+            typ := BoolType;
+          case Less | AtMost =>
+            var _ :- ExpectOperandTypes(op, types, IntType);
+            typ := BoolType;
+          case Plus | Minus | Times | Div | Mod | UnaryMinus =>
+            var _ :- ExpectOperandTypes(op, types, IntType);
+            typ := IntType;
         }
-        return Success(boolType);
+        return Success(typ);
+      case FunctionCallExpr(func, args) =>
+        var types :- CheckExprList(args);
+        return Success(expr.ExprType()); // TODO: look directly at declared result type of function here
+      case LabeledExpr(_, body) =>
+        r := CheckExpr(body);
+      case LetExpr(v, rhs, body) =>
+        var rhsType :- CheckExpr(rhs);
+        if v.typ != rhsType {
+          return Failure("types of bound variable and the RHS must agree; got " + v.typ.ToString() + " and " + rhsType.ToString());
+        }
+        r := CheckExpr(body);
+      case QuantifierExpr(_, v, triggers, body) =>
+        for m := 0 to |triggers|
+          invariant forall tr <- triggers[..m], e <- tr.exprs :: assert tr.WellFormed(); TypeCorrectExpr(e)
+        {
+          var tr := triggers[m];
+          assert tr.WellFormed();
+          for n := 0 to |tr.exprs|
+            invariant forall e <- tr.exprs[..n] :: TypeCorrectExpr(e)
+          {
+            var e := tr.exprs[n];
+            var typ :- CheckExpr(e);
+          }
+        }
+        var typ :- CheckExpr(body);
+        if typ != BoolType {
+          return Failure("body of quantifier expression must have type " + BoolTypeName + ", got " + typ.ToString());
+        }
+        return Success(typ);
+    }
+
+    method CheckExprList(exprs: seq<Expr>) returns (r: Result<seq<Type>, string>)
+      requires forall expr <- exprs :: expr.WellFormed()
+      ensures r.Success? ==> forall expr <- exprs :: TypeCorrectExpr(expr)
+      ensures r.Success? ==> |r.value| == |exprs|
+      ensures r.Success? ==> forall i :: 0 <= i < |exprs| ==> exprs[i].HasType(r.value[i])
+    {
+      var types := [];
+      for n := 0 to |exprs|
+        invariant forall expr <- exprs[..n] :: TypeCorrectExpr(expr)
+        invariant |types| == n
+        invariant forall i :: 0 <= i < n ==> exprs[i].HasType(types[i])
+      {
+        var typ :- CheckExpr(exprs[n]);
+        types := types + [typ];
+      }
+      return Success(types);
+    }
+
+    method ExpectOperandTypes(op: Operator, operandTypes: seq<Type>, expectedType: Type) returns (r: Result<(), string>)
+      ensures r.Success? ==> operandTypes == seq(|operandTypes|, _ => expectedType)
+    {
+      if i :| 0 <= i < |operandTypes| && operandTypes[i] != expectedType {
+        if operandTypes[i] != expectedType {
+          return Result<(), string>.Failure(
+            "operands of " + op.ToString() + " must have type '" +
+            expectedType.ToString() + "'; got '" + operandTypes[i].ToString() + "'");
+        }
+      }
+      return Success(());
     }
   }
 }

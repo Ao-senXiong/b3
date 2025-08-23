@@ -38,6 +38,7 @@ module Verifier {
     // Assume precondition (TODO: should also vet precondition)
     context := AssumeAExprs(proc.Post, preIncarnations, context, smtEngine);
 
+    assert proc.Body.Some? ==> proc.Body.value.WellFormed();
     var body := if proc.Body.Some? then [proc.Body.value] else [];
     Process(body, bodyIncarnations, context, BC.Empty(), smtEngine);
     // TODO: postcondition checking should be appended to body, not checked separately
@@ -71,12 +72,10 @@ module Verifier {
   type RExpr = RSolvers.RExpr
 
   function Type2SType(typ: Type): SType {
-    if typ.IsBool() then
-      SBool
-    else if typ.IsInt() then
-      SInt
-    else
-      SInt // TODO
+    match typ
+    case BoolType => SBool
+    case IntType => SInt
+    case UserType(decl) => SInt // TODO
   }
 
   datatype Incarnations = Incarnations(nextSequenceCount: map<string, nat>, m: map<Variable, SVar>)
@@ -113,22 +112,64 @@ module Verifier {
       Incarnations(nextSequenceCount, m')
     }
 
-    function REval(expr: Expr): RSolvers.RExpr {
+    function REval(expr: Expr): RSolvers.RExpr
+      requires expr.WellFormed()
+    {
       match expr
       case BConst(value) => RExpr.Boolean(value)
       case IConst(value) => RExpr.Integer(value)
       case IdExpr(v) =>
-        assume {:axiom} v in m; // TODO
+        assume {:axiom} v in m; // TODO: it would be nice to be able to keep the original variable if there's no incarnation; that would be the case for the bound variable in a let expression or quantifier
         RExpr.Id(m[v])
-      case BinaryExpr(op, e0, e1) =>
-        var s0, s1 := REval(e0), REval(e1);
+      case OperatorExpr(op, args) =>
+        var rArgs := REvalList(args);
         match op {
-          case Eq => RExpr.Eq(s0, s1)
+          case IfThenElse =>
+            RExpr.IfThenElse(rArgs[0], rArgs[1], rArgs[2])
+          case Neq =>
+            var eq := RExpr.FuncAppl(RExpr.OperatorToString(Operator.Eq), rArgs);
+            RExpr.FuncAppl(RExpr.OperatorToString(Operator.LogicalNot), [eq])
+          case _ =>
+            RExpr.FuncAppl(RExpr.OperatorToString(op), rArgs)
         }
+      case FunctionCallExpr(func, args) =>
+        var rArgs := REvalList(args);
+        RExpr.FuncAppl(func.Name, rArgs)
+      case LabeledExpr(_, body) =>
+        // TODO: do something with the label
+        REval(body)
+      case LetExpr(v, rhs, body) =>
+        RExpr.Boolean(true) //RExpr.LetExpr(v, REval(rhs), REval(body)) // TODO: this requires RExpr and Expr have the same Variables.
+      case QuantifierExpr(univ, v, triggers, body) =>
+        var trs := REvalTriggers(triggers);
+        var b := REval(body);
+        RExpr.Boolean(true) //RExpr.QuantifierExpr(univ, v, trs, b) // TODO: this requires RExpr and Expr have the same Variables.
+    }
+
+    function REvalList(exprs: seq<Expr>): seq<RSolvers.RExpr>
+      requires forall expr <- exprs :: expr.WellFormed()
+      ensures |REvalList(exprs)| == |exprs|
+    {
+      if exprs == [] then
+        []
+      else
+        [REval(exprs[0])] + REvalList(exprs[1..])
+    }
+
+    function REvalTriggers(triggers: seq<Trigger>): seq<seq<RSolvers.RExpr>>
+      requires forall tr <- triggers :: tr.WellFormed()
+    {
+      if triggers == [] then
+        []
+      else
+        assert triggers[0].WellFormed();
+        [REvalList(triggers[0].exprs)] + REvalTriggers(triggers[1..])
     }
   }
 
   method Process(stmts: seq<Stmt>, incarnations_in: Incarnations, context_in: RSolvers.RContext, B: BC.T, smtEngine: RSolvers.REngine)
+    requires forall stmt <- stmts :: stmt.WellFormed()
+    requires BC.Valid(B)
     requires smtEngine.Valid()
     modifies smtEngine.Repr
     ensures smtEngine.Valid()
@@ -140,6 +181,7 @@ module Verifier {
 
     var incarnations, context := incarnations_in, context_in;
     var stmt, cont := stmts[0], stmts[1..];
+    assert stmt.WellFormed();
     BC.StmtMeasureSplit(stmts);
     match stmt
     case VarDecl(v, init, body) =>
@@ -200,7 +242,7 @@ module Verifier {
       BC.StmtPairMeasure(body, Exit(lbl));
       Process([body, Exit(lbl)], incarnations, context, B', smtEngine);
     case Exit(lbl) =>
-      expect lbl in B, lbl.name; // TODO
+      expect lbl in B, lbl.Name; // TODO
       var c := B[lbl];
       var variablesInScope, cont := c.variablesInScope, c.continuation;
       var incarnations' := incarnations.DomainRestrict(variablesInScope);
@@ -216,7 +258,7 @@ module Verifier {
   }
 
   method ProcessLoop(stmt: Stmt, incarnations_in: Incarnations, context_in: RSolvers.RContext, B: BC.T, smtEngine: RSolvers.REngine)
-    requires stmt.Loop? && smtEngine.Valid()
+    requires stmt.Loop? && stmt.WellFormed() && BC.Valid(B) && smtEngine.Valid()
     modifies smtEngine.Repr
     ensures smtEngine.Valid()
     decreases BC.StmtMeasure(stmt) + BC.ContinuationsMeasure(B), 0
@@ -252,6 +294,7 @@ module Verifier {
   }
 
   method CheckAExprs(aexprs: seq<AExpr>, incarnations: Incarnations, context: RSolvers.RContext, smtEngine: RSolvers.REngine, errorText: string)
+    requires forall ae <- aexprs :: ae.WellFormed()
     requires smtEngine.Valid()
     modifies smtEngine.Repr
     ensures smtEngine.Valid()
@@ -259,6 +302,7 @@ module Verifier {
     for i := 0 to |aexprs|
       invariant smtEngine.Valid()
     {
+      assert aexprs[i].WellFormed();
       match aexprs[i]
       case AExpr(e) =>
         ProveAndReport(context, incarnations.REval(e), errorText, e, smtEngine);
@@ -268,6 +312,7 @@ module Verifier {
 
   method AssumeAExprs(aexprs: seq<AExpr>, incarnations: Incarnations, context_in: RSolvers.RContext, smtEngine: RSolvers.REngine)
       returns (context: RSolvers.RContext)
+    requires forall ae <- aexprs :: ae.WellFormed()
     requires smtEngine.Valid()
     modifies smtEngine.Repr
     ensures smtEngine.Valid()
@@ -276,6 +321,7 @@ module Verifier {
     for i := 0 to |aexprs|
       invariant smtEngine.Valid()
     {
+      assert aexprs[i].WellFormed();
       match aexprs[i]
       case AExpr(e) =>
         context := RSolvers.Extend(context, incarnations.REval(e));
@@ -300,7 +346,8 @@ module Verifier {
   }
 
   function Learn(stmt: Stmt): Expr
-    requires !StaticConsistency.ContainsNonAssertions(stmt)
+    requires stmt.WellFormed() && !StaticConsistency.ContainsNonAssertions(stmt)
+    ensures Learn(stmt).WellFormed()
   {
     match stmt
     case VarDecl(v, Some(rhs), body) =>

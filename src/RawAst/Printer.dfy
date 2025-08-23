@@ -168,8 +168,7 @@ module Printer {
   method VariableDeclaration(v: Variable, init: Option<Expr>, body: Stmt, indent: nat, followedByEndCurly: bool)
     decreases body, 3
   {
-    print if v.isMutable then "var " else "val ";
-    print v.name, ": ", v.typ;
+    IdTypeDecl(if v.isMutable then "var " else "val ", v.name, v.typ);
     match init {
       case None =>
       case Some(e) =>
@@ -178,6 +177,10 @@ module Printer {
     }
     print "\n";
     BlockAsStatementList(body, indent, followedByEndCurly);
+  }
+
+  method IdTypeDecl(prefix: string, name: string, typ: Types.TypeName) {
+    print prefix, name, ": ", typ;
   }
 
   method StmtAsBlock(stmt: Stmt, indent: nat, suffix: string := "\n")
@@ -245,9 +248,55 @@ module Printer {
     case BConst(value) => print value;
     case IConst(value) => print value;
     case IdExpr(name) => print name;
-    case BinaryExpr(op, e0, e1) =>
-      Expression(e0);
-      print " ", op.ToString(), " ";
-      Expression(e0);
+    case OperatorExpr(op, args) =>
+      if op == IfThenElse && op.ArgumentCount() == |args| {
+        print "if ";
+        Expression(args[0]);
+        print " then ";
+        Expression(args[1]);
+        print " else ";
+        Expression(args[2]);
+      } else if op.ArgumentCount() == 1 == |args| {
+        print op.ToString();
+        Expression(args[0]);
+      } else if op.ArgumentCount() == 2 == |args| {
+        Expression(args[0]);
+        print " ", op.ToString(), " ";
+        Expression(args[1]);
+      } else {
+        print op.ToString(), "(";
+        ExpressionList(args);
+        print ")";
+      }
+    case FunctionCallExpr(name, args) =>
+      print name, "(";
+      ExpressionList(args);
+      print ")";
+    case LabeledExpr(name, expr) =>
+      print name, ": ";
+      Expression(expr);
+    case LetExpr(name, typ, rhs, body) =>
+      IdTypeDecl("val ", name, typ);
+      print " := ";
+      Expression(rhs);
+      print " ";
+      Expression(body);
+    case QuantifierExpr(univ, name, typ, triggers, body) =>
+      IdTypeDecl(if univ then "forall " else "exists ", name, typ);
+      for i := 0 to |triggers| {
+        print " trigger ";
+        ExpressionList(triggers[i].exprs);
+      }
+      print " :: ";
+      Expression(body);
+  }
+
+  method ExpressionList(exprs: seq<Expr>) {
+    var sep := "";
+    for i := 0 to |exprs| {
+      print sep;
+      sep := ", ";
+      Expression(exprs[i]);
+    }
   }
 }

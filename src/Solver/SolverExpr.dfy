@@ -6,12 +6,13 @@ module SolverExpr {
   export
     reveals SDeclaration, SDeclaration.name
     reveals SType
-    provides SType.SplitInputsOutput, SType.TypesToSExpr, SType.ToSExpr
+    provides SType.SplitInputsOutput, SType.TypesToSExpr, SType.ToSExpr, SType.ToString
     reveals STypedDeclaration, STypedDeclaration.typ
     reveals SVar
     reveals SExprPrintConfig
-    provides SExpr, SExpr.ToString
-    provides SExpr.Boolean, SExpr.Integer, SExpr.Id, SExpr.FuncAppl, SExpr.Eq, SExpr.Negation, SExpr.BigAnd
+    reveals SExpr
+    provides SExpr.ToString
+    provides SExpr.Boolean, SExpr.Integer, SExpr.EQ, SExpr.Id, SExpr.FuncAppl, SExpr.Eq, SExpr.Negation, SExpr.BigAnd
     provides Wrappers
 
   trait SDeclaration extends object {
@@ -50,6 +51,15 @@ module SolverExpr {
         // Actually, we don't expect this ever to happen, because SMTLib does not support types like this
         var ins := TypesToSExpr(inputs, this);
         PP([ins, output.ToSExpr()])
+    }
+
+    function ToString(): string {
+      match this
+      case SBool => "bool"
+      case SInt => "int"
+      case SArrow(inputs, output) =>
+        // TODO: Actually, we don't expect this ever to happen, because SMTLib does not support types like this
+        "(...) -> " + output.ToString()
     }
   }
 
@@ -97,8 +107,8 @@ module SolverExpr {
     }
     // SExpr builders
 
-    static const TRUE := "true"
     static const FALSE := "false"
+    static const TRUE := "true"
     static const EQ := "="
     static const NOT := "not"
     static const AND := "and"

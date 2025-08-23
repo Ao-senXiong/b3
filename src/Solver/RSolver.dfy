@@ -6,49 +6,141 @@ module RSolvers {
   import SolverExpr
   import Solvers
   import Z3SmtSolver
+  import Ast
   import opened Std.Wrappers
   import opened Basics
 
   export
-    reveals RExpr
-    provides RExpr.Eq
+    reveals RExpr, RTrigger
+    provides RExpr.Eq, RExpr.OperatorToString
     provides RContext, CreateEmptyContext, Extend, Record
     reveals REngine
     provides CreateEngine, REngine.Repr, REngine.Valid, REngine.Prove
-    provides SolverExpr, Solvers
+    provides SolverExpr, Solvers, Ast
 
   // ===== RExpr =====
+
+  type SExpr = SolverExpr.SExpr
 
   datatype RExpr =
     | Boolean(b: bool)
     | Integer(x: int)
     | Id(v: SolverExpr.SVar)
     | FuncAppl(op: string, args: seq<RExpr>)
+    | IfThenElse(guard: RExpr, thn: RExpr, els: RExpr)
+    | LetExpr(v: SolverExpr.SVar, rhs: RExpr, body: RExpr)
+    | QuantifierExpr(univ: bool, v: SolverExpr.SVar, triggers: seq<RTrigger>, body: RExpr)
   {
-    function ToSExpr(): SolverExpr.SExpr {
+    function ToSExpr(): SExpr {
       match this
-      case Boolean(b) => SolverExpr.SExpr.Boolean(b)
-      case Integer(x) => SolverExpr.SExpr.Integer(x)
-      case Id(v) => SolverExpr.SExpr.Id(v)
+      case Boolean(b) => SExpr.Boolean(b)
+      case Integer(x) => SExpr.Integer(x)
+      case Id(v) => SExpr.Id(v)
       case FuncAppl(op, args) =>
-        var sargs := SeqMap(args, (arg: RExpr) requires arg < this => arg.ToSExpr());
-        SolverExpr.SExpr.FuncAppl(op, sargs)
+        var sargs := RExprListToSExprs(args, this);
+        SExpr.FuncAppl(op, sargs)
+      case IfThenElse(guard, thn, els) =>
+        SExpr.FuncAppl("ite", [guard.ToSExpr(), thn.ToSExpr(), els.ToSExpr()])
+      case LetExpr(v, rhs, body) =>
+        var binding := SExpr.PP([SExpr.Id(v), rhs.ToSExpr()]);
+        SExpr.FuncAppl("let", [SExpr.PP([binding]), body.ToSExpr()])
+      case QuantifierExpr(univ, v, triggers, body) =>
+        var boundVar := SExpr.PP([SExpr.Id(v), v.typ.ToSExpr()]); // "(x Int)"
+        var sbody :=
+          if triggers == [] then
+            body.ToSExpr()
+          else
+            SExpr.FuncAppl("!", [body.ToSExpr()] + PatternListToSExprs(triggers, this)); // "(! body :pattern (t0 t1 t2) :pattern (u0 u1))"
+        SExpr.FuncAppl(if univ then "forall" else "exists", [SExpr.PP([boundVar]), sbody])
+    }
+
+    static function RExprListToSExprs(exprs: seq<RExpr>, ghost parent: RExpr): seq<SExpr>
+      requires forall expr <- exprs :: expr < parent
+      decreases parent, 0, |exprs|
+    {
+      SeqMap(exprs, (expr: RExpr) requires expr < parent => expr.ToSExpr())
+    }
+
+    static function PatternListToSExprs(triggers: seq<RTrigger>, ghost parent: RExpr): seq<SExpr>
+      requires forall tr <- triggers :: tr < parent
+      decreases parent, |triggers|
+    {
+      if triggers == [] then
+        []
+      else
+        var trigger := triggers[0];
+        assert trigger in triggers;
+        var terms := RExprListToSExprs(trigger.exprs, parent);
+        assert forall tr <- triggers[1..] :: tr in triggers;
+        [SExpr.S(":pattern"), SExpr.PP(terms)] + PatternListToSExprs(triggers[1..], parent)
+    }
+
+    static function OperatorToString(op: Ast.Operator): string
+      requires op != Ast.Operator.IfThenElse && op != Ast.Operator.Neq
+    {
+      match op
+      case Equiv => "-"
+      case LogicalImp => "=>"
+      case LogicalAnd => "and"
+      case LogicalOr => "or"
+      case Eq => "="
+      case Less => "<"
+      case AtMost => "<="
+      case Plus => "+"
+      case Minus => "-"
+      case Times => "*"
+      case Div => "/"
+      case Mod => "%"
+      case LogicalNot => "not"
+      case UnaryMinus => "-"
     }
 
     static function Eq(r0: RExpr, r1: RExpr): RExpr {
-      FuncAppl("=", [r0, r1])
+      FuncAppl(SExpr.EQ, [r0, r1])
     }
 
+    // Convert the RExpr to a B3-like expression
     function ToString(): string {
       match this
       case Boolean(b) => if b then "true" else "false"
       case Integer(x) => Int2String(x)
       case Id(v) => v.name
       case FuncAppl(op, args) =>
-        var argStrings := SeqMap(args, (arg: RExpr) requires arg < this => arg.ToString());
-        op + "(" + Comma(argStrings, ", ") + ")"
+        op + "(" + RExprListToString(args, this) + ")"
+      case IfThenElse(guard, thn, els) =>
+        "(if " + guard.ToString() + " then " + thn.ToString() + " else " + els.ToString() + ")"
+      case LetExpr(v, rhs, body) =>
+        "(val " + v.name + ": " + v.typ.ToString() + " := " + rhs.ToString() + " " + body.ToString() + ")"
+      case QuantifierExpr(univ, v, triggers, body) =>
+        (if univ then "(forall " else "(exists ") +
+        v.name + ": " + v.typ.ToString() +
+        PatternsToString(triggers, this) +
+        " :: " + body.ToString() + ")"
+    }
+
+    static function RExprListToString(exprs: seq<RExpr>, ghost parent: RExpr): string
+      requires forall expr <- exprs :: expr < parent
+      decreases parent, 0, |exprs|
+    {
+      var exprStrings := SeqMap(exprs, (expr: RExpr) requires expr < parent => expr.ToString());
+      Comma(exprStrings, ", ")
+    }
+
+    static function PatternsToString(triggers: seq<RTrigger>, ghost parent: RExpr): string
+      requires forall tr <- triggers :: tr < parent
+      decreases parent, |triggers|
+    {
+      if triggers == [] then
+        ""
+      else
+        var trigger := triggers[0];
+        assert trigger in triggers;
+        assert forall tr <- triggers[1..] :: tr in triggers;
+        " trigger " + RExprListToString(trigger.exprs, parent) + PatternsToString(triggers[1..], parent)
     }
   }
+
+  datatype RTrigger = RTrigger(exprs: seq<RExpr>)
 
   // ===== RContext =====
 
@@ -237,7 +329,7 @@ module RSolvers {
       state.AddAssumption(contextx.expr.ToSExpr());
     }
 
-    method DeclareNewSymbols(r: RExpr)
+    method DeclareNewSymbols(r: RExpr, exclude: set<SolverExpr.SVar> := {})
       requires Valid()
       modifies Repr
       ensures Valid() && state.stack == old(state.stack)
@@ -246,15 +338,35 @@ module RSolvers {
       case Boolean(_) =>
       case Integer(_) =>
       case Id(v) =>
-        if v !in state.declarations {
+        if v !in exclude && v !in state.declarations {
           state.DeclareSymbol(v);
         }
       case FuncAppl(op, args) =>
         for i := 0 to |args|
           invariant Valid() && state.stack == old(state.stack)
         {
-          DeclareNewSymbols(args[i]);
+          DeclareNewSymbols(args[i], exclude);
         }
+      case IfThenElse(guard, thn, els) =>
+        DeclareNewSymbols(guard, exclude);
+        DeclareNewSymbols(thn, exclude);
+        DeclareNewSymbols(els, exclude);
+      case LetExpr(v, rhs, body) =>
+        DeclareNewSymbols(rhs, exclude);
+        DeclareNewSymbols(body, exclude + {v});
+      case QuantifierExpr(_, v, triggers, body) =>
+        var exclude' := exclude + {v};
+        for i := 0 to |triggers|
+          invariant Valid() && state.stack == old(state.stack)
+        {
+          var tr := triggers[i];
+          for j := 0 to |tr.exprs|
+            invariant Valid() && state.stack == old(state.stack)
+          {
+            DeclareNewSymbols(tr.exprs[j], exclude');
+          }
+        }
+        DeclareNewSymbols(body, exclude');
     }
   }
 
