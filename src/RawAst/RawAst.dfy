@@ -394,8 +394,8 @@ module RawAst {
   }
 
   datatype Expr =
-    | BConst(bvalue: bool)
-    | IConst(ivalue: int)
+    | BLiteral(bvalue: bool)
+    | ILiteral(ivalue: int)
     | CustomLiteral(s: string, typ: TypeName)
     | IdExpr(name: string)
     | OperatorExpr(op: Operator, args: seq<Expr>)
@@ -406,8 +406,8 @@ module RawAst {
   {
     predicate WellFormed(b3: Program, scope: Scope) {
       match this
-      case BConst(_) => true
-      case IConst(_) => true
+      case BLiteral(_) => true
+      case ILiteral(_) => true
       case CustomLiteral(_, _) => true
       case IdExpr(name) => name in scope
       case OperatorExpr(_, args) =>
@@ -427,8 +427,8 @@ module RawAst {
         && body.WellFormed(b3, scope')
     }
 
-    static function CreateTrue(): Expr { BConst(true) }
-    static function CreateFalse(): Expr { BConst(false) }
+    static function CreateTrue(): Expr { BLiteral(true) }
+    static function CreateFalse(): Expr { BLiteral(false) }
 
     static function CreateNegation(e: Expr): Expr { OperatorExpr(LogicalNot, [e]) }
 
@@ -447,9 +447,9 @@ module RawAst {
     }
 
     static function CreateLet(v: Variable, rhs: Expr, body: Expr): Expr
-    { if body.IConst? then IConst(100 * body.ivalue) else body } // TODO
+    { if body.ILiteral? then ILiteral(100 * body.ivalue) else body } // TODO
     static function CreateForall(v: Variable, body: Expr): Expr
-    { if body.IConst? then IConst(1000 * body.ivalue) else body } // TODO
+    { if body.ILiteral? then ILiteral(1000 * body.ivalue) else body } // TODO
   }
 
   datatype Trigger = Trigger(exprs: seq<Expr>) {

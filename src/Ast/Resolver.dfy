@@ -467,10 +467,10 @@ module Resolver {
   {
     var r: Expr;
     match expr {
-      case BConst(value) =>
-        r := BConst(value);
-      case IConst(value) =>
-        r := IConst(value);
+      case BLiteral(value) =>
+        r := BLiteral(value);
+      case ILiteral(value) =>
+        r := ILiteral(value);
       case CustomLiteral(s, typeName) =>
         var typ :- ResolveType(typeName, rs.typeMap);
         if typ == BoolType || typ == IntType {
