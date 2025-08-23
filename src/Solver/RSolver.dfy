@@ -25,6 +25,7 @@ module RSolvers {
   datatype RExpr =
     | Boolean(b: bool)
     | Integer(x: int)
+    | CustomLiteral(s: string, typ: SolverExpr.SType)
     | Id(v: SolverExpr.SVar)
     | FuncAppl(op: string, args: seq<RExpr>)
     | IfThenElse(guard: RExpr, thn: RExpr, els: RExpr)
@@ -35,6 +36,7 @@ module RSolvers {
       match this
       case Boolean(b) => SExpr.Boolean(b)
       case Integer(x) => SExpr.Integer(x)
+      case CustomLiteral(s, _) => SExpr.S("|" + s + "|")
       case Id(v) => SExpr.Id(v)
       case FuncAppl(op, args) =>
         var sargs := RExprListToSExprs(args, this);
@@ -104,6 +106,7 @@ module RSolvers {
       match this
       case Boolean(b) => if b then "true" else "false"
       case Integer(x) => Int2String(x)
+      case CustomLiteral(s, typ) => Ast.CustomLiteralToString(s, typ.ToString())
       case Id(v) => v.name
       case FuncAppl(op, args) =>
         op + "(" + RExprListToString(args, this) + ")"
@@ -337,6 +340,7 @@ module RSolvers {
       match r
       case Boolean(_) =>
       case Integer(_) =>
+      case CustomLiteral(_, _) =>
       case Id(v) =>
         if v !in exclude && v !in state.declarations {
           state.DeclareSymbol(v);

@@ -396,6 +396,7 @@ module RawAst {
   datatype Expr =
     | BConst(bvalue: bool)
     | IConst(ivalue: int)
+    | CustomLiteral(s: string, typ: TypeName)
     | IdExpr(name: string)
     | OperatorExpr(op: Operator, args: seq<Expr>)
     | FunctionCallExpr(name: string, args: seq<Expr>)
@@ -407,6 +408,7 @@ module RawAst {
       match this
       case BConst(_) => true
       case IConst(_) => true
+      case CustomLiteral(_, _) => true
       case IdExpr(name) => name in scope
       case OperatorExpr(_, args) =>
         forall e <- args :: e.WellFormed(b3, scope)

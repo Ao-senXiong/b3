@@ -99,6 +99,7 @@ module TypeChecker {
     match expr
     case BConst(_) => true
     case IConst(_) => true
+    case CustomLiteral(_, _) => true
     case IdExpr(_) => true
     case OperatorExpr(op, args) =>
       && (forall arg <- args :: TypeCorrectExpr(arg))
@@ -253,6 +254,8 @@ module TypeChecker {
       return Success(BoolType);
     case IConst(_) =>
       return Success(IntType);
+    case CustomLiteral(_, typ) =>
+      return Success(typ);
     case IdExpr(v) =>
       return Success(v.typ);
     case OperatorExpr(op, args) =>

@@ -471,6 +471,12 @@ module Resolver {
         r := BConst(value);
       case IConst(value) =>
         r := IConst(value);
+      case CustomLiteral(s, typeName) =>
+        var typ :- ResolveType(typeName, rs.typeMap);
+        if typ == BoolType || typ == IntType {
+          return Failure("custom literal is not allowed for a built-in type: " + Ast.CustomLiteralToString(s, typeName));
+        }
+        r := CustomLiteral(s, typ);
       case IdExpr(name) =>
         if name !in varMap {
           return Failure("undeclared variable: " + name);
