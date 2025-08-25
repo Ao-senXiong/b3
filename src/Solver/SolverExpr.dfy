@@ -6,9 +6,10 @@ module SolverExpr {
   export
     reveals SDeclaration, SDeclaration.name
     reveals SType
-    provides SType.SplitInputsOutput, SType.TypesToSExpr, SType.ToSExpr, SType.ToString
-    reveals STypedDeclaration, STypedDeclaration.typ
+    provides SType.TypesToSExpr, SType.ToSExpr, SType.ToString
+    reveals STypedDeclaration, STypedDeclaration.inputTypes, STypedDeclaration.typ
     reveals SVar
+    provides SVar.Function
     reveals SExprPrintConfig
     reveals SExpr
     provides SExpr.ToString
@@ -28,49 +29,40 @@ module SolverExpr {
   datatype SType =
     | SBool
     | SInt
-    | SArrow(inputs: seq<SType>, output: SType)
   {
-    function SplitInputsOutput(): (seq<SType>, SType) {
-      match this
-      case SArrow(inputs, output) => (inputs, output)
-      case _ => ([], this)
-    }
-
-    static function TypesToSExpr(types: seq<SType>, ghost parent: SType := SArrow(types, SBool)): SExpr
-      requires forall typ <- types :: typ < parent
-      decreases parent, 0
-    {
-      PP(SeqMap(types, (typ: SType) requires typ < parent => typ.ToSExpr()))
+    static function TypesToSExpr(types: seq<SType>): SExpr {
+      PP(SeqMap(types, (typ: SType) => typ.ToSExpr()))
     }
 
     function ToSExpr(): SExpr {
       match this
       case SBool => S("Bool")
       case SInt => S("Int")
-      case SArrow(inputs, output) =>
-        // Actually, we don't expect this ever to happen, because SMTLib does not support types like this
-        var ins := TypesToSExpr(inputs, this);
-        PP([ins, output.ToSExpr()])
     }
 
     function ToString(): string {
       match this
       case SBool => "bool"
       case SInt => "int"
-      case SArrow(inputs, output) =>
-        // TODO: Actually, we don't expect this ever to happen, because SMTLib does not support types like this
-        "(...) -> " + output.ToString()
     }
   }
 
   trait STypedDeclaration extends SDeclaration {
     const typ: SType
+    const inputTypes: seq<SType>
   }
 
   class SVar extends STypedDeclaration {
     constructor (name: string, typ: SType) {
       this.name := name;
       this.typ := typ;
+      this.inputTypes := [];
+    }
+
+    constructor Function(name: string, inputTypes: seq<SType>, typ: SType) {
+      this.name := name;
+      this.typ := typ;
+      this.inputTypes := [];
     }
   }
 
@@ -91,19 +83,19 @@ module SolverExpr {
     | PP(seq<SExpr>) // Parentheses
   {
     opaque function ToString(config: SExprPrintConfig := SExprPrintConfig(false, "")): string {
-      match this {
-        case S(name) => if name == "" then "()" else name
-        case PP(s) =>
-          if |s| > 0 then
-            var name := s[0].ToString(config);
-            var newIndent := config.ExtraIdent(2);
-            "(" + name +
-            Basics.SeqToString(s[1..], (argument: SExpr) requires argument < this =>
-                                 newIndent.Space() + argument.ToString(newIndent)
-            ) + ")"
-          else
-            "()"
-      }
+      match this
+      case S(name) =>
+        if name == "" then "()" else name
+      case PP(s) =>
+        if |s| == 0 then
+          "()"
+        else
+          var name := s[0].ToString(config);
+          var newIndent := config.ExtraIdent(2);
+          "(" + name +
+          Basics.SeqToString(s[1..], (argument: SExpr) requires argument < this =>
+                                newIndent.Space() + argument.ToString(newIndent)
+          ) + ")"
     }
     // SExpr builders
 

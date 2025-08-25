@@ -7,12 +7,12 @@ module Z3SmtSolver {
     var z3 := CreateZ3SolverEngine();
     
 
-    z3.DeclareFun("x", "()", "Int");
+    z3.DeclareFunction("x", "()", "Int");
 
     z3.Push();
     
     // Example: Check if x > y and y > x is satisfiable
-    z3.DeclareFun("y", "()", "Int");
+    z3.DeclareFunction("y", "()", "Int");
 
     // Assert x > y
     z3.Assume("(> x y)");

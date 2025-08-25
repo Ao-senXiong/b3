@@ -17,11 +17,10 @@ module Smt {
       ensures s != CMD_PUSH
       ensures s != CMD_POP
     {
-      match this {
-        case Assumption(assumed) => "(assert " + assumed + ")"
-        case Declaration(name, inputType, outputType) =>
-          "(declare-fun " + name + " " + inputType + " " + outputType + ")"
-      }
+      match this
+      case Assumption(assumed) => "(assert " + assumed + ")"
+      case Declaration(name, inputType, outputType) =>
+        "(declare-fun " + name + " " + inputType + " " + outputType + ")"
     }
   }
 
@@ -125,7 +124,7 @@ module Smt {
       var _ := SendCmd(CMD_POP);
     }
 
-    method DeclareFun(
+    method DeclareFunction(
       name: string,
       inputTpe: string,
       outputTpe: string)
