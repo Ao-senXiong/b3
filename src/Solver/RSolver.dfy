@@ -343,9 +343,11 @@ module RSolvers {
       case CustomLiteral(_, _) =>
       case Id(v) =>
         if v !in exclude && v !in state.declarations {
+          DeclareNewTypes(v.typ);
           state.DeclareSymbol(v);
         }
       case FuncAppl(op, args) =>
+        // TODO: declare the function itself, unless it's a built-in SMT function (like `+`)
         for i := 0 to |args|
           invariant Valid() && state.stack == old(state.stack)
         {
@@ -371,6 +373,19 @@ module RSolvers {
           }
         }
         DeclareNewSymbols(body, exclude');
+    }
+
+    method DeclareNewTypes(typ: SolverExpr.SType)
+      requires Valid()
+      modifies Repr
+      ensures Valid() && state.stack == old(state.stack)
+    {
+      match typ
+      case SBool | SInt =>
+      case SUserType(decl) =>
+        if decl !in state.declarations {
+          state.DeclareType(decl);
+        }
     }
   }
 

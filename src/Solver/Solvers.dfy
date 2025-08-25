@@ -10,7 +10,7 @@ module Solvers {
     provides SolverState.stack, SolverState.declarations
     reveals SolverState.IsTopMemo
     provides SolverState.Push, SolverState.Pop
-    provides SolverState.DeclareSymbol, SolverState.AddAssumption, SolverState.Prove
+    provides SolverState.DeclareType, SolverState.DeclareSymbol, SolverState.AddAssumption, SolverState.Prove
     provides Smt, Basics, SolverExpr
 
   datatype ProofResult =
@@ -25,9 +25,9 @@ module Solvers {
     ghost const Repr: set<object>
 
     const smtEngine: Smt.SolverEngine
-    var stack: List<(Memo, set<STypedDeclaration>)>
+    var stack: List<(Memo, set<SDeclaration>)>
 
-    var declarations: set<STypedDeclaration>
+    var declarations: set<SDeclaration>
 
     constructor (smtEngine: Smt.SolverEngine)
       requires smtEngine.Valid() && smtEngine.CommandStacks() == Cons(Nil, Nil)
@@ -84,6 +84,15 @@ module Solvers {
       ensures Valid() && stack == old(stack)
     {
       smtEngine.Assume(expr.ToString());
+    }
+
+    method DeclareType(decl: STypeDecl)
+      requires Valid()
+      modifies Repr
+      ensures Valid() && stack == old(stack)
+    {
+      smtEngine.DeclareSort(decl.name);
+      declarations := declarations + {decl};
     }
 
     method DeclareSymbol(decl: STypedDeclaration)
