@@ -5,7 +5,7 @@ module SolverExpr {
 
   export
     reveals SDeclaration, SDeclaration.name
-    reveals SType
+    reveals SType, STypeDecl
     provides SType.TypesToSExpr, SType.ToSExpr, SType.ToString
     reveals STypedDeclaration, STypedDeclaration.inputTypes, STypedDeclaration.typ
     reveals SVar
@@ -29,6 +29,7 @@ module SolverExpr {
   datatype SType =
     | SBool
     | SInt
+    | SUserType(decl: STypeDecl)
   {
     static function TypesToSExpr(types: seq<SType>): SExpr {
       PP(SeqMap(types, (typ: SType) => typ.ToSExpr()))
@@ -38,12 +39,14 @@ module SolverExpr {
       match this
       case SBool => S("Bool")
       case SInt => S("Int")
+      case SUserType(name) => S(decl.name)
     }
 
     function ToString(): string {
       match this
       case SBool => "bool"
       case SInt => "int"
+      case SUserType(name) => decl.name
     }
   }
 

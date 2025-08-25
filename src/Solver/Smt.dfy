@@ -11,6 +11,7 @@ module Smt {
   datatype Context =
     | Assumption(assumed: string)
     | Declaration(name: string, inputType: string, outputType: string)
+    | SortDeclaration(name: string)
   {
     function ToString(): (s: string)
       ensures s != CMD_EXIT
@@ -21,6 +22,8 @@ module Smt {
       case Assumption(assumed) => "(assert " + assumed + ")"
       case Declaration(name, inputType, outputType) =>
         "(declare-fun " + name + " " + inputType + " " + outputType + ")"
+      case SortDeclaration(name) =>
+        "(declare-sort " + name + " 0)"
     }
   }
 
@@ -122,6 +125,16 @@ module Smt {
       ensures CommandStacks() == old(CommandStacks().tail)
     {
       var _ := SendCmd(CMD_POP);
+    }
+
+    method DeclareSort(name: string)
+      requires Valid()
+      modifies this, this.process
+      ensures Valid()
+      ensures CommandStacks() == AddCommand(old(CommandStacks()), SortDeclaration(name).ToString())
+    {
+      var cmd := SortDeclaration(name).ToString();
+      var _ := SendCmd(cmd);
     }
 
     method DeclareFunction(

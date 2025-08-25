@@ -75,7 +75,7 @@ module Verifier {
     match typ
     case BoolType => SBool
     case IntType => SInt
-    case UserType(decl) => SInt // TODO
+    case UserType(decl) => SInt // TODO: SUserType(decl)
   }
 
   datatype Incarnations = Incarnations(nextSequenceCount: map<string, nat>, m: map<Variable, SVar>)
