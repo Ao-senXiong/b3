@@ -91,8 +91,7 @@ module Solvers {
       modifies Repr
       ensures Valid() && stack == old(stack)
     {
-      var (inputTypes, outputType) := decl.typ.SplitInputsOutput();
-      DeclareSymbolByName(decl.name, SType.TypesToSExpr(inputTypes), outputType.ToSExpr());
+      DeclareSymbolByName(decl.name, SType.TypesToSExpr(decl.inputTypes), decl.typ.ToSExpr());
       declarations := declarations + {decl};
     }
 
@@ -101,7 +100,7 @@ module Solvers {
       modifies Repr
       ensures Valid() && stack == old(stack)
     {
-      smtEngine.DeclareFun(name, inputTpe.ToString(), outputTpe.ToString());
+      smtEngine.DeclareFunction(name, inputTpe.ToString(), outputTpe.ToString());
     }
 
     method Prove(expr: SExpr) returns (result: ProofResult)
