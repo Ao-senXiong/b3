@@ -35,20 +35,20 @@ module Printer {
     }
     print ")\n";
 
-    for i := 0 to |func.when| {
-      Indent(IndentAmount);
-      print "when ";
-      Expression(func.when[i]);
-      print "\n";
-    }
+    if func.definition.Some? {
+      var FunctionDefinition(when, body) := func.definition.value;
+      for i := 0 to |when| {
+        Indent(IndentAmount);
+        print "when ";
+        Expression(when[i]);
+        print "\n";
+      }
 
-    match func.body
-    case None =>
-    case Some(expr) =>
       print "{\n";
       Indent(IndentAmount);
-      Expression(expr, MultipleLines(IndentAmount));
+      Expression(body, MultipleLines(IndentAmount));
       print "\n}\n";
+    }
   }
 
   method Procedure(proc: Procedure) {

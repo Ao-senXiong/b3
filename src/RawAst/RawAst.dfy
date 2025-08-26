@@ -44,9 +44,9 @@ module RawAst {
 
   // Functions
 
-  datatype Function = Function(name: string, parameters: seq<FParameter>, resultType: TypeName, when: seq<Expr>, body: Option<Expr>)
-
+  datatype Function = Function(name: string, parameters: seq<FParameter>, resultType: TypeName, definition: Option<FunctionDefinition>)
   datatype FParameter = FParameter(name: string, injective: bool, typ: TypeName)
+  datatype FunctionDefinition = FunctionDefinition(when: seq<Expr>, body: Expr)
 
   // Procedures
 
