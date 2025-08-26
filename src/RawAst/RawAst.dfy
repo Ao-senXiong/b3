@@ -6,7 +6,7 @@ module RawAst {
   // Top-level program
 
   // A raw program reflects program that has been parsed.
-  datatype Program = Program(types: seq<TypeName>, procedures: seq<Procedure>)
+  datatype Program = Program(types: seq<TypeName>, functions: seq<Function>, procedures: seq<Procedure>)
   {
     // A raw program is well-formed when its identifiers resolve to declarations and some basic
     // properties hold:
@@ -41,6 +41,12 @@ module RawAst {
       typ in BuiltInTypes || typ in types
     }
   }
+
+  // Functions
+
+  datatype Function = Function(name: string, parameters: seq<FParameter>, resultType: TypeName, when: seq<Expr>, body: Option<Expr>)
+
+  datatype FParameter = FParameter(name: string, injective: bool, typ: TypeName)
 
   // Procedures
 

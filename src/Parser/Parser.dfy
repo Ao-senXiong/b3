@@ -19,8 +19,8 @@ module Parser {
   const TopLevel: B<Program> :=
     W.e_I(RepTill(parseTopLevelDecl.I_e(W), EOS)).M(
       decls =>
-        var (tt, pp) := SeparateTopLevelDecls(decls);
-        Program(tt, pp))
+        var (tt, ff, pp) := SeparateTopLevelDecls(decls);
+        Program(tt, ff, pp))
 
   // ----- Parser helpers
 
@@ -122,31 +122,56 @@ module Parser {
 
   // ----- Top-level declarations
 
-  datatype TopLevelDecl = TType(typeDecl: Types.TypeName) | TProc(procDecl: Procedure)
+  datatype TopLevelDecl = TType(typeDecl: Types.TypeName) | TFunc(funcDecl: Function) | TProc(procDecl: Procedure)
 
   const parseTopLevelDecl: B<TopLevelDecl> :=
     Or([
          parseTypeDecl.M(decl => TType(decl)),
+         parseFunctionDecl.M(decl => TFunc(decl)),
          parseProcDecl.M(decl => TProc(decl))
        ])
 
-  function SeparateTopLevelDecls(decls: seq<TopLevelDecl>): (seq<Types.TypeName>, seq<Procedure>) {
-    if decls == [] then ([], []) else
-    var (tt, pp) := SeparateTopLevelDecls(decls[1..]);
-    match decls[0]
-    case TType(typeDecl) => ([typeDecl] + tt, pp)
-    case TProc(procDecl) => (tt, [procDecl] + pp)
+  function SeparateTopLevelDecls(decls: seq<TopLevelDecl>): (seq<Types.TypeName>, seq<Function>, seq<Procedure>) {
+    if decls == [] then ([], [], []) else
+      var (tt, ff, pp) := SeparateTopLevelDecls(decls[1..]);
+      match decls[0]
+      case TType(typeDecl) => ([typeDecl] + tt, ff, pp)
+      case TFunc(funcDecl) => (tt, [funcDecl] + ff, pp)
+      case TProc(procDecl) => (tt, ff, [procDecl] + pp)
   }
 
   const parseTypeDecl: B<Types.TypeName> :=
     T("type").e_I(parseId)
 
+  const parseFunctionDecl: B<Function> :=
+    T("function").e_I(parseId).Then(name =>
+      parseParenthesized(parseCommaDelimitedSeq(parseFunctionFormal)).Then(formals =>
+        Sym(":").e_I(parseType).Then(resultType =>
+          parseFunctionDefinition(name, formals, resultType)
+        )))
+
+  const parseFunctionFormal: B<FParameter> :=
+    T("injective").Option().M(opt => opt != None).Then(injective =>
+      parseIdType.M2(MId, (name, typ) => FParameter(name, injective, typ))
+    )
+
+  function parseFunctionDefinition(name: string, formals: seq<FParameter>, resultType: Types.TypeName): B<Function> {
+    parseWhenClause.Rep().I_e(Sym("{")).I_I(parseExpr).I_e(Sym("}")).Option().M(
+      (optDefinition: Option<(seq<Expr>, Expr)>) =>
+        match optDefinition
+        case None => Function(name, formals, resultType, [], None)
+        case Some((when, body)) => Function(name, formals, resultType, when, Some(body))
+    )
+  }
+
+  const parseWhenClause: B<Expr> :=
+    T("when").e_I(parseExpr)
+
   const parseProcDecl: B<Procedure> :=
     T("procedure")
     .e_I(parseId).Then(
       name =>
-        parseParenthesized(
-          parseCommaDelimitedSeq(parseFormal)).Then(
+        parseParenthesized(parseCommaDelimitedSeq(parseProcFormal)).Then(
           formals =>
             var c := GetRecMapSel(stmtGallery);
             parseAExprSeq("requires", c).Then(
@@ -169,7 +194,7 @@ module Parser {
          Nothing.M(_ => ParameterMode.In)
        ])
 
-  const parseFormal: B<Parameter> :=
+  const parseProcFormal: B<Parameter> :=
     parseParameterMode.Then(
       (mode: ParameterMode) =>
         parseIdType.M2(MId, (name, typ) => Parameter(name, mode, typ))
@@ -360,8 +385,8 @@ module Parser {
     Or([
       Sym("==").M(_ => (Operator.Eq, false)),
       Sym("!=").M(_ => (Operator.Neq, false)),
-      Sym("<").M(_ => (Operator.Less, false)),
       Sym("<=").M(_ => (Operator.AtMost, false)),
+      Sym("<").M(_ => (Operator.Less, false)),
       Sym(">=").M(_ => (Operator.AtMost, true)),
       Sym(">").M(_ => (Operator.Less, true))
     ])
@@ -399,7 +424,7 @@ module Parser {
   function parsePrimaryExpr(c: ExprRecSel): B<Expr> {
     Or([
       T("if").e_I(c("expr")).Then(guard =>
-        c("expr").I_I(T("else").e_I(c("expr"))).M2(MId, (thn, els) => OperatorExpr(IfThenElse, [guard, thn, els]))
+        T("then").e_I(c("expr")).I_I(T("else").e_I(c("expr"))).M2(MId, (thn, els) => OperatorExpr(IfThenElse, [guard, thn, els]))
       ),
       T("val").e_I(parseIdType.Then(p => var (name: string, typ: Types.TypeName) := p;
         Sym(":=").e_I(c("expr")).I_I(c("expr")).M2(MId, (rhs, body) => LetExpr(name, typ, rhs, body)))
