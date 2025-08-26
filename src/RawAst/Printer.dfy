@@ -10,6 +10,10 @@ module Printer {
       print "\n";
       TypeDecl(b3.types[i]);
     }
+    for i := 0 to |b3.functions| {
+      print "\n";
+      FunctionDecl(b3.functions[i]);
+    }
     for i := 0 to |b3.procedures| {
       print "\n";
       Procedure(b3.procedures[i]);
@@ -18,6 +22,33 @@ module Printer {
 
   method TypeDecl(ty: Types.TypeName) {
     print "type ", ty, "\n";
+  }
+
+  method FunctionDecl(func: Function) {
+    print "function ", func.name, "(";
+    var params := func.parameters;
+    var sep := "";
+    for i := 0 to |params| {
+      var param := params[i];
+      print sep, if param.injective then "injective " else "", param.name, ": ", param.typ;
+      sep := ", ";
+    }
+    print ")\n";
+
+    for i := 0 to |func.when| {
+      Indent(IndentAmount);
+      print "when ";
+      Expression(func.when[i]);
+      print "\n";
+    }
+
+    match func.body
+    case None =>
+    case Some(expr) =>
+      print "{\n";
+      Indent(IndentAmount);
+      Expression(expr, MultipleLines(IndentAmount));
+      print "\n}\n";
   }
 
   method Procedure(proc: Procedure) {
@@ -243,27 +274,64 @@ module Printer {
     print "\n";
   }
 
-  method Expression(e: Expr) {
-    match e
+  datatype ExprFormatOption = SingleLine | MultipleLines(indent: nat)
+  {
+    method Space() {
+      match this
+      case SingleLine => print " ";
+      case MultipleLines(indent) =>
+        print "\n";
+        Indent(indent);
+    }
+
+    function More(): ExprFormatOption {
+      match this
+      case SingleLine => this
+      case MultipleLines(indent) =>
+        MultipleLines(indent + IndentAmount)
+    }
+  }
+
+  // Print "expr" starting from the current position and ending without a final newline.
+  // If "format" allows, break lines at an indent of "format.indent".
+  method Expression(expr: Expr, format: ExprFormatOption := SingleLine) {
+    // TODO: add parentheses around the entire expression when necessary
+    match expr
     case BLiteral(value) => print value;
     case ILiteral(value) => print value;
     case CustomLiteral(s, typ) => print "|", s, ": ", typ, "|";
     case IdExpr(name) => print name;
     case OperatorExpr(op, args) =>
       if op == IfThenElse && op.ArgumentCount() == |args| {
+        var ind := format.More();
         print "if ";
         Expression(args[0]);
-        print " then ";
-        Expression(args[1]);
-        print " else ";
-        Expression(args[2]);
+        print " then";
+        ind.Space();
+        Expression(args[1], ind);
+        format.Space();
+        print "else";
+        if args[2].OperatorExpr? && args[2].op == IfThenElse {
+          // print as cascading if
+          print " ";
+          Expression(args[2], format);
+        } else {
+          ind.Space();
+          Expression(args[2], ind);
+        }
       } else if op.ArgumentCount() == 1 == |args| {
         print op.ToString();
         Expression(args[0]);
       } else if op.ArgumentCount() == 2 == |args| {
         Expression(args[0]);
-        print " ", op.ToString(), " ";
-        Expression(args[1]);
+        print " ", op.ToString();
+        if op in {Operator.LogicalImp, Operator.LogicalAnd, Operator.LogicalOr} {
+          format.Space();
+          Expression(args[1], format);
+        } else {
+          print " ";
+          Expression(args[1]);
+        }
       } else {
         print op.ToString(), "(";
         ExpressionList(args);
@@ -273,23 +341,31 @@ module Printer {
       print name, "(";
       ExpressionList(args);
       print ")";
-    case LabeledExpr(name, expr) =>
+    case LabeledExpr(name, body) =>
       print name, ": ";
-      Expression(expr);
+      Expression(body, format);
     case LetExpr(name, typ, rhs, body) =>
       IdTypeDecl("val ", name, typ);
       print " := ";
       Expression(rhs);
-      print " ";
-      Expression(body);
+      format.Space();
+      Expression(body, format);
     case QuantifierExpr(univ, name, typ, triggers, body) =>
       IdTypeDecl(if univ then "forall " else "exists ", name, typ);
-      for i := 0 to |triggers| {
-        print " trigger ";
-        ExpressionList(triggers[i].exprs);
+      var ind := format.More();
+      if triggers == [] {
+        print " ";
+      } else {
+        for i := 0 to |triggers| {
+          ind.Space();
+          print "trigger ";
+          ExpressionList(triggers[i].exprs);
+        }
+        format.Space();
       }
-      print " :: ";
-      Expression(body);
+      print "::";
+      ind.Space();
+      Expression(body, ind);
   }
 
   method ExpressionList(exprs: seq<Expr>) {
