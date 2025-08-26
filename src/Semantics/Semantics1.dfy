@@ -55,6 +55,19 @@ module Semantic {
     ghost predicate Holds() {
       forall s: State :: IsDefinedOn(s.Keys) ==> s.Eval(this)
     }
+
+    lemma EvalFVarsLemma(s1: State, s2: State) 
+      requires IsDefinedOn(s1.Keys)
+      requires IsDefinedOn(s2.Keys)
+      requires forall v: Variable :: v in FVars() ==> s1[v] == s2[v]
+      ensures s1.Eval(this) == s2.Eval(this)
+
+    { 
+      match this
+      case Forall(v, body) => forall x: bool { body.EvalFVarsLemma(s1.Update(v, x), s2.Update(v, x)); }
+      case _ =>
+    }
+      
   }
 
   function Eq(e1: Expr, e2: Expr): Expr {
@@ -63,6 +76,13 @@ module Semantic {
 
   lemma FVarsEqLemma(e1: Expr, e2: Expr)
     ensures Eq(e1, e2).FVars() == e1.FVars() + e2.FVars()
+  {  }
+
+  lemma EvalEqLemma(e1: Expr, e2: Expr, s: State)
+    requires e1.IsDefinedOn(s.Keys)
+    requires e2.IsDefinedOn(s.Keys)
+    requires s.Eval(e1) == s.Eval(e2)
+    ensures s.Eval(Eq(e1, e2))
   {  }
     
   datatype Stmt =
@@ -160,10 +180,9 @@ module Semantic {
               && BigStep(s1, b, z)
             case _ => z == w
         }
-    case Assign(lhs, rhs) =>
-      && rhs.IsDefinedOn(a.Keys) 
-      && a.Eval(rhs) 
-      && z == Ok(a.Update(lhs, a.Eval(rhs)))
+    case Assign(x, v) =>
+      && v.IsDefinedOn(a.Keys) 
+      && z == Ok(a.Update(x, a.Eval(v)))
     case VarDecl(v, s) => exists b :: BigStep(s, a.Update(v, b), z)
     // case While(guard, inv, body) =>
     //   if a.Eval(guard) then
@@ -219,6 +238,7 @@ module Semantic {
     function FreshVar(): Variable
       ensures {:axiom} FreshVar() !in incarnation.Keys
       ensures {:axiom} FreshVar() !in bVars
+      ensures {:axiom} FreshVar() !in FVars()
 
     // {
     //     // // assert !incarnation.Keys != {};
@@ -288,31 +308,35 @@ module Semantic {
       Context(ctx, incarnation, bVars)
     }
 
-    function AddEq(v: Variable, e: Expr): Context
+    method AddEq(v: Variable, e: Expr) returns (vNew: Variable, context: Context)
       requires v in incarnation.Keys
       requires Valid()
-      ensures AddEq(v, e).Valid()
-      ensures incarnation.Keys == AddEq(v, e).incarnation.Keys
-      ensures ctx <= AddEq(v, e).ctx
+      ensures context.Valid()
+      ensures incarnation.Keys == context.incarnation.Keys
+      ensures ctx + [Eq(Var(vNew), Substitute(e))] == context.ctx
+      ensures incarnation[v := vNew] == context.incarnation
+      ensures bVars == context.bVars
+      ensures vNew !in incarnation.Keys
+      ensures vNew !in bVars
+      ensures vNew !in FVars()
     {
-      var vNew := FreshVar();
+      vNew := FreshVar();
       var ctx' := ctx + [Eq(Var(vNew), Substitute(e))];
       FVarsEqLemma(Var(vNew), Substitute(e));
       FVarsConjUnionLemma(ctx, [Eq(Var(vNew), Substitute(e))]);
       var incarnation' := incarnation[v := vNew];
-      Context(ctx', incarnation', bVars)
+      context := Context(ctx', incarnation', bVars);
     }
     
     // TODO: Fix this
     // function AddVar(v: Variable): Context
     //   requires Valid()
     //   ensures AddVar(v).Valid()
-    //   ensures incarnation.Keys == AddVar(v).incarnation.Keys + {v}
+    //   ensures incarnation.Keys + {v} == AddVar(v).incarnation.Keys
     //   ensures ctx == AddVar(v).ctx
     // {
     //   var vNew := FreshVar();
     //   var incarnation' := incarnation[v := vNew];
-    //   assert incarnation'.Keys == incarnation.Keys + {v};
     //   Context(ctx, incarnation', bVars)
     // }
     
@@ -330,7 +354,9 @@ module Semantic {
 
     ghost predicate IsSatisfiedOn(s: State) 
     {
-      IsDefinedOn(s.Keys) && forall e <- ctx :: s.Eval(e)
+      && IsDefinedOn(s.Keys) 
+      && incarnation.Values <= s.Keys
+      && forall e <- ctx :: s.Eval(e)
     }
 
     ghost predicate Entails(e: Expr) 
@@ -405,7 +431,7 @@ module Semantic {
       requires Valid()
       requires e.IsDefinedOn(incarnation.Keys)
       requires IsDefinedOn(s.Keys)
-      // requires incarnation.Values <= s.Keys
+      requires incarnation.Values <= s.Keys
       ensures Substitute(e).IsDefinedOn(s.Keys)
       ensures (
         SubstituteIsDefinedOnLemma(e); 
@@ -475,6 +501,16 @@ Plan for adding:
 
 // method VCGenAux(s: Stmt, context_in: Context, sts: set<State>, out: Except<State>) returns (result: set<Expr>, context: Context) 
 
+lemma BigStepAssignLemma(s: State, v: Variable, x: Expr, context: Context, out: Except<State>) returns (s': State)
+  requires context.IsSatisfiedOn(s)
+  requires BigStep(Assign(v, x), context.AdjustState(s), out)
+  ensures context.IsSatisfiedOn(s')
+  ensures context.incarnation.Values <= s'.Keys
+  ensures Ok(context.AdjustState(s')) == out {
+    assume {:axiom} false;
+  }
+  
+
 method VCGenAux(s: Stmt, context_in: Context) returns (result: set<Expr>, context: Context) 
     requires s.BVars() <= context_in.bVars
     requires s.IsDefinedOn(context_in.incarnation.Keys)
@@ -482,12 +518,16 @@ method VCGenAux(s: Stmt, context_in: Context) returns (result: set<Expr>, contex
     requires context_in.Valid()
     ensures context.Valid()
     ensures context_in.bVars == context.bVars
+    ensures context_in.incarnation.Keys <= context.incarnation.Keys
     ensures 
       (forall e <- result :: e.Holds()) ==> 
         forall st: State, out: Except<State> :: 
           context_in.IsSatisfiedOn(st) ==>
-          // BigStep(context_in.Subst(s), st, out) ==> out.Ok?
-          BigStep(s, context_in.AdjustState(st), out) ==> out.Ok?
+          BigStep(s, context_in.AdjustState(st), out) ==>
+          exists st': State :: 
+            && context.incarnation.Values <= st'.Keys
+            && Ok(context.AdjustState(st')) == out
+            && context.IsSatisfiedOn(st')
   {
     context := context_in;
     match s
@@ -495,7 +535,7 @@ method VCGenAux(s: Stmt, context_in: Context) returns (result: set<Expr>, contex
       result := {context.MkEntailment(e)};
       if context.MkEntailment(e).Holds() {
         forall st: State, out: Except<State> | context.IsSatisfiedOn(st) && BigStep(Check(e), context.AdjustState(st), out) 
-           ensures out.Ok? {
+           ensures out == Ok(context.AdjustState(st)) {
             assert context.AdjustState(st).Eval(e) by { 
               context.AdjustStateSubstituteLemma(st, e);
               IsDefinedOnConjLemma(context.ctx, st);
@@ -508,33 +548,60 @@ method VCGenAux(s: Stmt, context_in: Context) returns (result: set<Expr>, contex
       context := context.Add(e);
       result := {};
       FVarsConjUnionLemma(context_in.ctx, [context_in.Substitute(e)]);
+      forall st: State, out: Except<State> | context_in.IsSatisfiedOn(st) && BigStep(Assume(e), context_in.AdjustState(st), out) 
+        ensures out == Ok(context.AdjustState(st))
+        ensures context.IsSatisfiedOn(st)
+        ensures context.incarnation.Values <= st.Keys {
+        context_in.SubstituteIsDefinedOnLemma(e);
+        context_in.AdjustStateSubstituteLemma(st, e); 
+      }
     case Assign(v, x) =>
-      context := context.AddEq(v, x);
+      var vNew;
+      vNew, context := context.AddEq(v, x);
       result := {};
-    // case VarDecl(v, s) =>
-    //   context := context.AddVar(v);
-    //   result := {};
+      forall st: State, out: Except<State> | 
+        && context_in.IsSatisfiedOn(st)  
+        && BigStep(Assign(v, x), context_in.AdjustState(st), out) 
+        ensures (exists st': State :: 
+            && context.incarnation.Values <= st'.Keys
+            && Ok(context.AdjustState(st')) == out
+            && context.IsSatisfiedOn(st')) {
+          context_in.SubstituteIsDefinedOnLemma(x);
+          var v' := st.Eval(context_in.Substitute(x));
+          var st' := st.Update(vNew, v');
 
-    // case Seq(s0, s1) =>
-    //   var r0, context' := VCGenAux(s0, context);
-    //   var r1;
-    //   r1, context := VCGenAux(s1, context');
-    //   result := r0 + r1;
-    //   if (forall e <- r0 + r1 :: e.Holds()) {
-    //     forall st: State, out: Except<State> | context_in.IsSatisfiedOn(st) && BigStep(context_in.SubstituteStmt(Seq(s0, s1)), st, out)
-    //       ensures out.Ok? {
-    //         var st' :| 
-    //           BigStep(context_in.SubstituteStmt(s0), st, Ok(st')) && 
-    //           context_in.SubstituteStmt(s1).IsDefinedOn(st'.Keys) &&
-    //           BigStep(context_in.SubstituteStmt(s1), st', out);
-    //         assert (forall e <- r1 :: e.Holds());
-    //         var st'' :|
-    //           context'.IsSatisfiedOn(st'') &&
-    //           BigStep(context'.SubstituteStmt(s1), st'', out) by  {
-
-    //         }
-    //       }
-    //   }
+          context_in.SubstituteIsDefinedOnLemma(x);
+          FVarsEqLemma(Var(vNew), context_in.Substitute(x));
+          FVarsConjUnionLemma(context_in.ctx, [Eq(Var(vNew), context_in.Substitute(x))]);
+          
+          assert context.IsSatisfiedOn(st') by {
+            context_in.Substitute(x).EvalFVarsLemma(st, st');
+            EvalEqLemma(Var(vNew), context_in.Substitute(x), st');
+            assert forall e: Expr :: e.FVars() <= context_in.FVars() ==> st.Eval(e) ==> st'.Eval(e) by {
+              forall e: Expr | e.FVars() <= context_in.FVars() && st.Eval(e) { 
+                e.EvalFVarsLemma(st, st');
+              }
+            }
+          }
+          assert context.AdjustState(st') == context_in.AdjustState(st).Update(v, context_in.AdjustState(st).Eval(x)) by {
+              context_in.AdjustStateSubstituteLemma(st, x);
+          }
+        }
+    case Seq(s0, s1) =>
+      var res0, context' := VCGenAux(s0, context);
+      var res1, context'' := VCGenAux(s1, context');
+      result := res0 + res1;
+      context := context'';
+      if (forall e <- res0 + res1 :: e.Holds()) {
+        forall st: State, out: Except<State> | context_in.IsSatisfiedOn(st) && BigStep(Seq(s0, s1), context_in.AdjustState(st), out)
+          ensures (exists st': State :: 
+            && context.incarnation.Values <= st'.Keys
+            && Ok(context.AdjustState(st')) == out
+            && context.IsSatisfiedOn(st')) {
+            assert BigStep(Seq(s0, s1), context_in.AdjustState(st), out);
+        }
+      }
+    
     case _ => assume {:axiom} false;
 
     // case While(guard, inv, body) =>
