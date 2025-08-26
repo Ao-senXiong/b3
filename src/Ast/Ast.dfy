@@ -11,10 +11,11 @@ module Ast {
     reveals CallArgument.CorrespondingMode
     provides Procedure.Name, Procedure.Parameters, Procedure.Pre, Procedure.Post, Procedure.Body
     reveals Procedure.SignatureWellFormed
-    reveals Function
-    provides Function.Name
+    reveals Function, FParameter, FunctionDefinition
+    provides Function.Name, Function.Parameters, Function.Definition, FParameter.injective
+    reveals Function.SignatureWellFormed, Function.WellFormed, FParameter.WellFormed, FunctionDefinition.WellFormed
     provides Variable.name, Variable.typ
-    provides Variable.IsMutable, LocalVariable.IsMutable, Parameter.IsMutable
+    provides Variable.IsMutable, LocalVariable.IsMutable, Parameter.IsMutable, FParameter.IsMutable
     provides Parameter.mode, Parameter.oldInOut
     provides Label.Name
     reveals Expr.ExprType, Expr.HasType
@@ -39,6 +40,15 @@ module Ast {
       // procedures are well-formed
       && (forall proc <- procedures :: proc.WellFormed())
     }
+  }
+
+  trait Variable extends object {
+    const name: string
+    const typ: Type
+
+    predicate IsMutable()
+
+    function DeclToString(): string
   }
 
   class Procedure {
@@ -78,21 +88,93 @@ module Ast {
     }
   }
 
-  class Function {
-    const Name: string
+  class Parameter extends Variable {
+    const mode: ParameterMode
+    const oldInOut: Option<Variable>
 
-    constructor (name: string) {
-      Name := name;
+    constructor (name: string, mode: ParameterMode, typ: Type, oldInOut: Option<Variable>)
+      ensures this.name == name && this.mode == mode && this.typ == typ && this.oldInOut == oldInOut
+    {
+      this.name, this.mode, this.typ := name, mode, typ;
+      this.oldInOut := oldInOut;
+    }
+
+    predicate WellFormed() {
+      oldInOut.Some? <==> mode == ParameterMode.InOut
+    }
+
+    predicate IsMutable() {
+      mode != ParameterMode.In
+    }
+
+    function DeclToString(): string {
+      name + ": " + typ.ToString()
     }
   }
 
-  trait Variable extends object {
-    const name: string
-    const typ: Type
+  type ParameterMode = Raw.ParameterMode
 
-    predicate IsMutable()
+  class Function {
+    const Name: string
+    const Parameters: seq<FParameter>
+    var Definition: Option<FunctionDefinition>
 
-    function DeclToString(): string
+    constructor (name: string, parameters: seq<FParameter>)
+      ensures Name == name && Parameters == parameters && Definition == None
+    {
+      Name := name;
+      Parameters := parameters;
+      Definition := None;
+    }
+
+    ghost predicate SignatureWellFormed(func: Raw.Function) {
+      && Name == func.name
+      && (forall formal <- Parameters :: Raw.LegalVariableName(formal.name))
+      && (forall i, j :: 0 <= i < j < |Parameters| ==> Parameters[i].name != Parameters[j].name)
+      && |Parameters| == |func.parameters|
+      && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].name == func.parameters[i].name)
+      && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].injective == func.parameters[i].injective)
+      && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].WellFormed())
+    }
+
+    predicate WellFormed()
+      reads this
+    {
+      && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].WellFormed())
+      && (forall i, j :: 0 <= i < j < |Parameters| ==> Parameters[i].name != Parameters[j].name)
+      && (Definition == None || Definition.value.WellFormed())
+    }
+  }
+
+  datatype FunctionDefinition = FunctionDefinition(when: seq<Expr>, body: Expr)
+  {
+    predicate WellFormed() {
+      && (forall e <- when :: e.WellFormed())
+      && (body.WellFormed())
+      // TODO: make sure free variables of when/body are the expected ones
+    }
+  }
+
+  class FParameter extends Variable {
+    const injective: bool
+
+    constructor (name: string, injective: bool, typ: Type)
+      ensures this.name == name && this.injective == injective && this.typ == typ
+    {
+      this.name, this.injective, this.typ := name, injective, typ;
+    }
+
+    predicate WellFormed() {
+      true
+    }
+
+    predicate IsMutable() {
+      false
+    }
+
+    function DeclToString(): string {
+      (if injective then "injective " else "") + name + ": " + typ.ToString()
+    }
   }
 
   class LocalVariable extends Variable {
@@ -111,32 +193,6 @@ module Ast {
       (if isMutable then "var " else "val ") + name + ": " + typ.ToString()
     }
   }
-
-  class Parameter extends Variable {
-    const mode: ParameterMode
-    const oldInOut: Option<Variable>
-
-    constructor (name: string, mode: ParameterMode, typ: Type, oldInOut: Option<Variable>)
-      ensures this.name == name && this.mode == mode && this.typ == typ && this.oldInOut == oldInOut
-    {
-      this.name, this.mode, this.typ := name, mode, typ;
-      this.oldInOut := oldInOut;
-    }
-
-    predicate WellFormed() {
-      oldInOut.Some? <==> mode == ParameterMode.InOut
-    }
-
-     predicate IsMutable() {
-      mode != ParameterMode.In
-    }
-
-    function DeclToString(): string {
-      name + ": " + typ.ToString()
-    }
-  }
-
-  type ParameterMode = Raw.ParameterMode
 
   class Label {
     const Name: string

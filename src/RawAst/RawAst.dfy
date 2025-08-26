@@ -45,8 +45,43 @@ module RawAst {
   // Functions
 
   datatype Function = Function(name: string, parameters: seq<FParameter>, resultType: TypeName, definition: Option<FunctionDefinition>)
+  {
+    predicate SignatureWellFormed(b3: Program) {
+      // parameters have legal names and valid types
+      && (forall p <- parameters :: LegalVariableName(p.name) && b3.IsType(p.typ))
+      // formal parameters have distinct names
+      && FParameter.UniqueNames(parameters)
+    }
+
+    predicate WellFormed(b3: Program) {
+      && SignatureWellFormed(b3)
+      && match definition {
+        case None => true
+        case Some(def) =>
+          // set up the scopes
+          var bodyScope := set p <- parameters :: p.name;
+          var whenScope := bodyScope; // TODO: add the `forall` variables when these are parsed
+          def.WellFormed(b3, whenScope, bodyScope)
+      }
+    }
+  }
+
   datatype FParameter = FParameter(name: string, injective: bool, typ: TypeName)
+  {
+    static predicate UniqueNames(parameters: seq<FParameter>) {
+      && (forall i, j :: 0 <= i < j < |parameters| ==> parameters[i].name != parameters[j].name)
+    }
+  }
+
   datatype FunctionDefinition = FunctionDefinition(when: seq<Expr>, body: Expr)
+  {
+    predicate WellFormed(b3: Program, whenScope: set<string>, bodyScope: set<string>) {
+      // when-conditions are well-formed
+      && (forall e <- when :: e.WellFormed(b3, whenScope))
+      // body is well-formed
+      && (body.WellFormed(b3, bodyScope))
+    }
+  }
 
   // Procedures
 
@@ -58,6 +93,7 @@ module RawAst {
       // formal parameters have distinct names
       && Parameter.UniqueNames(parameters)
     }
+    
     predicate WellFormed(b3: Program) {
       && SignatureWellFormed(b3)
       // set up the scopes: precondition, postcondition, body
