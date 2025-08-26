@@ -124,8 +124,8 @@ module TypeChecker {
       TypeCorrectExpr(body)
     case LetExpr(v, rhs, body) =>
       rhs.HasType(v.typ) && TypeCorrectExpr(body)
-    case QuantifierExpr(_, _, triggers, body) =>
-      (forall tr <- triggers, e <- tr.exprs :: assert tr.WellFormed(); TypeCorrectExpr(e)) &&
+    case QuantifierExpr(_, _, patterns, body) =>
+      (forall tr <- patterns, e <- tr.exprs :: assert tr.WellFormed(); TypeCorrectExpr(e)) &&
       TypeCorrectExpr(body) && body.HasType(BoolType)
   }
 
@@ -302,11 +302,11 @@ module TypeChecker {
         return Failure("types of bound variable and the RHS must agree; got " + v.typ.ToString() + " and " + rhsType.ToString());
       }
       r := CheckExpr(body);
-    case QuantifierExpr(_, v, triggers, body) =>
-      for m := 0 to |triggers|
-        invariant forall tr <- triggers[..m], e <- tr.exprs :: assert tr.WellFormed(); TypeCorrectExpr(e)
+    case QuantifierExpr(_, v, patterns, body) =>
+      for m := 0 to |patterns|
+        invariant forall tr <- patterns[..m], e <- tr.exprs :: assert tr.WellFormed(); TypeCorrectExpr(e)
       {
-        var tr := triggers[m];
+        var tr := patterns[m];
         assert tr.WellFormed();
         for n := 0 to |tr.exprs|
           invariant forall e <- tr.exprs[..n] :: TypeCorrectExpr(e)

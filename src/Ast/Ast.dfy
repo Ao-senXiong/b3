@@ -21,7 +21,7 @@ module Ast {
     provides Expr.ToString
     provides Expr.CreateTrue, Expr.CreateFalse, Expr.CreateNegation, Expr.CreateLet, Expr.CreateForall
     provides Expr.CreateAnd, Expr.CreateBigAnd, Expr.CreateOr, Expr.CreateBigOr
-    reveals Trigger, Trigger.WellFormed
+    reveals Pattern, Pattern.WellFormed
     provides CustomLiteralToString
     provides Raw, Types, Wrappers
 
@@ -233,7 +233,7 @@ module Ast {
     | FunctionCallExpr(func: Function, args: seq<Expr>)
     | LabeledExpr(lbl: Label, body: Expr)
     | LetExpr(v: Variable, rhs: Expr, body: Expr)
-    | QuantifierExpr(univ: bool, v: Variable, triggers: seq<Trigger>, body: Expr)
+    | QuantifierExpr(univ: bool, v: Variable, patterns: seq<Pattern>, body: Expr)
   {
     function ExprType(): Type {
       match this
@@ -277,8 +277,8 @@ module Ast {
         body.WellFormed()
       case LetExpr(_, rhs, body) =>
         rhs.WellFormed() && body.WellFormed()
-      case QuantifierExpr(_, _, triggers, body) =>
-        && (forall tr <- triggers :: tr.WellFormed())
+      case QuantifierExpr(_, _, patterns, body) =>
+        && (forall tr <- patterns :: tr.WellFormed())
         && body.WellFormed()
     }
 
@@ -309,11 +309,11 @@ module Ast {
         ParenthesisWrap(opStrength <= contextStrength,
           v.DeclToString() + " := " + rhs.ToString() + " " + body.ToString(opStrength)
         )
-      case QuantifierExpr(univ, v, triggers, body) =>
+      case QuantifierExpr(univ, v, patterns, body) =>
         var opStrength := Operator.EndlessOperatorBindingStrength;
         ParenthesisWrap(opStrength <= contextStrength,
           var opStrength := Operator.EndlessOperatorBindingStrength;
-          (if univ then "forall " else "exists ") + v.DeclToString() + Trigger.ListToString(triggers) + " :: " + body.ToString(opStrength)
+          (if univ then "forall " else "exists ") + v.DeclToString() + Pattern.ListToString(patterns) + " :: " + body.ToString(opStrength)
         )
     }
 
@@ -385,17 +385,17 @@ module Ast {
     }
   }
 
-  datatype Trigger = Trigger(exprs: seq<Expr>)
+  datatype Pattern = Pattern(exprs: seq<Expr>)
   {
     predicate WellFormed() {
       forall e <- exprs :: e.WellFormed()
     }
 
-    static function ListToString(triggers: seq<Trigger>): string {
-      if triggers == [] then
+    static function ListToString(patterns: seq<Pattern>): string {
+      if patterns == [] then
         ""
       else
-        " trigger " + Expr.ListToString(triggers[0].exprs) + ListToString(triggers[1..])
+        " pattern " + Expr.ListToString(patterns[0].exprs) + ListToString(patterns[1..])
     }
   }
 

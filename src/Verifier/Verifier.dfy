@@ -141,8 +141,8 @@ module Verifier {
         REval(body)
       case LetExpr(v, rhs, body) =>
         RExpr.Boolean(true) //RExpr.LetExpr(v, REval(rhs), REval(body)) // TODO: this requires RExpr and Expr have the same Variables.
-      case QuantifierExpr(univ, v, triggers, body) =>
-        var trs := REvalTriggers(triggers);
+      case QuantifierExpr(univ, v, patterns, body) =>
+        var trs := REvalPatterns(patterns);
         var b := REval(body);
         RExpr.Boolean(true) //RExpr.QuantifierExpr(univ, v, trs, b) // TODO: this requires RExpr and Expr have the same Variables.
     }
@@ -157,14 +157,14 @@ module Verifier {
         [REval(exprs[0])] + REvalList(exprs[1..])
     }
 
-    function REvalTriggers(triggers: seq<Trigger>): seq<seq<RSolvers.RExpr>>
-      requires forall tr <- triggers :: tr.WellFormed()
+    function REvalPatterns(patterns: seq<Pattern>): seq<seq<RSolvers.RExpr>>
+      requires forall tr <- patterns :: tr.WellFormed()
     {
-      if triggers == [] then
+      if patterns == [] then
         []
       else
-        assert triggers[0].WellFormed();
-        [REvalList(triggers[0].exprs)] + REvalTriggers(triggers[1..])
+        assert patterns[0].WellFormed();
+        [REvalList(patterns[0].exprs)] + REvalPatterns(patterns[1..])
     }
   }
 

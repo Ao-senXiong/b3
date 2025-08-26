@@ -350,16 +350,16 @@ module Printer {
       Expression(rhs);
       format.Space();
       Expression(body, format);
-    case QuantifierExpr(univ, name, typ, triggers, body) =>
+    case QuantifierExpr(univ, name, typ, patterns, body) =>
       IdTypeDecl(if univ then "forall " else "exists ", name, typ);
       var ind := format.More();
-      if triggers == [] {
+      if patterns == [] {
         print " ";
       } else {
-        for i := 0 to |triggers| {
+        for i := 0 to |patterns| {
           ind.Space();
-          print "trigger ";
-          ExpressionList(triggers[i].exprs);
+          print "pattern ";
+          ExpressionList(patterns[i].exprs);
         }
         format.Space();
       }
