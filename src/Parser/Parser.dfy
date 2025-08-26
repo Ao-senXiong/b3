@@ -147,22 +147,17 @@ module Parser {
     T("function").e_I(parseId).Then(name =>
       parseParenthesized(parseCommaDelimitedSeq(parseFunctionFormal)).Then(formals =>
         Sym(":").e_I(parseType).Then(resultType =>
-          parseFunctionDefinition(name, formals, resultType)
-        )))
+          parseFunctionDefinition.Option().M(optDefinition =>
+            Function(name, formals, resultType, optDefinition)
+          ))))
 
   const parseFunctionFormal: B<FParameter> :=
     T("injective").Option().M(opt => opt != None).Then(injective =>
       parseIdType.M2(MId, (name, typ) => FParameter(name, injective, typ))
     )
 
-  function parseFunctionDefinition(name: string, formals: seq<FParameter>, resultType: Types.TypeName): B<Function> {
-    parseWhenClause.Rep().I_e(Sym("{")).I_I(parseExpr).I_e(Sym("}")).Option().M(
-      (optDefinition: Option<(seq<Expr>, Expr)>) =>
-        match optDefinition
-        case None => Function(name, formals, resultType, [], None)
-        case Some((when, body)) => Function(name, formals, resultType, when, Some(body))
-    )
-  }
+  const parseFunctionDefinition: B<FunctionDefinition> :=
+    parseWhenClause.Rep().I_e(Sym("{")).I_I(parseExpr).I_e(Sym("}")).M2(MId, (when, body) => FunctionDefinition(when, body))
 
   const parseWhenClause: B<Expr> :=
     T("when").e_I(parseExpr)
