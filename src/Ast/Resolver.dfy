@@ -507,7 +507,7 @@ module Resolver {
         assert varMap'.Keys == varMap.Keys + {name};
         var rBody :- ResolveExpr(body, rs, varMap');
         r := LetExpr(letVariable, rRhs, rBody);
-      case QuantifierExpr(univ, name, typeName, triggers, body) =>
+      case QuantifierExpr(univ, name, typeName, patterns, body) =>
         if !Raw.LegalVariableName(name) {
           return Failure("illegal variable name: " + name);
         }
@@ -516,7 +516,7 @@ module Resolver {
         var varMap' := varMap[name := quantifiedVariable];
         assert varMap'.Keys == varMap.Keys + {name};
         var b :- ResolveExpr(body, rs, varMap');
-        var trs :- ResolveTriggers(triggers, rs, varMap');
+        var trs :- ResolvePatterns(patterns, rs, varMap');
         r := QuantifierExpr(univ, quantifiedVariable, trs, b);
     }
     return Success(r);
@@ -539,18 +539,18 @@ module Resolver {
     return Success(resolvedExprs);
   }
 
-  method ResolveTriggers(triggers: seq<Raw.Trigger>, rs: ResolverState, varMap: map<string, Variable>) returns (result: Result<seq<Trigger>, string>)
-    ensures result.Success? ==> forall tr <- triggers :: tr.WellFormed(rs.b3, varMap.Keys)
+  method ResolvePatterns(patterns: seq<Raw.Pattern>, rs: ResolverState, varMap: map<string, Variable>) returns (result: Result<seq<Pattern>, string>)
+    ensures result.Success? ==> forall tr <- patterns :: tr.WellFormed(rs.b3, varMap.Keys)
     ensures result.Success? ==> forall tr <- result.value :: tr.WellFormed()
   {
-    var resolvedTriggers := [];
-    for n := 0 to |triggers|
-      invariant forall tr <- triggers[..n] :: tr.WellFormed(rs.b3, varMap.Keys)
-      invariant forall tr: Trigger <- resolvedTriggers :: tr.WellFormed()
+    var resolvedPatterns := [];
+    for n := 0 to |patterns|
+      invariant forall tr <- patterns[..n] :: tr.WellFormed(rs.b3, varMap.Keys)
+      invariant forall tr: Pattern <- resolvedPatterns :: tr.WellFormed()
     {
-      var exprs :- ResolveExprList(triggers[n].exprs, rs, varMap);
-      resolvedTriggers := resolvedTriggers + [Trigger(exprs)];
+      var exprs :- ResolveExprList(patterns[n].exprs, rs, varMap);
+      resolvedPatterns := resolvedPatterns + [Pattern(exprs)];
     }
-    return Success(resolvedTriggers);
+    return Success(resolvedPatterns);
   }
 }

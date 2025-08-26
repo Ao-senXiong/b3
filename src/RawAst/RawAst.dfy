@@ -358,7 +358,7 @@ module RawAst {
     | FunctionCallExpr(name: string, args: seq<Expr>)
     | LabeledExpr(name: string, expr: Expr)
     | LetExpr(name: string, typ: TypeName, rhs: Expr, body: Expr)
-    | QuantifierExpr(univ: bool, name: string, typ: TypeName, triggers: seq<Trigger>, body: Expr)
+    | QuantifierExpr(univ: bool, name: string, typ: TypeName, patterns: seq<Pattern>, body: Expr)
   {
     predicate WellFormed(b3: Program, scope: Scope) {
       match this
@@ -377,14 +377,14 @@ module RawAst {
       case LetExpr(name, typ, rhs, body) =>
         && rhs.WellFormed(b3, scope)
         && body.WellFormed(b3, scope + {name})
-      case QuantifierExpr(_, name, typ, triggers, body) =>
+      case QuantifierExpr(_, name, typ, patterns, body) =>
         var scope' := scope + {name};
-        && (forall tr <- triggers :: tr.WellFormed(b3, scope'))
+        && (forall tr <- patterns :: tr.WellFormed(b3, scope'))
         && body.WellFormed(b3, scope')
     }
   }
 
-  datatype Trigger = Trigger(exprs: seq<Expr>) {
+  datatype Pattern = Pattern(exprs: seq<Expr>) {
     predicate WellFormed(b3: Program, scope: Scope) {
       forall e <- exprs :: e.WellFormed(b3, scope)
     }

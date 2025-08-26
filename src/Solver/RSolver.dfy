@@ -11,7 +11,7 @@ module RSolvers {
   import opened Basics
 
   export
-    reveals RExpr, RTrigger
+    reveals RExpr, RPattern
     provides RExpr.Eq, RExpr.OperatorToString
     provides RContext, CreateEmptyContext, Extend, Record
     reveals REngine
@@ -30,7 +30,7 @@ module RSolvers {
     | FuncAppl(op: string, args: seq<RExpr>)
     | IfThenElse(guard: RExpr, thn: RExpr, els: RExpr)
     | LetExpr(v: SolverExpr.SVar, rhs: RExpr, body: RExpr)
-    | QuantifierExpr(univ: bool, v: SolverExpr.SVar, triggers: seq<RTrigger>, body: RExpr)
+    | QuantifierExpr(univ: bool, v: SolverExpr.SVar, patterns: seq<RPattern>, body: RExpr)
   {
     function ToSExpr(): SExpr {
       match this
@@ -46,13 +46,13 @@ module RSolvers {
       case LetExpr(v, rhs, body) =>
         var binding := SExpr.PP([SExpr.Id(v), rhs.ToSExpr()]);
         SExpr.FuncAppl("let", [SExpr.PP([binding]), body.ToSExpr()])
-      case QuantifierExpr(univ, v, triggers, body) =>
+      case QuantifierExpr(univ, v, patterns, body) =>
         var boundVar := SExpr.PP([SExpr.Id(v), v.typ.ToSExpr()]); // "(x Int)"
         var sbody :=
-          if triggers == [] then
+          if patterns == [] then
             body.ToSExpr()
           else
-            SExpr.FuncAppl("!", [body.ToSExpr()] + PatternListToSExprs(triggers, this)); // "(! body :pattern (t0 t1 t2) :pattern (u0 u1))"
+            SExpr.FuncAppl("!", [body.ToSExpr()] + PatternListToSExprs(patterns, this)); // "(! body :pattern (t0 t1 t2) :pattern (u0 u1))"
         SExpr.FuncAppl(if univ then "forall" else "exists", [SExpr.PP([boundVar]), sbody])
     }
 
@@ -63,18 +63,18 @@ module RSolvers {
       SeqMap(exprs, (expr: RExpr) requires expr < parent => expr.ToSExpr())
     }
 
-    static function PatternListToSExprs(triggers: seq<RTrigger>, ghost parent: RExpr): seq<SExpr>
-      requires forall tr <- triggers :: tr < parent
-      decreases parent, |triggers|
+    static function PatternListToSExprs(patterns: seq<RPattern>, ghost parent: RExpr): seq<SExpr>
+      requires forall tr <- patterns :: tr < parent
+      decreases parent, |patterns|
     {
-      if triggers == [] then
+      if patterns == [] then
         []
       else
-        var trigger := triggers[0];
-        assert trigger in triggers;
-        var terms := RExprListToSExprs(trigger.exprs, parent);
-        assert forall tr <- triggers[1..] :: tr in triggers;
-        [SExpr.S(":pattern"), SExpr.PP(terms)] + PatternListToSExprs(triggers[1..], parent)
+        var pattern := patterns[0];
+        assert pattern in patterns;
+        var terms := RExprListToSExprs(pattern.exprs, parent);
+        assert forall tr <- patterns[1..] :: tr in patterns;
+        [SExpr.S(":pattern"), SExpr.PP(terms)] + PatternListToSExprs(patterns[1..], parent)
     }
 
     static function OperatorToString(op: Ast.Operator): string
@@ -114,10 +114,10 @@ module RSolvers {
         "(if " + guard.ToString() + " then " + thn.ToString() + " else " + els.ToString() + ")"
       case LetExpr(v, rhs, body) =>
         "(val " + v.name + ": " + v.typ.ToString() + " := " + rhs.ToString() + " " + body.ToString() + ")"
-      case QuantifierExpr(univ, v, triggers, body) =>
+      case QuantifierExpr(univ, v, patterns, body) =>
         (if univ then "(forall " else "(exists ") +
         v.name + ": " + v.typ.ToString() +
-        PatternsToString(triggers, this) +
+        PatternsToString(patterns, this) +
         " :: " + body.ToString() + ")"
     }
 
@@ -129,21 +129,21 @@ module RSolvers {
       Comma(exprStrings, ", ")
     }
 
-    static function PatternsToString(triggers: seq<RTrigger>, ghost parent: RExpr): string
-      requires forall tr <- triggers :: tr < parent
-      decreases parent, |triggers|
+    static function PatternsToString(patterns: seq<RPattern>, ghost parent: RExpr): string
+      requires forall tr <- patterns :: tr < parent
+      decreases parent, |patterns|
     {
-      if triggers == [] then
+      if patterns == [] then
         ""
       else
-        var trigger := triggers[0];
-        assert trigger in triggers;
-        assert forall tr <- triggers[1..] :: tr in triggers;
-        " trigger " + RExprListToString(trigger.exprs, parent) + PatternsToString(triggers[1..], parent)
+        var pattern := patterns[0];
+        assert pattern in patterns;
+        assert forall tr <- patterns[1..] :: tr in patterns;
+        " pattern " + RExprListToString(pattern.exprs, parent) + PatternsToString(patterns[1..], parent)
     }
   }
 
-  datatype RTrigger = RTrigger(exprs: seq<RExpr>)
+  datatype RPattern = RPattern(exprs: seq<RExpr>)
 
   // ===== RContext =====
 
@@ -360,12 +360,12 @@ module RSolvers {
       case LetExpr(v, rhs, body) =>
         DeclareNewSymbols(rhs, exclude);
         DeclareNewSymbols(body, exclude + {v});
-      case QuantifierExpr(_, v, triggers, body) =>
+      case QuantifierExpr(_, v, patterns, body) =>
         var exclude' := exclude + {v};
-        for i := 0 to |triggers|
+        for i := 0 to |patterns|
           invariant Valid() && state.stack == old(state.stack)
         {
-          var tr := triggers[i];
+          var tr := patterns[i];
           for j := 0 to |tr.exprs|
             invariant Valid() && state.stack == old(state.stack)
           {

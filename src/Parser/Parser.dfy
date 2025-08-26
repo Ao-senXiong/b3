@@ -323,7 +323,7 @@ module Parser {
    *               | AtomicExpr
    * EndlessExpr ::= "if" Expr "then" Expr "else" Expr
    *               | "var" Id ":" Type ":=" Expr ";" Expr
-   *               | ( "forall" | "exists" ) Id ":" Type ( "trigger" Expr*, )* "::" Expr
+   *               | ( "forall" | "exists" ) Id ":" Type ( "pattern" Expr*, )* "::" Expr
    *               | Id ":" Expr
    * AtomicExpr ::= "false" | "true"
    *              | nat
@@ -426,8 +426,8 @@ module Parser {
       ),
       Or([T("forall").M(_ => true), T("exists").M(_ => false)]).Then(universal =>
         parseIdType.Then(p => var (name: string, typ: Types.TypeName) := p;
-          parseTrigger(c).Rep().Then(triggers =>
-            Sym("::").e_I(c("expr")).M(body => QuantifierExpr(universal, name, typ, triggers, body))
+          parsePattern(c).Rep().Then(patterns =>
+            Sym("::").e_I(c("expr")).M(body => QuantifierExpr(universal, name, typ, patterns, body))
           )
         )
       ),
@@ -435,8 +435,8 @@ module Parser {
     ])
   }
 
-  function parseTrigger(c: ExprRecSel): B<Trigger> {
-    T("trigger").e_I(parseCommaDelimitedSeq(c("expr"))).M(exprs => Trigger(exprs))
+  function parsePattern(c: ExprRecSel): B<Pattern> {
+    T("pattern").e_I(parseCommaDelimitedSeq(c("expr"))).M(exprs => Pattern(exprs))
   }
 
   function parseAtomicExpr(c: ExprRecSel): B<Expr> {
