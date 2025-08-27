@@ -11,8 +11,8 @@ module RSolvers {
   import opened Basics
 
   export
-    reveals RExpr, RPattern
-    provides RExpr.Eq, RExpr.OperatorToString
+    reveals RExpr, ROperator, RPattern
+    provides RExpr.Eq, RExpr.Operator2ROperator, RExpr.OperatorToString
     provides RContext, CreateEmptyContext, Extend, Record
     reveals REngine
     provides CreateEngine, REngine.Repr, REngine.Valid, REngine.Prove
@@ -22,12 +22,21 @@ module RSolvers {
 
   type SExpr = SolverExpr.SExpr
 
+  datatype ROperator = BuiltInOperator(name: string) | UserDefinedFunction(decl: SolverExpr.SDeclaration)
+  {
+    function ToString(): string {
+      match this
+      case BuiltInOperator(name) => name
+      case UserDefinedFunction(decl) => decl.name
+    }
+  }
+
   datatype RExpr =
     | Boolean(b: bool)
     | Integer(x: int)
     | CustomLiteral(s: string, typ: SolverExpr.SType)
     | Id(v: SolverExpr.SVar)
-    | FuncAppl(op: string, args: seq<RExpr>)
+    | FuncAppl(op: ROperator, args: seq<RExpr>)
     | IfThenElse(guard: RExpr, thn: RExpr, els: RExpr)
     | LetExpr(v: SolverExpr.SVar, rhs: RExpr, body: RExpr)
     | QuantifierExpr(univ: bool, v: SolverExpr.SVar, patterns: seq<RPattern>, body: RExpr)
@@ -40,7 +49,7 @@ module RSolvers {
       case Id(v) => SExpr.Id(v)
       case FuncAppl(op, args) =>
         var sargs := RExprListToSExprs(args, this);
-        SExpr.FuncAppl(op, sargs)
+        SExpr.FuncAppl(op.ToString(), sargs)
       case IfThenElse(guard, thn, els) =>
         SExpr.FuncAppl("ite", [guard.ToSExpr(), thn.ToSExpr(), els.ToSExpr()])
       case LetExpr(v, rhs, body) =>
@@ -77,6 +86,12 @@ module RSolvers {
         [SExpr.S(":pattern"), SExpr.PP(terms)] + PatternListToSExprs(patterns[1..], parent)
     }
 
+    static function Operator2ROperator(op: Ast.Operator): ROperator
+      requires op != Ast.Operator.IfThenElse && op != Ast.Operator.Neq
+    {
+      BuiltInOperator(OperatorToString(op))
+    }
+
     static function OperatorToString(op: Ast.Operator): string
       requires op != Ast.Operator.IfThenElse && op != Ast.Operator.Neq
     {
@@ -98,7 +113,7 @@ module RSolvers {
     }
 
     static function Eq(r0: RExpr, r1: RExpr): RExpr {
-      FuncAppl(SExpr.EQ, [r0, r1])
+      FuncAppl(BuiltInOperator(SExpr.EQ), [r0, r1])
     }
 
     // Convert the RExpr to a B3-like expression
@@ -109,7 +124,7 @@ module RSolvers {
       case CustomLiteral(s, typ) => Ast.CustomLiteralToString(s, typ.ToString())
       case Id(v) => v.name
       case FuncAppl(op, args) =>
-        op + "(" + RExprListToString(args, this) + ")"
+        op.ToString() + "(" + RExprListToString(args, this) + ")"
       case IfThenElse(guard, thn, els) =>
         "(if " + guard.ToString() + " then " + thn.ToString() + " else " + els.ToString() + ")"
       case LetExpr(v, rhs, body) =>
