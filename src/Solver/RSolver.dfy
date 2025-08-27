@@ -57,11 +57,8 @@ module RSolvers {
         SExpr.FuncAppl("let", [SExpr.PP([binding]), body.ToSExpr()])
       case QuantifierExpr(univ, v, patterns, body) =>
         var boundVar := SExpr.PP([SExpr.Id(v), v.typ.ToSExpr()]); // "(x Int)"
-        var sbody :=
-          if patterns == [] then
-            body.ToSExpr()
-          else
-            SExpr.FuncAppl("!", [body.ToSExpr()] + PatternListToSExprs(patterns, this)); // "(! body :pattern (t0 t1 t2) :pattern (u0 u1))"
+        var annotations := PatternListToSAnnotationList(patterns, this);
+        var sbody := Annotate(body.ToSExpr(), annotations);
         SExpr.FuncAppl(if univ then "forall" else "exists", [SExpr.PP([boundVar]), sbody])
     }
 
@@ -72,7 +69,7 @@ module RSolvers {
       SeqMap(exprs, (expr: RExpr) requires expr < parent => expr.ToSExpr())
     }
 
-    static function PatternListToSExprs(patterns: seq<RPattern>, ghost parent: RExpr): seq<SExpr>
+    static function PatternListToSAnnotationList(patterns: seq<RPattern>, ghost parent: RExpr): seq<SAnnotation>
       requires forall tr <- patterns :: tr < parent
       decreases parent, |patterns|
     {
@@ -83,7 +80,7 @@ module RSolvers {
         assert pattern in patterns;
         var terms := RExprListToSExprs(pattern.exprs, parent);
         assert forall tr <- patterns[1..] :: tr in patterns;
-        [SExpr.S(":pattern"), SExpr.PP(terms)] + PatternListToSExprs(patterns[1..], parent)
+        [SAnnotation("pattern", terms)] + PatternListToSAnnotationList(patterns[1..], parent)
     }
 
     static function Operator2ROperator(op: Ast.Operator): ROperator
@@ -159,6 +156,22 @@ module RSolvers {
   }
 
   datatype RPattern = RPattern(exprs: seq<RExpr>)
+
+  datatype SAnnotation = SAnnotation(name: string, args: seq<SExpr>)
+  {
+    function ToSExprs(): seq<SExpr> {
+      // :name (arg0 arg1 arg2 ...)
+      [SExpr.S(":" + name), SExpr.PP(args)]
+    }
+  }
+
+  function Annotate(body: SExpr, annotations: seq<SAnnotation>): SExpr {
+    if annotations == [] then
+      body
+    else
+      // "(! body :annotation0 (t0 t1 t2) :annotation1 (u0 u1))"
+      SExpr.FuncAppl("!", [body] + SeqFlatten(SeqMap(annotations, (annotation: SAnnotation) => annotation.ToSExprs())))
+  }
 
   // ===== RContext =====
 
