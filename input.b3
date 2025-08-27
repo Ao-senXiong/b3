@@ -139,7 +139,7 @@ function NicelyIndented(x: int, y: int, b: bool, c: MyClass): int
     4000
 }
 
-function AnotherNicelyIndented(x: int, y: int): int
+function AnotherNicelyIndented(x: int, y: int): bool
 {
   x < y
   &&
@@ -153,6 +153,8 @@ function AnotherNicelyIndented(x: int, y: int): int
   &&
   x <= y
   &&
+    val u: int := 19
+    val v: int := 21
     if u + v <= v + u then
       300 < 400
     else

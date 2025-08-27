@@ -13,6 +13,15 @@ module TypeChecker {
     requires b3.WellFormed()
     ensures outcome.Pass? ==> TypeCorrect(b3)
   {
+    var functions := b3.functions;
+    while functions != {}
+      invariant forall func <- b3.functions - functions :: TypeCorrectFunction(func)
+    {
+      var func: Function :| func in functions;
+      functions := functions - {func};
+      :- CheckFunction(func);
+    }
+
     var procs := b3.procedures;
     while procs != {}
       invariant forall proc <- b3.procedures - procs :: TypeCorrectProc(proc)
@@ -27,9 +36,21 @@ module TypeChecker {
 
   predicate TypeCorrect(b3: Program)
     requires b3.WellFormed()
-    reads b3.procedures
+    reads b3.functions, b3.procedures
   {
     forall proc <- b3.procedures :: TypeCorrectProc(proc)
+  }
+
+  predicate TypeCorrectFunction(func: Function)
+    requires func.WellFormed()
+    reads func
+  {
+    match func.Definition
+    case None => true
+    case Some(def) =>
+      && (forall e <- def.when :: TypeCorrectExpr(e) && e.HasType(BoolType))
+      && TypeCorrectExpr(def.body)
+      && def.body.HasType(func.ResultType)
   }
 
   predicate TypeCorrectProc(proc: Procedure)
@@ -118,8 +139,7 @@ module TypeChecker {
             args[0].HasType(IntType)
       }
     case FunctionCallExpr(func, args) =>
-      (forall arg <- args :: TypeCorrectExpr(arg))
-      && true // TODO: check that types match those of the function
+      forall i :: 0 <= i < |args| ==> TypeCorrectExpr(args[i]) && args[i].HasType(func.Parameters[i].typ)
     case LabeledExpr(lbl, body) =>
       TypeCorrectExpr(body)
     case LetExpr(v, rhs, body) =>
@@ -127,6 +147,23 @@ module TypeChecker {
     case QuantifierExpr(_, _, patterns, body) =>
       (forall tr <- patterns, e <- tr.exprs :: assert tr.WellFormed(); TypeCorrectExpr(e)) &&
       TypeCorrectExpr(body) && body.HasType(BoolType)
+  }
+
+  method CheckFunction(func: Function) returns (outcome: Outcome<string>)
+    requires func.WellFormed()
+    ensures outcome.Pass? ==> TypeCorrectFunction(func)
+  {
+    match func.Definition {
+      case None =>
+      case Some(def) =>
+        for n := 0 to |def.when|
+          invariant forall e <- def.when[..n] :: TypeCorrectExpr(e) && e.HasType(BoolType)
+        {
+          :- TypeCheckAs(def.when[n], BoolType);
+        }
+        :- TypeCheckAs(def.body, func.ResultType);
+    }
+    return Pass;
   }
 
   method CheckProcedure(proc: Procedure) returns (outcome: Outcome<string>)
@@ -292,8 +329,16 @@ module TypeChecker {
       }
       return Success(typ);
     case FunctionCallExpr(func, args) =>
-      var types :- CheckExprList(args);
-      return Success(expr.ExprType()); // TODO: look directly at declared result type of function here
+      for n := 0 to |args|
+        invariant forall i :: 0 <= i < n ==> TypeCorrectExpr(args[i]) && args[i].HasType(func.Parameters[i].typ)
+      {
+        var typ :- CheckExpr(args[n]);
+        var expectedType := func.Parameters[n].typ;
+        if typ != expectedType {
+          return Failure("parameter " + Int2String(n) + " to function '" + func.Name + "' expects type '" + expectedType.ToString() + "', got type '" + typ.ToString() + "'");
+        }
+      }
+      return Success(func.ResultType);
     case LabeledExpr(_, body) =>
       r := CheckExpr(body);
     case LetExpr(v, rhs, body) =>
