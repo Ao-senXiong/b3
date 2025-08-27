@@ -172,6 +172,7 @@ module RawAst {
     | Assert(cond: Expr)
     | AForall(name: string, typ: TypeName, body: Stmt)
     // Control flow
+    | Choose(branches: seq<Stmt>)
     | If(cond: Expr, thn: Stmt, els: Stmt)
     | IfCase(cases: seq<Case>)
     | Loop(invariants: seq<AExpr>, body: Stmt)
@@ -253,6 +254,9 @@ module RawAst {
         && LegalVariableName(name)
         && b3.IsType(typ)
         && body.WellFormed(b3, scope + {name}, labels, insideLoop)
+      case Choose(branches) =>
+        && |branches| != 0
+        && forall branch <- branches :: branch.WellFormed(b3, scope, labels, insideLoop)
       case If(cond, thn, els) =>
         && cond.WellFormed(b3, scope)
         && thn.WellFormed(b3, scope, labels, insideLoop)

@@ -131,6 +131,16 @@ module Printer {
       print "forall ", name, ": ", typ, " ";
       StmtAsBlock(body, indent);
 
+    case Choose(branches) =>
+      print "choose ";
+      if |branches| == 0 {
+        print "{ }\n";
+      } else {
+        for i := 0 to |branches| {
+          StmtAsBlock(branches[i], indent, if i == |branches| - 1 then "\n" else " or ");
+        }
+      }
+      
     case If(cond, thn, els) =>
       print "if ";
       Expression(cond);
