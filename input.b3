@@ -160,3 +160,11 @@ function AnotherNicelyIndented(x: int, y: int): bool
     else
       -1 + G() != 75
 }
+
+type Abc
+
+procedure TestTypeUse(y: Abc) {
+  var x: Abc
+  x := y
+  check x == y
+}

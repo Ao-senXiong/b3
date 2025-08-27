@@ -90,7 +90,9 @@ namespace Z3SmtSolver {
       // For simple commands like (push), (pop), just return "success"
       if (cmd == "(push)" || cmd == "(pop)" || cmd.StartsWith("(assert ") || 
           cmd.StartsWith("(set-option ") || cmd.StartsWith("(set-logic ") ||
-          cmd == "(exit)" || cmd.StartsWith("(declare-fun") || cmd.StartsWith("(declare-const")) {
+          cmd == "(exit)" ||
+          cmd.StartsWith("(declare-fun") || cmd.StartsWith("(declare-const") || cmd.StartsWith("(declare-sort"))
+      {
         return "success";
       }
       

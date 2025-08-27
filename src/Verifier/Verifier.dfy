@@ -15,6 +15,29 @@ module Verifier {
   method Verify(b3: Ast.Program)
     requires b3.WellFormed()
   {
+    var typeMap := map[];
+    var types := b3.types;
+    while types != {}
+      decreases types
+    {
+      var typ: Types.TypeDecl :| typ in types;
+      types := types - {typ};
+      var t := new STypeDecl(typ.Name);
+      typeMap := typeMap[typ := t];
+    }
+
+    var functionMap := map[];
+    var funcs := b3.functions;
+    while funcs != {}
+      decreases funcs
+    {
+      var func: Function :| func in funcs;
+      funcs := funcs - {func};
+      var f := new SVar.Function(func.Name, []/*TODO*/, SBool/*TODO*/);
+      functionMap := functionMap[func := f];
+    }
+
+    var declMap := DeclMappings(typeMap, functionMap);
     var procs := b3.procedures;
     while procs != {}
     {
@@ -22,18 +45,18 @@ module Verifier {
       procs := procs - {proc};
 
       print "Verifying ", proc.Name, " ...\n";
-      VerifyProcedure(proc);
+      VerifyProcedure(proc, declMap);
     }
   }
 
-  method VerifyProcedure(proc: Ast.Procedure)
+  method VerifyProcedure(proc: Ast.Procedure, declMap: DeclMappings)
     requires proc.WellFormed()
   {
     var smtEngine := RSolvers.CreateEngine();
     var context := RSolvers.CreateEmptyContext();
 
     // Create incarnations for parameters in the pre-state
-    var preIncarnations, bodyIncarnations := CreateProcIncarnations(proc.Parameters);
+    var preIncarnations, bodyIncarnations := CreateProcIncarnations(proc.Parameters, declMap);
 
     // Assume precondition (TODO: should also vet precondition)
     context := AssumeAExprs(proc.Post, preIncarnations, context, smtEngine);
@@ -47,41 +70,47 @@ module Verifier {
     CheckAExprs(proc.Post, bodyIncarnations, context, smtEngine, "postcondition");
   }
 
-  method CreateProcIncarnations(parameters: seq<Parameter>) returns (preIncarnations: Incarnations, bodyIncarnations: Incarnations)
+  method CreateProcIncarnations(parameters: seq<Parameter>, declMap: DeclMappings) returns (preIncarnations: Incarnations, bodyIncarnations: Incarnations)
     requires forall i :: 0 <= i < |parameters| ==> parameters[i].WellFormed()
   {
-    preIncarnations, bodyIncarnations := Incarnations.Empty(), Incarnations.Empty();
+    preIncarnations, bodyIncarnations := Incarnations.Empty(declMap), Incarnations.Empty(declMap);
     for i := 0 to |parameters| {
       var parameter := parameters[i];
       match parameter.mode
       case In =>
-        var v := new SVar(parameter.name, Type2SType(parameter.typ));
+        var v := new SVar(parameter.name, declMap.Type2SType(parameter.typ));
         preIncarnations := preIncarnations.Set(parameter, v);
         bodyIncarnations := bodyIncarnations.Set(parameter, v);
       case InOut =>
-        var vOld := new SVar(parameter.name + "%old", Type2SType(parameter.typ));
+        var vOld := new SVar(parameter.name + "%old", declMap.Type2SType(parameter.typ));
         preIncarnations := preIncarnations.Set(parameter, vOld);
         bodyIncarnations := bodyIncarnations.Set(parameter.oldInOut.value, vOld);
         bodyIncarnations := bodyIncarnations.Set(parameter, vOld);
       case out =>
-        var v := new SVar(parameter.name, Type2SType(parameter.typ));
+        var v := new SVar(parameter.name, declMap.Type2SType(parameter.typ));
         bodyIncarnations := bodyIncarnations.Set(parameter, v);
     }
   }
 
   type RExpr = RSolvers.RExpr
 
-  function Type2SType(typ: Type): SType {
-    match typ
-    case BoolType => SBool
-    case IntType => SInt
-    case UserType(decl) => SInt // TODO: SUserType(decl)
+  datatype DeclMappings = DeclMappings(typeMap: map<Types.TypeDecl, STypeDecl>, functionMap: map<Function, SDeclaration>)
+  {
+    function Type2SType(typ: Type): SType {
+      match typ
+      case BoolType => SBool
+      case IntType => SInt
+      case UserType(decl) =>
+        assume {:axiom} decl in typeMap;
+        var sTypeDecl := typeMap[decl];
+        SUserType(sTypeDecl)
+    }
   }
 
-  datatype Incarnations = Incarnations(nextSequenceCount: map<string, nat>, m: map<Variable, SVar>)
+  datatype Incarnations = Incarnations(nextSequenceCount: map<string, nat>, m: map<Variable, SVar>, declMap: DeclMappings)
   {
-    static function Empty(): Incarnations {
-      Incarnations(map[], map[])
+    static function Empty(declMap: DeclMappings): Incarnations {
+      Incarnations(map[], map[], declMap)
     }
 
     function Variables(): set<Variable> {
@@ -90,7 +119,7 @@ module Verifier {
 
     // `Set` is intended to be used only during custom initializations of an Incarnations.
     function Set(v: Variable, sv: SVar): Incarnations {
-      Incarnations(map[v.name := 0] + nextSequenceCount, m[v := sv])
+      this.(nextSequenceCount := map[v.name := 0] + nextSequenceCount, m := m[v := sv])
     }
 
     method Update(v: Variable) returns (incarnations: Incarnations, x: SVar) {
@@ -103,13 +132,13 @@ module Verifier {
       } else {
         nextSequenceNumber := 0;
       }
-      x := new SVar(name, Type2SType(v.typ));
-      incarnations := Incarnations(nextSequenceCount[v.name := nextSequenceNumber], m[v := x]);
+      x := new SVar(name, declMap.Type2SType(v.typ));
+      incarnations := this.(nextSequenceCount := nextSequenceCount[v.name := nextSequenceNumber], m := m[v := x]);
     }
 
     function DomainRestrict(variables: set<Variable>): Incarnations {
       var m' := map v <- m.Keys | v in variables :: m[v];
-      Incarnations(nextSequenceCount, m')
+      this.(m := m')
     }
 
     function REval(expr: Expr): RSolvers.RExpr
@@ -118,7 +147,7 @@ module Verifier {
       match expr
       case BLiteral(value) => RExpr.Boolean(value)
       case ILiteral(value) => RExpr.Integer(value)
-      case CustomLiteral(s, typ) => RExpr.CustomLiteral(s, Type2SType(typ))
+      case CustomLiteral(s, typ) => RExpr.CustomLiteral(s, declMap.Type2SType(typ))
       case IdExpr(v) =>
         assume {:axiom} v in m; // TODO: it would be nice to be able to keep the original variable if there's no incarnation; that would be the case for the bound variable in a let expression or quantifier
         RExpr.Id(m[v])
@@ -128,14 +157,15 @@ module Verifier {
           case IfThenElse =>
             RExpr.IfThenElse(rArgs[0], rArgs[1], rArgs[2])
           case Neq =>
-            var eq := RExpr.FuncAppl(RExpr.OperatorToString(Operator.Eq), rArgs);
-            RExpr.FuncAppl(RExpr.OperatorToString(Operator.LogicalNot), [eq])
+            var eq := RExpr.FuncAppl(RExpr.Operator2ROperator(Operator.Eq), rArgs);
+            RExpr.FuncAppl(RExpr.Operator2ROperator(Operator.LogicalNot), [eq])
           case _ =>
-            RExpr.FuncAppl(RExpr.OperatorToString(op), rArgs)
+            RExpr.FuncAppl(RExpr.Operator2ROperator(op), rArgs)
         }
       case FunctionCallExpr(func, args) =>
         var rArgs := REvalList(args);
-        RExpr.FuncAppl(func.Name, rArgs)
+        assume {:axiom} func in declMap.functionMap;
+        RExpr.FuncAppl(RSolvers.UserDefinedFunction(declMap.functionMap[func]), rArgs)
       case LabeledExpr(_, body) =>
         // TODO: do something with the label
         REval(body)
