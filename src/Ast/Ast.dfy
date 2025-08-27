@@ -12,7 +12,7 @@ module Ast {
     provides Procedure.Name, Procedure.Parameters, Procedure.Pre, Procedure.Post, Procedure.Body
     reveals Procedure.SignatureWellFormed
     reveals Function, FParameter, FunctionDefinition
-    provides Function.Name, Function.Parameters, Function.Definition, FParameter.injective
+    provides Function.Name, Function.Parameters, Function.ResultType, Function.Definition, FParameter.injective
     reveals Function.SignatureWellFormed, Function.WellFormed, FParameter.WellFormed, FunctionDefinition.WellFormed
     provides Variable.name, Variable.typ
     provides Variable.IsMutable, LocalVariable.IsMutable, Parameter.IsMutable, FParameter.IsMutable
@@ -28,13 +28,17 @@ module Ast {
 
   type Type = Types.Type
 
-  datatype Program = Program(types: set<Types.TypeDecl>, procedures: set<Procedure>)
+  datatype Program = Program(types: set<Types.TypeDecl>, functions: set<Function>, procedures: set<Procedure>)
   {
     predicate WellFormed()
-      reads procedures
+      reads procedures, functions
     {
       // type declarations have distinct names
       && (forall typ0 <- types, typ1 <- types :: typ0.Name == typ1.Name ==> typ0 == typ1)
+      // function declarations have distinct names
+      && (forall func0 <- functions, func1 <- functions :: func0.Name == func1.Name ==> func0 == func1)
+      // function are well-formed
+      && (forall func <- functions :: func.WellFormed())
       // procedure declarations have distinct names
       && (forall proc0 <- procedures, proc1 <- procedures :: proc0.Name == proc1.Name ==> proc0 == proc1)
       // procedures are well-formed
@@ -117,13 +121,15 @@ module Ast {
   class Function {
     const Name: string
     const Parameters: seq<FParameter>
+    const ResultType: Type
     var Definition: Option<FunctionDefinition>
 
-    constructor (name: string, parameters: seq<FParameter>)
-      ensures Name == name && Parameters == parameters && Definition == None
+    constructor (name: string, parameters: seq<FParameter>, resultType: Type)
+      ensures Name == name && Parameters == parameters && ResultType == resultType && Definition == None
     {
       Name := name;
       Parameters := parameters;
+      ResultType := resultType;
       Definition := None;
     }
 
@@ -308,7 +314,7 @@ module Ast {
           case Plus | Minus | Times | Div | Mod | UnaryMinus =>
             Types.IntType
         }
-      case FunctionCallExpr(func, args) => Types.IntType // TODO: Bogus. Should look up the type in the function's definition
+      case FunctionCallExpr(func, args) => func.ResultType
       case LabeledExpr(_, body) => body.ExprType()
       case LetExpr(_, _, body) => body.ExprType()
       case QuantifierExpr(_, _, _, _) => Types.BoolType
@@ -328,7 +334,8 @@ module Ast {
         && |args| == op.ArgumentCount()
         && forall arg <- args :: arg.WellFormed()
       case FunctionCallExpr(func, args) =>
-        forall arg <- args :: arg.WellFormed()
+        && |args| == |func.Parameters|
+        && forall arg <- args :: arg.WellFormed()
       case LabeledExpr(_, body) =>
         body.WellFormed()
       case LetExpr(_, rhs, body) =>

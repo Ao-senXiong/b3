@@ -18,7 +18,7 @@ module Resolver {
     var ers := ExprResolverState(b3, typeMap, functionMap);
     var procMap :- ResolveAllProcedures(ers);
 
-    var r3 := Program(typeMap.Values, procMap.Values);
+    var r3 := Program(typeMap.Values, functionMap.Values, procMap.Values);
 
     return Success(r3);
   }
@@ -136,7 +136,9 @@ module Resolver {
       formals := formals + [formal];
     }
 
-    var rfunc := new Function(func.name, formals);
+    var resultType :- ResolveType(func.resultType, typeMap);
+
+    var rfunc := new Function(func.name, formals, resultType);
     return Success(rfunc);
   }
 
@@ -207,7 +209,6 @@ module Resolver {
     }
 
     var prs := ProcResolverState(ers, procMap);
-    assert prs.Valid(); // TODO: this assert is probably not needed
     for n := 0 to |b3.procedures|
       invariant forall proc <- b3.procedures :: proc.SignatureWellFormed(b3) && procMap[proc.name].SignatureWellFormed(proc)
       invariant forall proc <- b3.procedures[..n] :: proc.WellFormed(b3)
@@ -650,7 +651,13 @@ module Resolver {
         var resolvedArgs :- ResolveExprList(args, ers, varMap);
         r := OperatorExpr(op, resolvedArgs);
       case FunctionCallExpr(name, args) =>
-        var func := new Function(name, []); // TODO: This is bogus. It should instead look up the already declared function
+        if name !in ers.functionMap {
+          return Failure("undeclared function: " + name);
+        }
+        var func := ers.functionMap[name];
+        if |args| != |func.Parameters| {
+          return Failure("wrong number of arguments in call to function " + name);
+        }
         var resolvedArgs :- ResolveExprList(args, ers, varMap);
         r := FunctionCallExpr(func, resolvedArgs);
       case LabeledExpr(name, body) =>

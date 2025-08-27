@@ -20,7 +20,7 @@ module StaticConsistency {
 
   predicate Consistent(b3: Program)
     requires b3.WellFormed()
-    reads b3.procedures
+    reads b3.functions, b3.procedures
   {
     forall proc <- b3.procedures :: ConsistentProc(proc)
   }
