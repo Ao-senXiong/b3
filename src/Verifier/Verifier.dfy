@@ -33,7 +33,8 @@ module Verifier {
     {
       var func: Function :| func in funcs;
       funcs := funcs - {func};
-      var f := new SVar.Function(func.Name, []/*TODO*/, SBool/*TODO*/);
+      var inputTypes := SeqMap(func.Parameters, (parameter: FParameter) => DeclMappings.Type2STypeWithMap(parameter.typ, typeMap));
+      var f := new SVar.Function(func.Name, inputTypes, DeclMappings.Type2STypeWithMap(func.ResultType, typeMap));
       functionMap := functionMap[func := f];
     }
 
@@ -94,9 +95,13 @@ module Verifier {
 
   type RExpr = RSolvers.RExpr
 
-  datatype DeclMappings = DeclMappings(typeMap: map<Types.TypeDecl, STypeDecl>, functionMap: map<Function, SDeclaration>)
+  datatype DeclMappings = DeclMappings(typeMap: map<Types.TypeDecl, STypeDecl>, functionMap: map<Function, STypedDeclaration>)
   {
     function Type2SType(typ: Type): SType {
+      Type2STypeWithMap(typ, typeMap)
+    }
+
+    static function Type2STypeWithMap(typ: Type, typeMap: map<Types.TypeDecl, STypeDecl>): SType {
       match typ
       case BoolType => SBool
       case IntType => SInt
@@ -284,7 +289,7 @@ module Verifier {
       }
       Process(cont, incarnations', context, B0, smtEngine);
     case Probe(e) =>
-      context := RSolvers.Record(context, incarnations.REval(e));
+      context := RSolvers.Record(context, incarnations.REval(e), incarnations.declMap.Type2SType(e.ExprType()));
       Process(cont, incarnations, context, B, smtEngine);
   }
 
