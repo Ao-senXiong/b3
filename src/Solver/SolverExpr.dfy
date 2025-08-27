@@ -65,7 +65,7 @@ module SolverExpr {
     constructor Function(name: string, inputTypes: seq<SType>, typ: SType) {
       this.name := name;
       this.typ := typ;
-      this.inputTypes := [];
+      this.inputTypes := inputTypes;
     }
   }
 

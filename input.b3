@@ -167,4 +167,9 @@ procedure TestTypeUse(y: Abc) {
   var x: Abc
   x := y
   check x == y
+
+  var k: int := 12
+  check Inc(k) == Inc(12)
 }
+
+function Inc(x: int): int

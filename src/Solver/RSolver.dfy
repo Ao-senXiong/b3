@@ -22,7 +22,7 @@ module RSolvers {
 
   type SExpr = SolverExpr.SExpr
 
-  datatype ROperator = BuiltInOperator(name: string) | UserDefinedFunction(decl: SolverExpr.SDeclaration)
+  datatype ROperator = BuiltInOperator(name: string) | UserDefinedFunction(decl: SolverExpr.STypedDeclaration)
   {
     function ToString(): string {
       match this
@@ -250,9 +250,9 @@ module RSolvers {
     r := new RContextNode(context, expr);
   }
 
-  method Record(context: RContext, expr: RExpr) returns (r: RContext) {
+  method Record(context: RContext, expr: RExpr, typ: SolverExpr.SType) returns (r: RContext) {
     var name := "probe%" + Int2String(context.depth);
-    var p := new SolverExpr.SVar(name, SolverExpr.SBool); // TODO: use the type of `expr`
+    var p := new SolverExpr.SVar(name, typ);
     var eq := RExpr.Eq(RExpr.Id(p), expr);
     r := Extend(context, eq);
   }
@@ -362,7 +362,13 @@ module RSolvers {
           state.DeclareSymbol(v);
         }
       case FuncAppl(op, args) =>
-        // TODO: declare the function itself, unless it's a built-in SMT function (like `+`)
+        match op {
+          case BuiltInOperator(_) =>
+          case UserDefinedFunction(funcDecl) =>
+            if funcDecl !in state.declarations {
+              state.DeclareSymbol(funcDecl);
+            }
+        }
         for i := 0 to |args|
           invariant Valid() && state.stack == old(state.stack)
         {
