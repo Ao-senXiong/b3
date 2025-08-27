@@ -238,6 +238,7 @@ module Parser {
          T("probe").e_I(parseExpr).M(e => Probe(e)),
          T("forall").e_I(parseIdType).I_I(c("block")).M3(Unfold3l, (name, typ, body) => AForall(name, typ, body)),
          c("block"),
+         T("choose").e_I(c("block")).I_I(T("or").e_I(c("block")).Rep()).M2(MId, (s, ss) => Choose([s] + ss)),
          T("if").e_I(parseIfCont(c)),
          c("loop"),
          Atomic(parseId.I_e(Sym(":="))).I_I(parseExpr).M2(MId, (lhs, rhs) => Assign(lhs, rhs)),

@@ -501,6 +501,21 @@ module Resolver {
         var b :- ResolveStmt(body, prs, ls.AddVariable(name, v));
         r := AForall(v, b);
 
+      case Choose(branches) =>
+        if |branches| == 0 {
+          return Failure("a choose statement must have at least 1 branch");
+        }
+        var rbranches := [];
+        for n := 0 to |branches|
+          invariant forall branch <- branches[..n] ::
+            branch.WellFormed(prs.ers.b3, ls.varMap.Keys, ls.LabelSet(), ls.loopLabel.Some?)
+          invariant forall branch: Stmt <- rbranches :: branch.WellFormed()
+        {
+          var rbranch :- ResolveStmt(branches[n], prs, ls);
+          rbranches := rbranches + [rbranch];
+        }
+        r := Choice(rbranches);
+
       case If(cond, thn, els) =>
         var c :- ResolveExpr(cond, prs.ers, ls.varMap);
         var th :- ResolveStmt(thn, prs, ls);
