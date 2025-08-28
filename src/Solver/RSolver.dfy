@@ -379,6 +379,12 @@ module RSolvers {
           case BuiltInOperator(_) =>
           case UserDefinedFunction(funcDecl) =>
             if funcDecl !in state.declarations {
+              for i := 0 to |funcDecl.inputTypes|
+                invariant Valid() && state.stack == old(state.stack)
+              {
+                DeclareNewTypes(funcDecl.inputTypes[i]);
+              }
+              DeclareNewTypes(funcDecl.typ);
               state.DeclareSymbol(funcDecl);
             }
         }
@@ -392,9 +398,12 @@ module RSolvers {
         DeclareNewSymbols(thn, exclude);
         DeclareNewSymbols(els, exclude);
       case LetExpr(v, rhs, body) =>
+        DeclareNewTypes(v.typ);
         DeclareNewSymbols(rhs, exclude);
-        DeclareNewSymbols(body, exclude + {v});
+        var exclude' := exclude + {v};
+        DeclareNewSymbols(body, exclude');
       case QuantifierExpr(_, v, patterns, body) =>
+        DeclareNewTypes(v.typ);
         var exclude' := exclude + {v};
         for i := 0 to |patterns|
           invariant Valid() && state.stack == old(state.stack)

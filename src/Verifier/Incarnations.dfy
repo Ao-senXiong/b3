@@ -70,13 +70,51 @@ module Incarnations {
       this.(m := m')
     }
 
+    method CreateForBoundVariables(expr: Expr) returns (r: Incarnations)
+      decreases expr
+    {
+      r := this;
+      match expr
+      case BLiteral(_) =>
+      case ILiteral(_) =>
+      case CustomLiteral(_, _) =>
+      case IdExpr(_) =>
+      case OperatorExpr(_, args) =>
+        for i := 0 to |args| {
+          r := r.CreateForBoundVariables(args[i]);
+        }
+      case FunctionCallExpr(_, args) =>
+        for i := 0 to |args| {
+          r := r.CreateForBoundVariables(args[i]);
+        }
+      case LabeledExpr(_, body) =>
+        r := r.CreateForBoundVariables(body);
+      case LetExpr(v, rhs, body) =>
+        r := r.CreateForBoundVariables(rhs);
+        expect v !in r.m.Keys;
+        var sVar;
+        r, sVar := Update(v);
+        r := r.CreateForBoundVariables(body);
+      case QuantifierExpr(_, v, patterns, body) =>
+        expect v !in r.m.Keys;
+        var sVar;
+        r, sVar := Update(v);
+        for i := 0 to |patterns| {
+          var pattern := patterns[i];
+          for j := 0 to |pattern.exprs| {
+            r := r.CreateForBoundVariables(pattern.exprs[j]);
+          }
+        }
+        r := r.CreateForBoundVariables(body);
+    }
+
     // Create SVar's for the bound variables in "expr" and then substitute these and the other incarnations
     // into "expr".
     method REval(expr: Expr) returns (r: RSolvers.RExpr)
       requires expr.WellFormed()
     {
-      // TODO: handle bound variables
-      r := Substitute(expr);
+      var incarnations := CreateForBoundVariables(expr);
+      r := incarnations.Substitute(expr);
     }
 
     function Substitute(expr: Expr): RSolvers.RExpr
@@ -109,11 +147,15 @@ module Incarnations {
         // TODO: do something with the label
         Substitute(body)
       case LetExpr(v, rhs, body) =>
-        RExpr.Boolean(true) //RExpr.LetExpr(v, Substitute(rhs), Substitute(body)) // TODO: this requires RExpr and Expr have the same Variables.
+        assume {:axiom} v in m;
+        var sVar := m[v];
+        RExpr.LetExpr(sVar, Substitute(rhs), Substitute(body))
       case QuantifierExpr(univ, v, patterns, body) =>
+        assume {:axiom} v in m;
+        var sVar := m[v];
         var trs := SubstitutePatterns(patterns);
         var b := Substitute(body);
-        RExpr.Boolean(true) //RExpr.QuantifierExpr(univ, v, trs, b) // TODO: this requires RExpr and Expr have the same Variables.
+        RExpr.QuantifierExpr(univ, sVar, trs, b)
     }
 
     function SubstituteList(exprs: seq<Expr>): seq<RSolvers.RExpr>
@@ -126,14 +168,14 @@ module Incarnations {
         [Substitute(exprs[0])] + SubstituteList(exprs[1..])
     }
 
-    function SubstitutePatterns(patterns: seq<Pattern>): seq<seq<RSolvers.RExpr>>
+    function SubstitutePatterns(patterns: seq<Pattern>): seq<RSolvers.RPattern>
       requires forall tr <- patterns :: tr.WellFormed()
     {
       if patterns == [] then
         []
       else
         assert patterns[0].WellFormed();
-        [SubstituteList(patterns[0].exprs)] + SubstitutePatterns(patterns[1..])
+        [RSolvers.RPattern(SubstituteList(patterns[0].exprs))] + SubstitutePatterns(patterns[1..])
     }
   }
 
