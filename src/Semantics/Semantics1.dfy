@@ -45,6 +45,21 @@ module Semantic {
     predicate IsDefinedOn(s: set<Variable>) {
       FVars() <= s
     }
+
+    predicate NoShadowing() {
+      match this
+      case BConst(_) => true
+      case Var(v) => true
+      case And(e0, e1) => e0.NoShadowing() && e1.NoShadowing()
+      case Or(e0, e1) => e0.NoShadowing() && e1.NoShadowing()
+      case Not(e) => e.NoShadowing()
+      case Implies(e0, e1) => e0.NoShadowing() && e1.NoShadowing()
+      case Forall(v, body) => v !in body.BVars() && body.NoShadowing()
+    }
+
+    predicate WellFormed() {
+      NoShadowing()
+    }
     
     lemma IsDefinedOnTransitivity(s1: set<Variable>, s2: set<Variable>)
         requires s1 <= s2
@@ -64,7 +79,10 @@ module Semantic {
 
     { 
       match this
-      case Forall(v, body) => forall x: bool { body.EvalFVarsLemma(s1.Update(v, x), s2.Update(v, x)); }
+      case Forall(v, body) => 
+        forall x: bool { 
+          body.EvalFVarsLemma(s1.Update(v, x), s2.Update(v, x)); 
+        }
       case _ =>
     }
       
@@ -88,38 +106,112 @@ module Semantic {
   datatype Stmt =
     | Check(e: Expr)
     | Assume(e: Expr)
-    | Seq(0: Stmt, 1: Stmt)
+    | Seq(ss: seq<Stmt>)
     | Assign(lhs: Variable, rhs: Expr)
     | VarDecl(v: Variable, s: Stmt)
     // | While(guard: Expr, inv: Expr, body: Stmt)
-    // | If(cond: Expr, thn: Stmt, els: Stmt)
-    {
-      function FVars(): set<Variable> {
-        match this
-        case Check(e) => e.FVars()
-        case Assume(e) => e.FVars()
-        case Seq(s0, s1) => s0.FVars() + s1.FVars()
-        case Assign(lhs, rhs) => {lhs} + rhs.FVars()
-        case VarDecl(v, s) => s.FVars() - {v}
-      }
-
-      function BVars(): set<Variable> {
-        match this
-        case Check(e) => e.BVars()
-        case Assume(e) => e.BVars()
-        case Seq(s0, s1) => s0.BVars() + s1.BVars()
-        case Assign(lhs, rhs) => rhs.BVars()
-        case VarDecl(v, s) => s.BVars() + {v}
-      }
-
-      predicate IsDefinedOn(s: set<Variable>) {
-        FVars() <= s
-      }
-      lemma IsDefinedOnTransitivity(s1: set<Variable>, s2: set<Variable>)
-        requires s1 <= s2
-        ensures IsDefinedOn(s1) ==> IsDefinedOn(s2)
-      {  }
+    | Choice(0: Stmt, 1: Stmt)
+  {
+    function Size(): nat {
+      match this
+      case Check(_) => 1
+      case Assume(_) => 1
+      case Seq(ss) => 1 + SeqSize(ss)
+      case Assign(_, _) => 1
+      case Choice(s0, s1) => 1 + s0.Size() + s1.Size()
+      case VarDecl(_, s) => 1 + s.Size()
     }
+
+    function FVars(): set<Variable> {
+      match this
+      case Check(e) => e.FVars()
+      case Assume(e) => e.FVars()
+      case Seq(ss) => SeqFVars(ss)
+      case Assign(lhs, rhs) => {lhs} + rhs.FVars()
+      case VarDecl(v, s) => s.FVars() - {v}
+      case Choice(s0, s1) => s0.FVars() + s1.FVars()
+    }
+
+    function BVars(): set<Variable> {
+      match this
+      case Check(e) => e.BVars()
+      case Assume(e) => e.BVars()
+      case Seq(ss) => SeqBVars(ss)
+      case Assign(lhs, rhs) => rhs.BVars()
+      case VarDecl(v, s) => s.BVars() + {v}
+      case Choice(s0, s1) => s0.BVars() + s1.BVars()
+    }
+
+    predicate NoShadowing() {
+      match this
+      case Check(e) => e.NoShadowing()
+      case Assume(e) => e.NoShadowing()
+      case Seq(ss) => SeqNoShadowing(ss)
+      case Assign(lhs, rhs) => rhs.NoShadowing()
+      case VarDecl(v, s) => v !in s.BVars() && s.NoShadowing()
+      case Choice(s0, s1) => s0.NoShadowing() && s1.NoShadowing()
+    }
+
+    predicate IsDefinedOn(s: set<Variable>) {
+      FVars() <= s
+    }
+    lemma IsDefinedOnTransitivity(s1: set<Variable>, s2: set<Variable>)
+      requires s1 <= s2
+      ensures IsDefinedOn(s1) ==> IsDefinedOn(s2)
+    {  }
+
+    predicate Single() {
+      match this
+      case Assign(_, _) => true
+      case Check(_) => true
+      case Assume(_) => true
+      case _ => false
+    }
+  }
+
+  function SeqSize(ss: seq<Stmt>): nat {
+    if ss == [] then 0 else ss[0].Size() + SeqSize(ss[1..])
+  }
+
+  lemma SeqSizeSplitLemma(ss: seq<Stmt>)
+    requires ss != []
+    ensures SeqSize(ss) == ss[0].Size() + SeqSize(ss[1..])
+  {  }
+
+  function SeqFVars(ss: seq<Stmt>): set<Variable> 
+    decreases ss
+  {
+    if ss == [] then {} else ss[0].FVars() + SeqFVars(ss[1..])
+  }
+
+  function SeqBVars(ss: seq<Stmt>): set<Variable> {
+    if ss == [] then {} else ss[0].BVars() + SeqBVars(ss[1..])
+  }
+
+  predicate SeqIsDefinedOn(ss: seq<Stmt>, s: set<Variable>) 
+    ensures SeqIsDefinedOn(ss, s) <==> SeqFVars(ss) <= s
+  {
+    if ss == [] then true else ss[0].IsDefinedOn(s) && SeqIsDefinedOn(ss[1..], s)
+  }
+
+  predicate SeqNoShadowing(ss: seq<Stmt>) {
+    if ss == [] then true else ss[0].NoShadowing() && SeqNoShadowing(ss[1..])
+  }
+
+  lemma SeqFunConcatLemmas(ss1: seq<Stmt>, ss2: seq<Stmt>)
+    ensures SeqSize(ss1 + ss2) == SeqSize(ss1) + SeqSize(ss2)
+    ensures SeqBVars(ss1 + ss2) == SeqBVars(ss1) + SeqBVars(ss2)
+    ensures SeqFVars(ss1 + ss2) == SeqFVars(ss1) + SeqFVars(ss2)
+    ensures SeqNoShadowing(ss1 + ss2) == (SeqNoShadowing(ss1) && SeqNoShadowing(ss2))
+  {
+    if ss1 == [] {
+      assert ss1 + ss2 == ss2;
+    } else {
+      assert (ss1 + ss2)[0] == ss1[0];
+      assert (ss1 + ss2)[1..] == ss1[1..] + ss2;
+    }
+  }
+    
 
   type Value = bool
 
@@ -162,7 +254,7 @@ module Semantic {
     }
   }
 
-  least predicate BigStep(s: Stmt, a: State, z: Except<State>) 
+  least predicate BigStep[nat](s: Stmt, a: State, z: Except<State>) 
   {
     match s
     case Check(e) =>
@@ -171,28 +263,94 @@ module Semantic {
     case Assume(e) =>
       e.IsDefinedOn(a.Keys) &&
       a.Eval(e) && z == Ok(a)
-    case Seq(s0, s1) =>
-      exists w ::
-        && BigStep(s0, a, w) 
-        && match w {
-            case Ok(b) => 
-              && s1.IsDefinedOn(b.Keys) 
-              && BigStep(s1, b, z)
-            case _ => z == w
-        }
+    case Seq(ss) => SeqBigStep(ss, a, z)
     case Assign(x, v) =>
       && v.IsDefinedOn(a.Keys) 
       && z == Ok(a.Update(x, a.Eval(v)))
     case VarDecl(v, s) => exists b :: BigStep(s, a.Update(v, b), z)
+    case Choice(s0, s1) => BigStep(s0, a, z) || BigStep(s1, a, z)
     // case While(guard, inv, body) =>
     //   if a.Eval(guard) then
     //     BigStep(Seq(body, While(guard, inv, body)), a, z)
     // else z == Ok(a)
-    // case If(cond, thn, els) =>
-    //   if a.Eval(cond) then
-    //     BigStep(thn, a, z)
-    //   else
-    //     BigStep(els, a, z)
+  }
+
+  least predicate SeqBigStep[nat](ss: seq<Stmt>, a: State, z: Except<State>) 
+  {
+    if ss == [] then z == Ok(a) else
+      exists w ::
+        && BigStep(ss[0], a, w)
+        && match w {
+            case Ok(b) => SeqBigStep(ss[1..], b, z)
+            case _ => z == w
+        }
+  }
+
+  lemma SeqBigStepConcatOkLemma(ss1: seq<Stmt>, ss2: seq<Stmt>, st: State, st': State, out: Except<State>)
+    requires SeqBigStep(ss1, st, Ok(st'))
+    requires SeqBigStep(ss2, st', out)
+    ensures SeqBigStep(ss1 + ss2, st, out)
+  { 
+    if ss1 != [] {
+      var w :| BigStep(ss1[0], st, Ok(w)) && SeqBigStep(ss1[1..], w, Ok(st'));
+      assert ([ss1[0]] + (ss1[1..] + ss2))[0] == ss1[0];
+      assert ss1 + ss2 == [ss1[0]] + (ss1[1..] + ss2); 
+    } else {
+      assert [] + ss2 == ss2;
+    }
+  }
+
+  lemma SeqBigStepConcatErrorLemma(ss1: seq<Stmt>, ss2: seq<Stmt>, st: State)
+    requires SeqBigStep(ss1, st, Error)
+    ensures SeqBigStep(ss1 + ss2, st, Error)
+  { 
+    if ss1 != [] {
+      assert ss1 + ss2 == [ss1[0]] + (ss1[1..] + ss2);
+      var w :| BigStep(ss1[0], st, w) && match w {
+            case Ok(b) => SeqBigStep(ss1[1..], b, Error)
+            case _ => Error == w };
+      match w
+      case Ok(st') => 
+        assert SeqBigStep([ss1[0]] + (ss1[1..] + ss2), st, Error) by {
+          assert ([ss1[0]] + (ss1[1..] + ss2))[0] == ss1[0];
+        }
+      case _ =>
+        assert BigStep(ss1[0], st, Error);
+    }
+  }
+
+  lemma SeqBigStepBigStepLemma(ss: seq<Stmt>, cont: seq<Stmt>, st: State, out: Except<State>)
+    requires SeqBigStep([Seq(ss)] + cont, st, out)
+    ensures BigStep(Seq(ss + cont), st, out)
+  {
+    assert SeqBigStep(ss + cont, st, out) by {
+      var w :| BigStep(Seq(ss), st, w) && match w {
+            case Ok(b) => SeqBigStep(cont, b, out)
+            case _ => out == w
+        };
+      match w
+      case Ok(st') =>
+        SeqBigStepConcatOkLemma(ss, cont, st, st', out);
+      case _ =>
+        SeqBigStepConcatErrorLemma(ss, cont, st);
+    }
+  } 
+
+    lemma SeqBigStepChoiceLemma(s0: Stmt, s1: Stmt, cont: seq<Stmt>, st: State, out: Except<State>)
+    requires SeqBigStep([Choice(s0, s1)] + cont, st, out)
+    ensures SeqBigStep([s0] + cont, st, out) || SeqBigStep([s1] + cont, st, out)
+  {
+    assert forall s :: ([s] + cont)[0] == s;
+    var w :| BigStep(Choice(s0, s1), st, w) && match w {
+      case Ok(b) => SeqBigStep(cont, b, out)
+      case _ => out == w
+    };
+    if BigStep(s0, st, w) {
+      assert SeqBigStep([s0] + cont, st, out);
+    } else {
+      assert BigStep(s1, st, w);
+      assert SeqBigStep([s1] + cont, st, out);
+    }
   }
 
   function Conj(ctx: seq<Expr>): Expr 
@@ -220,12 +378,18 @@ module Semantic {
     incarnation: map<Variable, Variable>, 
     bVars: set<Variable>) {
 
-    function FVars(): set<Variable> 
-      ensures FVars() == Conj(ctx).FVars()
-      ensures forall e <- ctx :: e.FVars() <= FVars()
+    function CtxFVars(): set<Variable> 
+      ensures CtxFVars() == Conj(ctx).FVars()
+      ensures forall e <- ctx :: e.FVars() <= CtxFVars()
       decreases ctx
     {
-      if ctx == [] then {} else ctx[0].FVars() + Context(ctx[1..], incarnation, bVars).FVars()
+      if ctx == [] then {} else ctx[0].FVars() + Context(ctx[1..], incarnation, bVars).CtxFVars()
+    }
+
+    function FVars(): set<Variable> 
+    {
+      CtxFVars()
+      // incarnation.Values 
     }
 
     ghost predicate Valid() 
@@ -240,15 +404,6 @@ module Semantic {
       ensures {:axiom} FreshVar() !in bVars
       ensures {:axiom} FreshVar() !in FVars()
 
-    // {
-    //     // // assert !incarnation.Keys != {};
-    //     // // assert {:axiom} exists v :: v !in incarnation.Keys;
-    //     // v :| v !in incarnation.Keys by {
-    //     //   // Prove existence here
-    //     //   assume {:axiom} false;
-    //     //   // loop increasing length
-    //     // }
-    // }
 
     function AdjustState(s: State): State
       // requires Valid()
@@ -300,11 +455,14 @@ module Semantic {
 
     function Add(e: Expr): Context
       requires Valid()
-      ensures Valid()
+      requires e.IsDefinedOn(incarnation.Keys)
+      ensures Add(e).Valid()
       // ensures incarnation == Add(e).incarnation
       // ensures ctx <= Add(e).ctx
     {
+      ghost var ctx' := ctx;
       var ctx := ctx + [Substitute(e)];
+      FVarsConjUnionLemma(ctx', [Substitute(e)]);
       Context(ctx, incarnation, bVars)
     }
 
@@ -431,7 +589,6 @@ module Semantic {
       requires Valid()
       requires e.IsDefinedOn(incarnation.Keys)
       requires IsDefinedOn(s.Keys)
-      requires incarnation.Values <= s.Keys
       ensures Substitute(e).IsDefinedOn(s.Keys)
       ensures (
         SubstituteIsDefinedOnLemma(e); 
@@ -501,38 +658,29 @@ Plan for adding:
 
 // method VCGenAux(s: Stmt, context_in: Context, sts: set<State>, out: Except<State>) returns (result: set<Expr>, context: Context) 
 
-lemma BigStepAssignLemma(s: State, v: Variable, x: Expr, context: Context, out: Except<State>) returns (s': State)
-  requires context.IsSatisfiedOn(s)
-  requires BigStep(Assign(v, x), context.AdjustState(s), out)
-  ensures context.IsSatisfiedOn(s')
-  ensures context.incarnation.Values <= s'.Keys
-  ensures Ok(context.AdjustState(s')) == out {
-    assume {:axiom} false;
-  }
-  
+method VCGen(s: Stmt, context_in: Context) returns (context: Context, VCs: seq<Expr>) 
+  requires s.BVars() <= context_in.bVars
+  requires s.IsDefinedOn(context_in.incarnation.Keys)
+  requires context_in.Valid()
+  requires s.Single()
+  requires s.IsDefinedOn(context_in.incarnation.Keys)
 
-method VCGenAux(s: Stmt, context_in: Context) returns (result: set<Expr>, context: Context) 
-    requires s.BVars() <= context_in.bVars
-    requires s.IsDefinedOn(context_in.incarnation.Keys)
-
-    requires context_in.Valid()
-    ensures context.Valid()
-    ensures context_in.bVars == context.bVars
-    ensures context_in.incarnation.Keys <= context.incarnation.Keys
-    ensures 
-      (forall e <- result :: e.Holds()) ==> 
-        forall st: State, out: Except<State> :: 
-          context_in.IsSatisfiedOn(st) ==>
-          BigStep(s, context_in.AdjustState(st), out) ==>
-          exists st': State :: 
-            && context.incarnation.Values <= st'.Keys
-            && Ok(context.AdjustState(st')) == out
-            && context.IsSatisfiedOn(st')
+  ensures context.Valid()
+  ensures context_in.bVars == context.bVars
+  ensures context_in.incarnation.Keys <= context.incarnation.Keys
+  ensures (forall e <- VCs :: e.Holds()) ==> 
+    forall st: State, out: Except<State> :: 
+      context_in.IsSatisfiedOn(st) ==>
+      BigStep(s, context_in.AdjustState(st), out) ==>
+      exists st': State :: 
+        && context.incarnation.Values <= st'.Keys
+        && Ok(context.AdjustState(st')) == out
+        && context.IsSatisfiedOn(st')
   {
     context := context_in;
     match s
     case Check(e) =>
-      result := {context.MkEntailment(e)};
+      VCs := [context_in.MkEntailment(e)];
       if context.MkEntailment(e).Holds() {
         forall st: State, out: Except<State> | context.IsSatisfiedOn(st) && BigStep(Check(e), context.AdjustState(st), out) 
            ensures out == Ok(context.AdjustState(st)) {
@@ -545,8 +693,8 @@ method VCGenAux(s: Stmt, context_in: Context) returns (result: set<Expr>, contex
         }
       }
     case Assume(e) =>
-      context := context.Add(e);
-      result := {};
+      context := context_in.Add(e);
+      VCs := [];
       FVarsConjUnionLemma(context_in.ctx, [context_in.Substitute(e)]);
       forall st: State, out: Except<State> | context_in.IsSatisfiedOn(st) && BigStep(Assume(e), context_in.AdjustState(st), out) 
         ensures out == Ok(context.AdjustState(st))
@@ -557,8 +705,8 @@ method VCGenAux(s: Stmt, context_in: Context) returns (result: set<Expr>, contex
       }
     case Assign(v, x) =>
       var vNew;
-      vNew, context := context.AddEq(v, x);
-      result := {};
+      vNew, context := context_in.AddEq(v, x);
+      VCs := [];
       forall st: State, out: Except<State> | 
         && context_in.IsSatisfiedOn(st)  
         && BigStep(Assign(v, x), context_in.AdjustState(st), out) 
@@ -587,22 +735,151 @@ method VCGenAux(s: Stmt, context_in: Context) returns (result: set<Expr>, contex
               context_in.AdjustStateSubstituteLemma(st, x);
           }
         }
-    case Seq(s0, s1) =>
-      var res0, context' := VCGenAux(s0, context);
-      var res1, context'' := VCGenAux(s1, context');
-      result := res0 + res1;
-      context := context'';
-      if (forall e <- res0 + res1 :: e.Holds()) {
-        forall st: State, out: Except<State> | context_in.IsSatisfiedOn(st) && BigStep(Seq(s0, s1), context_in.AdjustState(st), out)
-          ensures (exists st': State :: 
-            && context.incarnation.Values <= st'.Keys
-            && Ok(context.AdjustState(st')) == out
-            && context.IsSatisfiedOn(st')) {
-            assert BigStep(Seq(s0, s1), context_in.AdjustState(st), out);
-        }
-      }
-    
     case _ => assume {:axiom} false;
+  }
+
+method SeqVCGen(s: seq<Stmt>, context_in: Context) returns (context: Context, VCs: seq<Expr>) 
+    requires SeqBVars(s) <= context_in.bVars
+    requires SeqIsDefinedOn(s, context_in.incarnation.Keys)
+    requires SeqNoShadowing(s)
+
+    requires context_in.Valid()
+    ensures context.Valid()
+    ensures context_in.bVars == context.bVars
+    ensures context_in.incarnation.Keys <= context.incarnation.Keys
+    decreases SeqSize(s)
+    ensures
+      (forall e <- VCs :: e.Holds()) ==> 
+        forall st: State, out: Except<State> :: 
+          context_in.IsSatisfiedOn(st) ==>
+          SeqBigStep(s, context_in.AdjustState(st), out) ==> out.Ok?
+  {
+    context := context_in;
+    if s == [] { 
+      VCs := []; 
+      return; 
+    }
+
+    var stmt, cont := s[0], s[1..];
+    assert s == [stmt] + cont;
+    SeqSizeSplitLemma(s);
+    if stmt.Single() {
+      var VCstmt, VCcont;
+      context, VCstmt := VCGen(stmt, context);
+      context, VCcont := SeqVCGen(cont, context);
+      VCs := VCstmt + VCcont;
+    } else {
+      match stmt 
+      case Seq(ss) =>
+        SeqFunConcatLemmas(ss, cont);
+        context, VCs := SeqVCGen(ss + cont, context);
+        if (forall e <- VCs :: e.Holds()) {
+          forall st: State, out: Except<State> | context_in.IsSatisfiedOn(st) && SeqBigStep(s, context_in.AdjustState(st), out) 
+            ensures out.Ok?
+          {
+            assert BigStep(Seq(ss + cont), context_in.AdjustState(st), out) by {
+              SeqBigStepBigStepLemma(ss, cont, context_in.AdjustState(st), out);
+            }
+          }
+        }
+      case Choice(ss0, ss1) =>
+        var context0, VCs0 := SeqVCGen([ss0] + cont, context);
+        var context1, VCs1 := SeqVCGen([ss1] + cont, context);
+        context := context1;
+        VCs := VCs0 + VCs1;
+        if (forall e <- VCs :: e.Holds()) {
+          forall st: State, out: Except<State> | 
+            && context_in.IsSatisfiedOn(st)  
+            && SeqBigStep([Choice(ss0, ss1)] + cont, context_in.AdjustState(st), out) 
+            ensures out.Ok?
+          {
+            assert || SeqBigStep([ss0] + cont, context_in.AdjustState(st), out) 
+                   || SeqBigStep([ss1] + cont, context_in.AdjustState(st), out) by
+            {
+              SeqBigStepChoiceLemma(ss0, ss1, cont, context_in.AdjustState(st), out);
+            }
+          }
+        }
+      case _ => assume {:axiom} false;
+    }
+    // match stmt
+    // case Check(e) =>
+    //   var VC := context.MkEntailment(e);
+    //   context, VCs := SeqVCGen(cont, context);
+    //   VCs := [VC] + VCs;
+      // if context.MkEntailment(e).Holds() {
+      //   forall st: State, out: Except<State> | context.IsSatisfiedOn(st) && BigStep(Check(e), context.AdjustState(st), out) 
+      //      ensures out == Ok(context.AdjustState(st)) {
+      //       assert context.AdjustState(st).Eval(e) by { 
+      //         context.AdjustStateSubstituteLemma(st, e);
+      //         IsDefinedOnConjLemma(context.ctx, st);
+      //         context.SubstituteIsDefinedOnLemma(e);
+      //         EvalConjLemma(context.ctx, st);
+      //      }
+      //   }
+      // }
+    // case Assume(e) =>
+    //   context := context.Add(e);
+    //   context, VCs := SeqVCGen(cont, context);
+      // FVarsConjUnionLemma(context_in.ctx, [context_in.Substitute(e)]);
+      // forall st: State, out: Except<State> | context_in.IsSatisfiedOn(st) && BigStep(Assume(e), context_in.AdjustState(st), out) 
+      //   ensures out == Ok(context.AdjustState(st))
+      //   ensures context.IsSatisfiedOn(st)
+      //   ensures context.incarnation.Values <= st.Keys {
+      //   context_in.SubstituteIsDefinedOnLemma(e);
+      //   context_in.AdjustStateSubstituteLemma(st, e); 
+      // }
+    // case Assign(v, x) =>
+    //   var vNew;
+    //   vNew, context := context.AddEq(v, x);
+    //   context, VCs := SeqVCGen(cont, context);
+      // forall st: State, out: Except<State> | 
+      //   && context_in.IsSatisfiedOn(st)  
+      //   && BigStep(Assign(v, x), context_in.AdjustState(st), out) 
+      //   ensures (exists st': State :: 
+      //       && context.incarnation.Values <= st'.Keys
+      //       && Ok(context.AdjustState(st')) == out
+      //       && context.IsSatisfiedOn(st')) {
+      //     context_in.SubstituteIsDefinedOnLemma(x);
+      //     var v' := st.Eval(context_in.Substitute(x));
+      //     var st' := st.Update(vNew, v');
+
+      //     context_in.SubstituteIsDefinedOnLemma(x);
+      //     FVarsEqLemma(Var(vNew), context_in.Substitute(x));
+      //     FVarsConjUnionLemma(context_in.ctx, [Eq(Var(vNew), context_in.Substitute(x))]);
+          
+      //     assert context.IsSatisfiedOn(st') by {
+      //       context_in.Substitute(x).EvalFVarsLemma(st, st');
+      //       EvalEqLemma(Var(vNew), context_in.Substitute(x), st');
+      //       assert forall e: Expr :: e.FVars() <= context_in.FVars() ==> st.Eval(e) ==> st'.Eval(e) by {
+      //         forall e: Expr | e.FVars() <= context_in.FVars() && st.Eval(e) { 
+      //           e.EvalFVarsLemma(st, st');
+      //         }
+      //       }
+      //     }
+      //     assert context.AdjustState(st') == context_in.AdjustState(st).Update(v, context_in.AdjustState(st).Eval(x)) by {
+      //         context_in.AdjustStateSubstituteLemma(st, x);
+      //     }
+      //   }
+    // case Seq(ss) =>
+    //   SeqSizeConcatLemma(ss, cont);
+    //   SeqFVarsConcatLemma(ss, cont);
+    //   SeqBVarsConcatLemma(ss, cont);
+    //   context, VCs := SeqVCGen(ss + cont, context);
+      // if (forall e <- res0 + res1 :: e.Holds()) {
+      //   forall st: State, out: Except<State> | context_in.IsSatisfiedOn(st) && BigStep(Seq(s0, s1), context_in.AdjustState(st), out)
+      //     ensures (exists st': State :: 
+      //       && context.incarnation.Values <= st'.Keys
+      //       && Ok(context.AdjustState(st')) == out
+      //       && context.IsSatisfiedOn(st')) {
+      //       assert BigStep(Seq(s0, s1), context_in.AdjustState(st), out);
+      //   }
+      // }
+    // case If(cond, thn, els) =>
+    //   var contextForThn := context.Add(cond);
+    //   var contextForEls := context.Add(Not(cond));
+    //   var res0, _ 
+    // case _ => assume {:axiom} false;
 
     // case While(guard, inv, body) =>
     //   var invIn := context.MkEntailment(inv);
@@ -620,7 +897,6 @@ method VCGenAux(s: Stmt, context_in: Context) returns (result: set<Expr>, contex
       // var r1 := VCGenAux(els, ctx);
       // result := r0 + r1;
   }
-
 }
 /*
   method VCGenAux(s: Stmt, context: Context) returns (result: set<Expr>) 
