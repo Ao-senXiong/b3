@@ -161,6 +161,8 @@ function AnotherNicelyIndented(x: int, y: int): bool
       -1 + G() != 75
 }
 
+// -------
+
 type Abc
 
 procedure TestTypeUse(y: Abc) {
@@ -173,3 +175,16 @@ procedure TestTypeUse(y: Abc) {
 }
 
 function Inc(x: int): int
+
+// -------
+
+type MyString
+
+function Stringy(s: MyString): bool
+
+procedure UseQuantifier(t: MyString, u: MyString) {
+  assume forall s: MyString pattern Stringy(s) :: s != t ==> Stringy(s)
+  if t != u {
+    check Stringy(u)
+  }
+}
