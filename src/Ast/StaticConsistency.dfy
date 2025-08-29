@@ -60,7 +60,7 @@ module StaticConsistency {
     case Assert(cond) => true
     case AForall(_, body) =>
       ConsistentStmt(body) && !ContainsNonAssertions(body)
-    case Choice(branches) =>
+    case Choose(branches) =>
       forall branch <- branches :: ConsistentStmt(branch)
     case Loop(invariants, body) =>
       && (forall inv <- invariants :: ConsistentAExpr(inv))
@@ -84,7 +84,7 @@ module StaticConsistency {
     case Assert(_) => false
     case AForall(_, body) =>
       ContainsNonAssertions(body)
-    case Choice(branches) =>
+    case Choose(branches) =>
       exists branch <- branches :: ContainsNonAssertions(branch)
     case Loop(_, _) => true
     case LabeledStmt(_, _) => true
@@ -162,7 +162,7 @@ module StaticConsistency {
         if ContainsNonAssertions(body) {
           return Fail("'forall' statement is not allowed to contain non-assertions");
         }
-      case Choice(branches) =>
+      case Choose(branches) =>
         for n := 0 to |branches|
           invariant forall branch <- branches[..n] :: ConsistentStmt(branch)
         {
@@ -206,7 +206,7 @@ module StaticConsistency {
       case Assert(_) =>
       case AForall(_, body) =>
         :- CheckCanBeUsedInAssertion(body);
-      case Choice(branches) =>
+      case Choose(branches) =>
         for n := 0 to |branches|
           invariant forall branch <- branches[..n] :: !ContainsNonAssertions(branch)
         {

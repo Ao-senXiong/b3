@@ -221,7 +221,7 @@ module Ast {
     | Assert(cond: Expr)
     | AForall(v: Variable, body: Stmt)
     // Control flow
-    | Choice(branches: seq<Stmt>)
+    | Choose(branches: seq<Stmt>)
     | Loop(invariants: seq<AExpr>, body: Stmt)
     | LabeledStmt(lbl: Label, body: Stmt)
     | Exit(lbl: Label)
@@ -243,7 +243,7 @@ module Ast {
       case Assume(cond) => cond.WellFormed()
       case Assert(cond) => cond.WellFormed()
       case AForall(_, body) => body.WellFormed()
-      case Choice(branches) =>
+      case Choose(branches) =>
         forall branch <- branches :: branch.WellFormed()
       case Loop(invariants, body) =>
         && (forall inv <- invariants :: inv.WellFormed())

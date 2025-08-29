@@ -156,7 +156,7 @@ module Verifier {
       var rL := incarnations.REval(L);
       context := RSolvers.Extend(context, rL);
       Process(cont, incarnations, context, B, smtEngine);
-    case Choice(branches) =>
+    case Choose(branches) =>
       for i := 0 to |branches|
         invariant smtEngine.Valid()
       {
@@ -297,7 +297,7 @@ module Verifier {
       e
     case AForall(v, body) =>
       Expr.CreateForall(v, Learn(body))
-    case Choice(branches) =>
+    case Choose(branches) =>
       var ll := SeqMap(branches, (s: Stmt) requires s in branches => Learn(s));
       Expr.CreateBigOr(ll)
     case Probe(_) =>
