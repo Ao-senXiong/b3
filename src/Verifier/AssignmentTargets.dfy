@@ -33,8 +33,8 @@ module AssignmentTargets {
     case Assume(_) => ({}, {Normal})
     case Assert(_) => ({}, {Normal})
     case AForall(_, _) => ({}, {Normal})
-    case Choice(branches) =>
-      ChoiceTargets(branches)
+    case Choose(branches) =>
+      ChooseTargets(branches)
     case Loop(_, body) =>
       var (vv, cc) := StmtTargets(body);
       (vv, cc - {Normal})
@@ -61,12 +61,12 @@ module AssignmentTargets {
         (vv, cc)
   }
 
-  function ChoiceTargets(stmts: seq<Ast.Stmt>): (set<Ast.Variable>, set<ContinuationPoint>) {
+  function ChooseTargets(stmts: seq<Ast.Stmt>): (set<Ast.Variable>, set<ContinuationPoint>) {
     if stmts == [] then
       ({}, {})
     else
       var (vv, cc) := StmtTargets(stmts[0]);
-      var (vv', cc') := ChoiceTargets(stmts[1..]);
+      var (vv', cc') := ChooseTargets(stmts[1..]);
       (vv + vv', cc + cc')
   }
 }

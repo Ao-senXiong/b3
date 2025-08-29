@@ -514,7 +514,7 @@ module Resolver {
           var rbranch :- ResolveStmt(branches[n], prs, ls);
           rbranches := rbranches + [rbranch];
         }
-        r := Choice(rbranches);
+        r := Choose(rbranches);
 
       case If(cond, thn, els) =>
         var c :- ResolveExpr(cond, prs.ers, ls.varMap);
@@ -522,7 +522,7 @@ module Resolver {
         var el :- ResolveStmt(els, prs, ls);
         var branch0 := PrependAssumption(c, th);
         var branch1 := PrependAssumption(Expr.CreateNegation(c), el);
-        r := Choice([branch0, branch1]);
+        r := Choose([branch0, branch1]);
 
       case IfCase(cases) =>
         if |cases| == 0 {
@@ -539,7 +539,7 @@ module Resolver {
           var body :- ResolveStmt(cases[n].body, prs, ls);
           branches := branches + [PrependAssumption(cond, body)];
         }
-        r := Choice(branches);
+        r := Choose(branches);
 
       case Loop(invariants, body) =>
         var invs :- ResolveAExprs(invariants, prs, ls);

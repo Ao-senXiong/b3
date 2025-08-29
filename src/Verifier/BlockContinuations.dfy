@@ -37,7 +37,7 @@ module BlockContinuations {
     case Assume(_) => 1
     case Assert(_) => 2
     case AForall(_, body) => 1 + StmtMeasure(body)
-    case Choice(branches) => 1 + StmtSeqMeasure(branches)
+    case Choose(branches) => 1 + StmtSeqMeasure(branches)
     case Loop(_, body) => 1 + StmtMeasure(body) // TODO
     case LabeledStmt(_, body) => 2 + StmtMeasure(body)
     case Exit(_) => 1
