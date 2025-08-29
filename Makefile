@@ -22,7 +22,7 @@ resolve:
 	dafny resolve $(PROJECT_FILE)
 
 test:
-	$(TARGET) $(INPUT) | diff $(EXPECTED_OUTPUT) -
+	$(TARGET) verify $(INPUT) | diff $(EXPECTED_OUTPUT) -
 
 test-cs:
 	(cd target/cs; dafny test --no-verify $(PROJECT_FILE) --output test/b3)
@@ -44,7 +44,7 @@ run-js:
 	(cd target/js; node bin/b3.js ../../$(INPUT))
 
 b3:
-	$(TARGET) $(INPUT)
+	$(TARGET) verify $(INPUT)
 
 docs:
 	cd doc ; make

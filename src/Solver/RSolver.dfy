@@ -9,6 +9,7 @@ module RSolvers {
   import Ast
   import opened Std.Wrappers
   import opened Basics
+  import CLI = CommandLineOptions
 
   export
     reveals RExpr, ROperator, RPattern
@@ -16,7 +17,7 @@ module RSolvers {
     provides RContext, CreateEmptyContext, Extend, Record
     reveals REngine
     provides CreateEngine, REngine.Repr, REngine.Valid, REngine.Prove
-    provides SolverExpr, Solvers, Ast
+    provides SolverExpr, Solvers, Ast, CLI
 
   // ===== RExpr =====
 
@@ -432,10 +433,10 @@ module RSolvers {
     }
   }
 
-  method CreateEngine() returns (r: REngine)
+  method CreateEngine(cli: CLI.CliResult) returns (r: REngine)
     ensures r.Valid() && fresh(r.Repr)
   {
-    var z3 := Z3SmtSolver.CreateZ3SolverEngine();
+    var z3 := Z3SmtSolver.CreateZ3SolverEngine("solver-log" in cli.options);
     var state := new Solvers.SolverState(z3);
     r := new REngine.New(state);
   }
