@@ -8,12 +8,13 @@ module Verifier {
   import StaticConsistency
   import AssignmentTargets
   import BC = BlockContinuations
+  import CLI = CommandLineOptions
 
   export
     provides Verify
-    provides Ast
+    provides Ast, CLI
 
-  method Verify(b3: Ast.Program)
+  method Verify(b3: Ast.Program, cli: CLI.CliResult)
     requires b3.WellFormed()
   {
     var typeMap := map[];
@@ -47,14 +48,14 @@ module Verifier {
       procs := procs - {proc};
 
       print "Verifying ", proc.Name, " ...\n";
-      VerifyProcedure(proc, declMap);
+      VerifyProcedure(proc, declMap, cli);
     }
   }
 
-  method VerifyProcedure(proc: Ast.Procedure, declMap: I.DeclMappings)
+  method VerifyProcedure(proc: Ast.Procedure, declMap: I.DeclMappings, cli: CLI.CliResult)
     requires proc.WellFormed()
   {
-    var smtEngine := RSolvers.CreateEngine();
+    var smtEngine := RSolvers.CreateEngine(cli);
     var context := RSolvers.CreateEmptyContext();
 
     // Create incarnations for parameters in the pre-state

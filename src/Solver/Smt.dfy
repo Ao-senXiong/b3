@@ -41,13 +41,16 @@ module Smt {
   // SMT engine (containing an SMT process) with incremental solving capabilities
   class SolverEngine {
     const process: SmtProcess
-    constructor(process: SmtProcess)
+    const printLog: bool
+
+    constructor(process: SmtProcess, printLog: bool)
       requires !process.Disposed()
       ensures CommandStacks() == Cons(Nil, Nil)
       ensures !Disposed()
       ensures this.process == process
     {
       this.process := process;
+      this.printLog := printLog;
       new;
       assume {:axiom} CommandStacks() == Cons(Nil, Nil);
     }
@@ -89,7 +92,9 @@ module Smt {
       ensures cmd != CMD_PUSH && cmd != CMD_POP ==>
                 CommandStacks() == AddCommand(old(CommandStacks()), cmd)
     {
-      // print ">> ", cmd, "\n"; // for debugging
+      if printLog {
+        print "smt>> ", cmd, "\n";
+      }
 
       response := process.SendCmd(cmd);
       assume {:axiom} old(allocated(CommandStacks()));

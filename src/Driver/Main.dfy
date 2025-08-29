@@ -12,21 +12,64 @@ module B3 {
   import TypeChecker
   import Verifier
   import StaticConsistency
+  import CLI = CommandLineOptions
+
+  class B3CliSyntax extends CLI.Syntax<Verb> {
+    constructor () {
+      ToolName := "b3";
+    }
+
+    method GetVerbs() returns (verbs: seq<(string, Verb)>) {
+      verbs := [
+        ("parse", Parse),
+        ("resolve", Resolve),
+        ("verify", Verify)
+      ];
+    }
+
+    function GetOptionInfo(name: string): CLI.OptionInfo {
+      match name
+      case "print" => CLI.OptionInfo.ArgumentCount(0)
+      case "solver-log" => CLI.OptionInfo.ArgumentCount(0)
+      case _ => CLI.OptionInfo.Unknown
+    }
+
+  }
+
+  datatype Verb = Parse | Resolve | Verify
 
   method Main(args: seq<string>) {
-    if |args| != 2 {
-      PrintUsage();
+    var syntax := new B3CliSyntax();
+    var cliResult := CLI.Parse(syntax, args);
+    if cliResult.Failure? {
+      print cliResult.error, "\n";
       return;
     }
+    var cli := cliResult.value;
+    
+    var rawb3;
+    match |cli.files| {
+      case 0 =>
+        print "No files given on command line\n";
+        return;
+      case 1 =>
+        var r := ReadAndParseProgram(cli.files[0]);
+        if r.IsFailure() {
+          print r.error, "\n";
+          return;
+        }
+        rawb3 := r.value;
+      case _ =>
+        print "Only 1 filename is supported\n";
+        return;
+    }
 
-    var r := ReadAndParseProgram(args[1]);
-    if r.IsFailure() {
-      print r.error, "\n";
+    if "print" in cli.options {
+      Printer.Program(rawb3);
+    }
+    if cli.verb == Parse {
       return;
     }
-    var rawb3 := r.value;
-
-    // Printer.Program(rawb3); // for debugging
 
     var resultResolver := ResolveAndTypeCheck(rawb3);
     if resultResolver.IsFailure() {
@@ -34,12 +77,11 @@ module B3 {
       return;
     }
     var b3 := resultResolver.value;
+    if cli.verb == Resolve {
+      return;
+    }
 
-    Verifier.Verify(b3);
-  }
-
-  method PrintUsage() {
-    print "Usage: b3 <filename.b3>\n";
+    Verifier.Verify(b3, cli);
   }
 
   method ReadAndParseProgram(filename: string) returns (r: Result<RawAst.Program, string>) {
