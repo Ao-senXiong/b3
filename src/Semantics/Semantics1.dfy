@@ -141,11 +141,13 @@ module Semantic {
       case Choice(s0, s1) => s0.BVars() + s1.BVars()
     }
 
-    predicate NoShadowing() {
+    predicate NoShadowing()  {
       match this
       case Check(e) => e.NoShadowing()
       case Assume(e) => e.NoShadowing()
-      case Seq(ss) => SeqNoShadowing(ss)
+      case Seq(ss) => 
+        && SeqNoShadowingAux(ss)
+        && (forall i, j :: 0 <= i < j < |ss| ==> ss[i].BVars() * ss[j].BVars() == {})
       case Assign(lhs, rhs) => rhs.NoShadowing()
       case VarDecl(v, s) => v !in s.BVars() && s.NoShadowing()
       case Choice(s0, s1) => s0.NoShadowing() && s1.NoShadowing()
@@ -197,12 +199,24 @@ module Semantic {
     if ss == [] then true else ss[0].IsDefinedOn(s) && SeqIsDefinedOn(ss[1..], s)
   }
 
-  predicate SeqNoShadowing(ss: seq<Stmt>) {
-    if ss == [] then true else ss[0].NoShadowing() && SeqNoShadowing(ss[1..])
+  predicate SeqNoShadowingAux(ss: seq<Stmt>) {
+    if ss == [] then true else ss[0].NoShadowing() && SeqNoShadowingAux(ss[1..])
   }
 
+  predicate SeqNoShadowing(ss: seq<Stmt>) 
+    decreases ss
+  {
+    && SeqNoShadowingAux(ss)
+    && (forall i, j :: 0 <= i < j < |ss| ==> ss[i].BVars() * ss[j].BVars() == {})
+  }
+
+  predicate SeqWellFormed'(ss: seq<Stmt>) {
+    && (forall s <- ss :: s.WellFormed())
+    && (forall i, j :: 0 <= i < j < |ss| ==> ss[i].BVars() * (ss[j].BVars() + ss[j].FVars()) == {})
+  }
+
+
   predicate SeqWellFormed(ss: seq<Stmt>) {
-    // SeqNoShadowing(ss) && (SeqFVars(ss) * SeqBVars(ss) == {})
     if ss == [] then 
       true 
     else 
@@ -212,15 +226,127 @@ module Semantic {
       && SeqWellFormed(ss[1..])
   }
 
+  lemma IntersectSeqVarsLemma(s: set<Variable>, ss: seq<Stmt>)
+    requires forall i :: 0 <= i < |ss| ==> s * (ss[i].BVars() + ss[i].FVars()) == {}
+    ensures s * (SeqFVars(ss) + SeqBVars(ss)) == {}
+  {  }
+  lemma IntersectSeqVarsLemma'(s: set<Variable>, ss: seq<Stmt>)
+    requires s * (SeqFVars(ss) + SeqBVars(ss)) == {}
+    ensures forall i :: 0 <= i < |ss| ==> s * (ss[i].BVars() + ss[i].FVars()) == {}
+  {  }
+
+  lemma SeqWellFormedEqLemma(ss: seq<Stmt>)
+    ensures SeqWellFormed'(ss) <==> SeqWellFormed(ss)
+  {
+    if ss != [] {
+      assert ss == [ss[0]] + ss[1..];
+      assert forall i :: 0 <= i < |ss[1..]| ==> ss[1..][i] == ss[i + 1];
+      assert SeqWellFormed'(ss) ==> SeqWellFormed(ss) by {
+        if SeqWellFormed'(ss) {
+          assert ss[0].BVars() * (SeqFVars(ss[1..]) + SeqBVars(ss[1..])) == {} by {
+            IntersectSeqVarsLemma(ss[0].BVars(), ss[1..]);
+          }
+        }
+      }
+      assert SeqWellFormed(ss) ==> SeqWellFormed'(ss) by {
+        if SeqWellFormed(ss) {
+          SeqWellFormedEqLemma(ss[1..]);
+          IntersectSeqVarsLemma'(ss[0].BVars(), ss[1..]);
+        }
+      }
+    }
+  }
+
+  lemma WellFormedSeqLemma(ss: seq<Stmt>)
+    requires Seq(ss).WellFormed()
+    ensures SeqWellFormed'(ss)
+  { 
+    assert SeqNoShadowingAux(ss) by {
+      assert SeqNoShadowing(ss);
+    }
+    forall s | s in ss 
+      ensures s.WellFormed() { 
+        SeqVarsInLemma(ss, s); 
+      }
+    forall i, j | 0 <= i < j < |ss| 
+      ensures (ss[i].BVars() * (ss[j].BVars() + ss[j].FVars()) == {}) {
+      assert ss[i].BVars() * ss[j].FVars() == {} by {
+        SeqVarsInLemma(ss, ss[i]);
+        SeqVarsInLemma(ss, ss[j]);
+      }
+      assert ss[i].BVars() * ss[j].BVars() == {} by {
+        assert SeqNoShadowing(ss);
+      }
+    }
+  }
+
+  lemma SeqWellFormedLemma(ss: seq<Stmt>)
+    requires SeqWellFormed'(ss)
+    ensures forall s <- ss :: s.WellFormed()
+  {  }
+
+  lemma SeqVarsInLemma(ss: seq<Stmt>, s: Stmt)
+    requires s in ss
+    ensures s.BVars() <= Seq(ss).BVars()
+    ensures s.FVars() <= Seq(ss).FVars()
+    ensures SeqNoShadowingAux(ss) ==> s.NoShadowing()
+  { 
+    if ss != [] {
+      if s == ss[0] {
+      } else {
+        SeqVarsInLemma(ss[1..], s);
+      }
+    }
+  }
+
+  lemma SeqWellFormedSeqLemma'(ss: seq<Stmt>, cont: seq<Stmt>)
+    requires SeqWellFormed'([Seq(ss)] + cont)
+    ensures SeqWellFormed'(ss + cont)
+  {
+    forall s | s in ss + cont 
+      ensures s.WellFormed() {
+      WellFormedSeqLemma(ss);
+      SeqWellFormedLemma(ss);
+    }
+    forall i, j | 0 <= i < j < |ss + cont| 
+      ensures (ss + cont)[i].BVars() * ((ss + cont)[j].BVars() + (ss + cont)[j].FVars()) == {} {
+      if i >= |ss| {
+        assert (ss + cont)[i] == ([Seq(ss)] + cont)[i - |ss| + 1];
+        assert (ss + cont)[j] == ([Seq(ss)] + cont)[j - |ss| + 1];
+      } else {
+        if j < |ss| {
+          assert (ss + cont)[i] == ss[i];
+          assert (ss + cont)[j] == ss[j];
+          assert ss[i].BVars() * (ss[j].BVars() + ss[j].FVars()) == {} by {
+            WellFormedSeqLemma(ss);
+          }
+        } else {
+          assert (ss + cont)[i] == ss[i];
+          assert ss[i].BVars() <= Seq(ss).BVars() by {
+            assert ss[i] in ss;
+            SeqVarsInLemma(ss, ss[i]);
+          }
+          assert Seq(ss).BVars() * (([Seq(ss)] + cont)[j - |ss| + 1].BVars() + ([Seq(ss)] + cont)[j - |ss| + 1].FVars()) == {} by {
+            assert (ss + cont)[j] == ([Seq(ss)] + cont)[j - |ss| + 1];
+            assert Seq(ss) == ([Seq(ss)] + cont)[0];
+          }
+        }
+      }
+    }
+  }
+
   lemma SeqWellFormedSeqLemma(ss: seq<Stmt>, cont: seq<Stmt>)
     requires SeqWellFormed([Seq(ss)] + cont)
     ensures SeqWellFormed(ss + cont)
+  {
+    forall ss { SeqWellFormedEqLemma(ss); }
+    SeqWellFormedSeqLemma'(ss, cont);
+  }
 
   lemma SeqFunConcatLemmas(ss1: seq<Stmt>, ss2: seq<Stmt>)
     ensures SeqSize(ss1 + ss2) == SeqSize(ss1) + SeqSize(ss2)
     ensures SeqBVars(ss1 + ss2) == SeqBVars(ss1) + SeqBVars(ss2)
     ensures SeqFVars(ss1 + ss2) == SeqFVars(ss1) + SeqFVars(ss2)
-    ensures SeqNoShadowing(ss1 + ss2) == (SeqNoShadowing(ss1) && SeqNoShadowing(ss2))
   {
     if ss1 == [] {
       assert ss1 + ss2 == ss2;
