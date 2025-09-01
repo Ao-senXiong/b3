@@ -13,22 +13,16 @@ module TypeChecker {
     requires b3.WellFormed()
     ensures outcome.Pass? ==> TypeCorrect(b3)
   {
-    var functions := b3.functions;
-    while functions != {}
-      invariant forall func <- b3.functions - functions :: TypeCorrectFunction(func)
+    for n := 0 to |b3.functions|
+      invariant forall func <- b3.functions[..n] :: TypeCorrectFunction(func)
     {
-      var func: Function :| func in functions;
-      functions := functions - {func};
-      :- CheckFunction(func);
+      :- CheckFunction(b3.functions[n]);
     }
 
-    var procs := b3.procedures;
-    while procs != {}
-      invariant forall proc <- b3.procedures - procs :: TypeCorrectProc(proc)
+    for n := 0 to |b3.procedures|
+      invariant forall proc <- b3.procedures[..n] :: TypeCorrectProc(proc)
     {
-      var proc: Procedure :| proc in procs;
-      procs := procs - {proc};
-      :- CheckProcedure(proc);
+      :- CheckProcedure(b3.procedures[n]);
     }
 
     return Pass;

@@ -18,7 +18,10 @@ module Resolver {
     var ers := ExprResolverState(b3, typeMap, functionMap);
     var procMap :- ResolveAllProcedures(ers);
 
-    var r3 := Program(typeMap.Values, functionMap.Values, procMap.Values);
+    var types := SeqMap(b3.types, typeName requires typeName in typeMap => typeMap[typeName]);
+    var functions := SeqMap(b3.functions, (func: Raw.Function) requires func.name in functionMap => functionMap[func.name]);
+    var procedures := SeqMap(b3.procedures, (proc: Raw.Procedure) requires proc.name in procMap => procMap[proc.name]);
+    var r3 := Program(types, functions, procedures);
 
     return Success(r3);
   }
@@ -181,6 +184,8 @@ module Resolver {
     ensures r.Success? ==>
       && (forall i, j :: 0 <= i < j < |ers.b3.procedures| ==> ers.b3.procedures[i].name != ers.b3.procedures[j].name)
       && (forall proc <- ers.b3.procedures :: proc.WellFormed(ers.b3))
+    ensures r.Success? ==> var procMap: map<string, Procedure> := r.value;
+      procMap.Keys == (set proc <- ers.b3.procedures :: proc.name)
     ensures r.Success? ==> var procedures: set<Procedure> := r.value.Values;
       && (forall proc0 <- procedures, proc1 <- procedures :: proc0.Name == proc1.Name ==> proc0 == proc1)
       && (forall proc <- procedures :: proc.WellFormed())

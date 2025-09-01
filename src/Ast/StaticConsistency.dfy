@@ -7,13 +7,10 @@ module StaticConsistency {
     requires program.WellFormed()
     ensures outcome.Pass? ==> Consistent(program)
   {
-    var procs := program.procedures;
-    while procs != {}
-      invariant forall proc :: proc in program.procedures - procs ==> ConsistentProc(proc)
+    for n := 0 to |program.procedures|
+      invariant forall proc :: proc in program.procedures[..n] ==> ConsistentProc(proc)
     {
-      var proc :| proc in procs;
-      procs := procs - {proc};
-      :- CheckProcedure(proc);
+      :- CheckProcedure(program.procedures[n]);
     }
     return Pass;
   }

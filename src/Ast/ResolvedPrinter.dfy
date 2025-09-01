@@ -8,26 +8,20 @@ module ResolvedPrinter {
   method Program(b3: Program) {
     print "// Resolved B3 program\n";
 
-    var types := b3.types;
-    while types != {} {
-      var typ :| typ in types;
-      types := types - {typ};
+    for i := 0 to |b3.types| {
+      var typ := b3.types[i];
       print "\n";
       TypeDecl(typ);
     }
 
-    var functions := b3.functions;
-    while functions != {} {
-      var func :| func in functions;
-      functions := functions - {func};
+    for i := 0 to |b3.functions| {
+      var func := b3.functions[i];
       print "\n";
       FunctionDecl(func);
     }
 
-    var procedures := b3.procedures;
-    while procedures != {} {
-      var proc :| proc in procedures;
-      procedures := procedures - {proc};
+    for i := 0 to |b3.procedures| {
+      var proc := b3.procedures[i];
       print "\n";
       Procedure(proc);
     }
