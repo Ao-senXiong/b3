@@ -1,6 +1,7 @@
 module Printer {
   import opened Std.Wrappers
   import opened Basics
+  import opened PrintUtil
   import opened RawAst
   import Types
 
@@ -69,14 +70,6 @@ module Printer {
     case None =>
     case Some(stmt) => StmtAsBlock(stmt, 0);
   }
-
-  method Indent(indent: nat) {
-    for i := 0 to indent {
-      print " ";
-    }
-  }
-
-  const IndentAmount := 2
 
   method Statement(stmt: Stmt, indent: nat, followedByEndCurly: bool := false, omitInitialIndent: bool := false)
     decreases stmt, 1
@@ -282,24 +275,6 @@ module Printer {
     print prefix, " ";
     Expression(e);
     print "\n";
-  }
-
-  datatype ExprFormatOption = SingleLine | MultipleLines(indent: nat)
-  {
-    method Space() {
-      match this
-      case SingleLine => print " ";
-      case MultipleLines(indent) =>
-        print "\n";
-        Indent(indent);
-    }
-
-    function More(): ExprFormatOption {
-      match this
-      case SingleLine => this
-      case MultipleLines(indent) =>
-        MultipleLines(indent + IndentAmount)
-    }
   }
 
   // Print "expr" starting from the current position and ending without a final newline.
