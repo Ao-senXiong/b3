@@ -258,7 +258,7 @@ module Ast {
 
   datatype CallArgument =
     | InArgument(e: Expr)
-    | OutgoingArgument(isInOut: bool, arg: Variable)
+    | OutgoingArgument(isInOut: bool, v: Variable)
   {
     function CorrespondingMode(): ParameterMode {
       match this
