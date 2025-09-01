@@ -1,28 +1,52 @@
 module BlockContinuations {
   import Ast
+  import StaticConsistency
 
   export
     reveals T, Continuation
     provides Empty
-    reveals Valid
+    reveals Add, Remove, Get
+    provides Valid
     reveals StmtMeasure
     provides StmtSeqMeasure
     provides AboutStmtSeqMeasureSingleton, StmtPairMeasure, StmtMeasurePrepend, StmtMeasureSplit, AboutStmtSeqMeasureConcat, StmtSeqElement
-    provides ContinuationsMeasure, AboutContinuationsMeasure, AboutContinuationsMeasureUpdate
-    provides Ast
+    provides ContinuationsMeasure, AboutContinuationsMeasure, AboutContinuationsMeasureAdd, AboutContinuationsMeasureUpdate
+    provides Ast, StaticConsistency
 
   datatype Continuation = Continuation(variablesInScope: set<Ast.Variable>, continuation: seq<Ast.Stmt>)
 
   type T = map<Ast.Label, Continuation>
 
   predicate Valid(t: T) {
-    forall lbl <- t, stmt <- t[lbl].continuation :: stmt.WellFormed()
+    forall lbl <- t, stmt <- t[lbl].continuation :: stmt.WellFormed() && StaticConsistency.ConsistentStmt(stmt)
   }
 
   function Empty(): T
     ensures Valid(Empty())
   {
     map[]
+  }
+
+  function Add(t: T, lbl: Ast.Label, variablesInScope: set<Ast.Variable>, continuation: seq<Ast.Stmt>): (r: T)
+    requires Valid(t)
+    requires forall stmt <- continuation :: stmt.WellFormed() && StaticConsistency.ConsistentStmt(stmt)
+    ensures Valid(r)
+  {
+    t[lbl := Continuation(variablesInScope, continuation)]
+  }
+
+  function Remove(t: T, lbl: Ast.Label): (r: T)
+    requires Valid(t)
+    ensures Valid(r)
+  {
+    t - {lbl}
+  }
+
+  function Get(t: T, lbl: Ast.Label): (r: Continuation)
+    requires Valid(t) && lbl in t
+    ensures forall stmt <- r.continuation :: stmt.WellFormed() && StaticConsistency.ConsistentStmt(stmt)
+  {
+    t[lbl]
   }
 
   ghost function StmtMeasure(stmt: Ast.Stmt): nat
@@ -164,6 +188,14 @@ module BlockContinuations {
     } else {
       assert B == B - {lbl};
     }
+  }
+
+  lemma AboutContinuationsMeasureAdd(B: T, lbl: Ast.Label, V: set<Ast.Variable>, cont: seq<Ast.Stmt>)
+    requires Valid(B)
+    requires forall stmt <- cont :: stmt.WellFormed() && StaticConsistency.ConsistentStmt(stmt)
+    ensures ContinuationsMeasure(B) + StmtSeqMeasure(cont) >= ContinuationsMeasure(Add(B, lbl, V, cont))
+  {
+    AboutContinuationsMeasureUpdate(B, lbl, V, cont);
   }
 
   lemma AboutContinuationsMeasureUpdate(B: T, lbl: Ast.Label, V: set<Ast.Variable>, cont: seq<Ast.Stmt>)

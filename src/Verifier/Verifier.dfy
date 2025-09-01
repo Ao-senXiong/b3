@@ -12,10 +12,10 @@ module Verifier {
 
   export
     provides Verify
-    provides Ast, CLI
+    provides Ast, CLI, StaticConsistency
 
   method Verify(b3: Ast.Program, cli: CLI.CliResult)
-    requires b3.WellFormed()
+    requires b3.WellFormed() && StaticConsistency.Consistent(b3)
   {
     var typeMap := map[];
     var types := b3.types;
@@ -53,7 +53,7 @@ module Verifier {
   }
 
   method VerifyProcedure(proc: Ast.Procedure, declMap: I.DeclMappings, cli: CLI.CliResult)
-    requires proc.WellFormed()
+    requires proc.WellFormed() && StaticConsistency.ConsistentProc(proc)
   {
     var smtEngine := RSolvers.CreateEngine(cli);
     var context := RSolvers.CreateEmptyContext();
@@ -96,7 +96,7 @@ module Verifier {
   }
 
   method Process(stmts: seq<Stmt>, incarnations_in: I.Incarnations, context_in: RSolvers.RContext, B: BC.T, smtEngine: RSolvers.REngine)
-    requires forall stmt <- stmts :: stmt.WellFormed()
+    requires forall stmt <- stmts :: stmt.WellFormed() && StaticConsistency.ConsistentStmt(stmt)
     requires BC.Valid(B)
     requires smtEngine.Valid()
     modifies smtEngine.Repr
@@ -150,8 +150,7 @@ module Verifier {
       var bodyIncarnations, _ := incarnations.Update(v);
       BC.AboutStmtSeqMeasureSingleton(body);
       Process([body], bodyIncarnations, context, B, smtEngine);
-
-      expect !StaticConsistency.ContainsNonAssertions(stmt); // TODO: prove that this follows from the AForall statement satisfying its static checks
+      assert !StaticConsistency.ContainsNonAssertions(stmt);
       var L := Learn(stmt);
       var rL := incarnations.REval(L);
       context := RSolvers.Extend(context, rL);
@@ -168,17 +167,18 @@ module Verifier {
       // `cont` is ignored, since a `loop` never has any normal exit
       ProcessLoop(stmt, incarnations, context, B, smtEngine);
     case LabeledStmt(lbl, body) =>
-      var B' := B[lbl := BC.Continuation(incarnations.Variables(), cont)];
-      BC.AboutContinuationsMeasureUpdate(B, lbl, incarnations.Variables(), cont);
+      var B' := BC.Add(B, lbl, incarnations.Variables(), cont);
+      BC.AboutContinuationsMeasureAdd(B, lbl, incarnations.Variables(), cont);
       BC.StmtPairMeasure(body, Exit(lbl));
       Process([body, Exit(lbl)], incarnations, context, B', smtEngine);
     case Exit(lbl) =>
       expect lbl in B, lbl.Name; // TODO
-      var c := B[lbl];
+      var c := BC.Get(B, lbl);
       var variablesInScope, cont := c.variablesInScope, c.continuation;
       var incarnations' := incarnations.DomainRestrict(variablesInScope);
-      var B0 := B - {lbl};
+      var B0 := BC.Remove(B, lbl);
       assert B == B0[lbl := BC.Continuation(variablesInScope, cont)];
+      assert B == BC.Add(B0, lbl, variablesInScope, cont);
       assert BC.ContinuationsMeasure(B) >= BC.StmtSeqMeasure(cont) + BC.ContinuationsMeasure(B0) by {
         BC.AboutContinuationsMeasure(B0, lbl, variablesInScope, cont);
       }
@@ -190,7 +190,8 @@ module Verifier {
   }
 
   method ProcessLoop(stmt: Stmt, incarnations_in: I.Incarnations, context_in: RSolvers.RContext, B: BC.T, smtEngine: RSolvers.REngine)
-    requires stmt.Loop? && stmt.WellFormed() && BC.Valid(B) && smtEngine.Valid()
+    requires stmt.Loop? && stmt.WellFormed() && StaticConsistency.ConsistentStmt(stmt)
+    requires BC.Valid(B) && smtEngine.Valid()
     modifies smtEngine.Repr
     ensures smtEngine.Valid()
     decreases BC.StmtMeasure(stmt) + BC.ContinuationsMeasure(B), 0

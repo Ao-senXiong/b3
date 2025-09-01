@@ -95,7 +95,8 @@ module B3 {
   }
 
   method ResolveAndTypeCheck(rawb3: RawAst.Program) returns (r: Result<Ast.Program, string>)
-    ensures r.Success? ==> r.value.WellFormed()
+    ensures r.Success? ==> var b3 := r.value;
+      b3.WellFormed() && TypeChecker.TypeCorrect(b3) && StaticConsistency.Consistent(b3)
   {
     var b3 :- Resolver.Resolve(rawb3);
 
