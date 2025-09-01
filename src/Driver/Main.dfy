@@ -1,17 +1,18 @@
 module B3 {
   import opened Std.Wrappers
   import opened Basics
-  import RawAst
   import Types
-  import Printer
+  import RawAst
+  import Parser
   import Std.FileIO
   import SB = Std.Parsers.StringBuilders
-  import Parser
-  import Resolver
+  import Printer
   import Ast
+  import Resolver
+  import ResolvedPrinter
   import TypeChecker
-  import Verifier
   import StaticConsistency
+  import Verifier
   import CLI = CommandLineOptions
 
   class B3CliSyntax extends CLI.Syntax<Verb> {
@@ -30,10 +31,10 @@ module B3 {
     function GetOptionInfo(name: string): CLI.OptionInfo {
       match name
       case "print" => CLI.OptionInfo.ArgumentCount(0)
+      case "rprint" => CLI.OptionInfo.ArgumentCount(0)
       case "solver-log" => CLI.OptionInfo.ArgumentCount(0)
       case _ => CLI.OptionInfo.Unknown
     }
-
   }
 
   datatype Verb = Parse | Resolve | Verify
@@ -71,7 +72,7 @@ module B3 {
       return;
     }
 
-    var resultResolver := ResolveAndTypeCheck(rawb3);
+    var resultResolver := ResolveAndTypeCheck(rawb3, cli);
     if resultResolver.IsFailure() {
       print resultResolver.error, "\n";
       return;
@@ -94,11 +95,16 @@ module B3 {
    return Success(b3);
   }
 
-  method ResolveAndTypeCheck(rawb3: RawAst.Program) returns (r: Result<Ast.Program, string>)
+  method ResolveAndTypeCheck(rawb3: RawAst.Program, cli: CLI.CliResult) returns (r: Result<Ast.Program, string>)
     ensures r.Success? ==> var b3 := r.value;
       b3.WellFormed() && TypeChecker.TypeCorrect(b3) && StaticConsistency.Consistent(b3)
   {
     var b3 :- Resolver.Resolve(rawb3);
+
+    if "rprint" in cli.options {
+      ResolvedPrinter.Program(b3);
+    }
+
 
     var outcome := TypeChecker.TypeCheck(b3);
     if outcome.IsFailure() {
