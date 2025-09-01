@@ -25,6 +25,23 @@ Verifying M4 ...
 Verifying MyProc ...
 ----- Proof obligation:
   true
+  true
+  true
+  |-
+  true
+----- Proof obligation:
+  true
+  true
+  true
+  and(true, and(true, and(or(and(false, and(false, true)), or(and(not(false), true), false)), true)))
+  |-
+  true
+----- Proof obligation:
+  true
+  true
+  true
+  and(true, and(true, and(or(and(false, and(false, true)), or(and(not(false), true), false)), true)))
+  and(true, and(true, and(or(and(false, and(false, true)), or(and(not(false), true), false)), true)))
   |-
   true
 Verifying M0 ...
