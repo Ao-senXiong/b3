@@ -46,7 +46,6 @@ module Verifier {
     var smtEngine := RSolvers.CreateEngine(cli);
     var context := RSolvers.CreateEmptyContext();
 
-    // Create incarnations for parameters in the pre-state
     var preIncarnations, bodyIncarnations, postIncarnations := CreateProcIncarnations(proc.Parameters, declMap);
 
     context := VetSpecification(proc.Pre, preIncarnations, context, smtEngine);
@@ -151,7 +150,7 @@ module Verifier {
       incarnations, sv := incarnations.Update(v);
       if init.Some? {
         var sRhs := incarnations.REval(init.value);
-        context := RSolvers.Extend(context, RSolvers.RExpr.Eq(RSolvers.RExpr.Id(sv), sRhs));
+        context := RSolvers.ExtendWithEquality(context, sv, sRhs);
       }
       BC.StmtMeasurePrepend(body, cont);
       Process([body] + cont, incarnations, context, B, smtEngine);
@@ -159,7 +158,7 @@ module Verifier {
       var sRhs := incarnations.REval(rhs);
       var sLhs;
       incarnations, sLhs := incarnations.Update(lhs);
-      context := RSolvers.Extend(context, RSolvers.RExpr.Eq(RSolvers.RExpr.Id(sLhs), sRhs));
+      context := RSolvers.ExtendWithEquality(context, sLhs, sRhs);
       Process(cont, incarnations, context, B, smtEngine);
     case Block(stmts) =>
       BC.AboutStmtSeqMeasureConcat(stmts, cont);

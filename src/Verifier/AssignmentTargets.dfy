@@ -28,7 +28,7 @@ module AssignmentTargets {
     case Block(stmts) =>
       BlockTargets(stmts)
     case Call(_, args) =>
-      (set arg <- args | arg.OutgoingArgument? :: arg.arg, {Normal})
+      (set arg <- args | arg.OutgoingArgument? :: arg.v, {Normal})
     case Check(_) => ({}, {Normal})
     case Assume(_) => ({}, {Normal})
     case Assert(_) => ({}, {Normal})

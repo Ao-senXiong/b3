@@ -14,7 +14,7 @@ module RSolvers {
   export
     reveals RExpr, ROperator, RPattern
     provides RExpr.Eq, RExpr.Operator2ROperator, RExpr.OperatorToString
-    provides RContext, CreateEmptyContext, Extend, Record
+    provides RContext, CreateEmptyContext, Extend, ExtendWithEquality, Record
     reveals REngine
     provides CreateEngine, REngine.Repr, REngine.Valid, REngine.Prove
     provides SolverExpr, Solvers, Ast, CLI
@@ -262,6 +262,10 @@ module RSolvers {
   
   method Extend(context: RContext, expr: RExpr) returns (r: RContext) {
     r := new RContextNode(context, expr);
+  }
+
+  method ExtendWithEquality(context: RContext, sv: SolverExpr.SVar, expr: RExpr) returns (r: RContext) {
+    r := Extend(context, RExpr.Eq(RExpr.Id(sv), expr));
   }
 
   method Record(context: RContext, expr: RExpr, typ: SolverExpr.SType) returns (r: RContext) {
