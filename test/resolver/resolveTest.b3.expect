@@ -1,0 +1,264 @@
+// Resolved B3 program
+
+type MyClass
+
+type MyString
+
+type string
+
+type Abc
+
+function H(injective str: string, a: int)
+  when Ast.FParameter == Ast.FParameter
+  when Ast.FParameter < 10
+{
+  Ast.FParameter
+}
+
+function G()
+  when true
+{
+  15
+}
+
+function NicelyIndented(x: int, y: int, b: bool, c: MyClass)
+{
+  if Ast.FParameter == 12 then
+    20
+  else if Ast.FParameter == 13 then
+    val u: int := 2 * Ast.FParameter
+    val v: int := 3 * Ast.LocalVariable + Ast.FParameter
+    if Ast.LocalVariable + Ast.LocalVariable <= Ast.LocalVariable + Ast.LocalVariable then
+      300
+    else
+      -1 + Ast.Function()
+  else
+    4000
+}
+
+function Inc(x: int)
+
+function AnotherNicelyIndented(x: int, y: int)
+{
+  Ast.FParameter < Ast.FParameter && Ast.FParameter <= Ast.FParameter && Ast.FParameter != Ast.FParameter && Ast.FParameter < Ast.FParameter && Ast.FParameter <= Ast.FParameter && Ast.FParameter <= Ast.FParameter &&
+  val u: int := 19
+  val v: int := 21
+  if Ast.LocalVariable + Ast.LocalVariable <= Ast.LocalVariable + Ast.LocalVariable then
+    300 < 400
+  else
+    -1 + Ast.Function() != 75
+}
+
+function Stringy(s: MyString)
+
+function F(a: int, injective b: bool)
+
+procedure M6(g: int, h: int, inout i: int, inout j: int, out k: int, out l: int)
+
+procedure Egon(testb: bool, inout testi: int, abc: bool, out xyz: string)
+
+procedure TestTypeUse(y: Abc)
+{
+  return: {
+    var x: Abc
+    Ast.LocalVariable := Ast.Parameter
+    check Ast.LocalVariable == Ast.Parameter
+    var k: int := 12
+    check Ast.Function(Ast.LocalVariable) == Ast.Function(12)
+  }
+}
+
+procedure Test(x: int)
+
+procedure Mote()
+{
+  return: {
+    var x: string
+    val y: int := 200
+    MyLabel: {
+      exit MyLabel
+    }
+    exit return
+    exit return
+    {
+      exit return
+    }
+    {
+    }
+    {
+    }
+    myLabel: {
+      check true
+    }
+    check true
+    assume true
+    assert true
+    probe 96
+    forall x: int {
+      check true
+      val y: bool := false
+      assume Ast.LocalVariable
+    }
+    choose {
+      assume false
+      exit return
+      exit return
+    } or {
+      assume !false
+    }
+    hello: {
+      var something: bool
+      choose {
+        assume Ast.LocalVariable
+      } or {
+        assume !Ast.LocalVariable
+        exit hello
+      }
+    }
+    four: {
+      yes: {
+        var AaA: bool
+        var BbB: bool
+        var CcC: bool
+        choose {
+          assume Ast.LocalVariable
+        } or {
+          assume !Ast.LocalVariable
+          choose {
+            assume Ast.LocalVariable
+          } or {
+            assume !Ast.LocalVariable
+            choose {
+              assume Ast.LocalVariable
+            } or {
+              assume !Ast.LocalVariable
+            }
+          }
+        }
+        choose {
+          assume true
+          exit return
+        } or {
+          assume true
+          exit four
+        }
+        var s600: bool
+        var s601: bool
+        var s602: bool
+        var s603: bool
+        choose {
+          assume Ast.LocalVariable
+          exit yes
+        } or {
+          assume !Ast.LocalVariable
+          choose {
+            assume Ast.LocalVariable
+          } or {
+            assume Ast.LocalVariable
+          } or {
+            assume Ast.LocalVariable
+            check true
+          }
+        }
+      }
+    }
+    var a: int
+    var x: int
+    var y: int
+    Ast.LocalVariable := 800
+    Ast.LocalVariable := 801
+    loop: loop {
+      Ast.LocalVariable := 1
+    }
+    loop: loop
+      invariant true
+    {
+    }
+    asap: {
+      loop: loop
+        invariant true
+        invariant true
+        invariant {
+          check true
+          assume true
+          choose {
+            assume true
+            assume true
+          } or {
+            assume !true
+          }
+        }
+        invariant true
+      {
+        exit asap
+      }
+    }
+    Ast.Procedure()
+    Ast.Procedure(1000)
+    Ast.Procedure(out x, 1000)
+    Ast.Procedure(out x, 1000, inout y)
+    var b: int
+    var c: int
+    var z: int
+    Ast.Procedure(1000, out a, out b, out c)
+    Ast.Procedure(1000, 2000, inout x, inout y, inout z)
+    var m: int
+    var n: int
+    Ast.Procedure(1000, 2000, inout m, inout n, out x, out z)
+  }
+}
+
+procedure M3(out g: int, h: int, inout i: int)
+
+procedure M2(out g: int, h: int)
+
+procedure M1(g: int)
+
+procedure UseQuantifier(t: MyString, u: MyString)
+{
+  return: {
+    assume forall s: MyString pattern Ast.Function(Ast.LocalVariable) :: Ast.LocalVariable != Ast.Parameter ==> Ast.Function(Ast.LocalVariable)
+    choose {
+      assume Ast.Parameter != Ast.Parameter
+      check Ast.Function(Ast.Parameter)
+    } or {
+      assume !Ast.Parameter != Ast.Parameter
+    }
+  }
+}
+
+procedure M4(g: int, out h: int, out i: int, out j: int)
+
+procedure MyProc()
+  requires true
+  requires true
+  requires true
+  requires {
+    check true
+    assume true
+    choose {
+      assume false
+      assume false
+    } or {
+      assume !false
+    }
+  }
+  ensures {
+    check true
+    assume true
+    choose {
+      assume false
+      assume false
+    } or {
+      assume !false
+    }
+  }
+  ensures true
+{
+  return: {
+  }
+}
+
+procedure M0()
+
+procedure M5(g: int, h: int, inout i: int, inout j: int, inout k: int)

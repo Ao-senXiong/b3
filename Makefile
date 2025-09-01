@@ -4,7 +4,7 @@ INPUT = "input.b3"
 EXPECTED_OUTPUT = "input.expect"
 JS_TARGET = "bin/b3.js"
 
-all: build test
+all: build lit
 
 build:
 	dafny build $(PROJECT_FILE) --output $(TARGET)
@@ -21,8 +21,8 @@ verify:
 resolve:
 	dafny resolve $(PROJECT_FILE)
 
-test:
-	$(TARGET) verify $(INPUT) | diff $(EXPECTED_OUTPUT) -
+lit:
+	lit test
 
 test-cs:
 	(cd target/cs; dafny test --no-verify $(PROJECT_FILE) --output test/b3)

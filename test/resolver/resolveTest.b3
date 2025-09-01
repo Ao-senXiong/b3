@@ -1,4 +1,4 @@
-// RUN: %b3 parse "%s" > "%t"
+// RUN: %b3 resolve --rprint "%s" > "%t"
 // RUN: %diff "%s.expect" "%t"
 
 // here is a comment
