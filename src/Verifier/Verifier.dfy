@@ -59,24 +59,24 @@ module Verifier {
     var context := RSolvers.CreateEmptyContext();
 
     // Create incarnations for parameters in the pre-state
-    var preIncarnations, bodyIncarnations := CreateProcIncarnations(proc.Parameters, declMap);
+    var preIncarnations, bodyIncarnations, postIncarnations := CreateProcIncarnations(proc.Parameters, declMap);
 
-    // Assume precondition (TODO: should also vet precondition)
-    context := AssumeAExprs(proc.Post, preIncarnations, context, smtEngine);
+    context := VetSpecification(proc.Pre, preIncarnations, context, smtEngine);
+    var _ := VetSpecification(proc.Post, postIncarnations, context, smtEngine);
 
-    assert proc.Body.Some? ==> proc.Body.value.WellFormed();
-    var body := if proc.Body.Some? then [proc.Body.value] else [];
-    Process(body, bodyIncarnations, context, BC.Empty(), smtEngine);
-    // TODO: postcondition checking should be appended to body, not checked separately
-
-    // Check postcondition (TODO: should also vet postcondition)
-    CheckAExprs(proc.Post, bodyIncarnations, context, smtEngine, "postcondition");
+    if proc.Body.Some? {
+      var body := proc.Body.value;
+      assert body.WellFormed() && StaticConsistency.ConsistentStmt(body);
+      var postCheck := ConvertSpecificationToCheck(proc.Post);
+      Process([body] + postCheck, bodyIncarnations, context, BC.Empty(), smtEngine);
+    }
   }
 
-  method CreateProcIncarnations(parameters: seq<Parameter>, declMap: I.DeclMappings) returns (preIncarnations: I.Incarnations, bodyIncarnations: I.Incarnations)
+  method CreateProcIncarnations(parameters: seq<Parameter>, declMap: I.DeclMappings)
+      returns (preIncarnations: I.Incarnations, bodyIncarnations: I.Incarnations, postIncarnations: I.Incarnations)
     requires forall i :: 0 <= i < |parameters| ==> parameters[i].WellFormed()
   {
-    preIncarnations, bodyIncarnations := I.Incarnations.Empty(declMap), I.Incarnations.Empty(declMap);
+    preIncarnations, bodyIncarnations, postIncarnations := I.Incarnations.Empty(declMap), I.Incarnations.Empty(declMap), I.Incarnations.Empty(declMap);
     for i := 0 to |parameters| {
       var parameter := parameters[i];
       match parameter.mode
@@ -84,14 +84,60 @@ module Verifier {
         var v := new SVar(parameter.name, declMap.Type2SType(parameter.typ));
         preIncarnations := preIncarnations.Set(parameter, v);
         bodyIncarnations := bodyIncarnations.Set(parameter, v);
+        postIncarnations := postIncarnations.Set(parameter, v);
       case InOut =>
         var vOld := new SVar(parameter.name + "%old", declMap.Type2SType(parameter.typ));
         preIncarnations := preIncarnations.Set(parameter, vOld);
         bodyIncarnations := bodyIncarnations.Set(parameter.oldInOut.value, vOld);
         bodyIncarnations := bodyIncarnations.Set(parameter, vOld);
+        postIncarnations := postIncarnations.Set(parameter.oldInOut.value, vOld);
+        var v := new SVar(parameter.name, declMap.Type2SType(parameter.typ));
+        postIncarnations := postIncarnations.Set(parameter, v);
       case out =>
         var v := new SVar(parameter.name, declMap.Type2SType(parameter.typ));
         bodyIncarnations := bodyIncarnations.Set(parameter, v);
+        postIncarnations := postIncarnations.Set(parameter, v);
+    }
+  }
+
+  method VetSpecification(spec: seq<AExpr>, incarnations: I.Incarnations, context_in: RSolvers.RContext, smtEngine: RSolvers.REngine) returns (context: RSolvers.RContext)
+    requires forall ae <- spec :: ae.WellFormed() && StaticConsistency.ConsistentAExpr(ae)
+    requires smtEngine.Valid()
+    modifies smtEngine.Repr
+    ensures smtEngine.Valid()
+  {
+    context := context_in;
+    for i := 0 to |spec|
+      invariant smtEngine.Valid()
+    {
+      assert spec[i] in spec;
+      match spec[i]
+      case AExpr(cond) =>
+        var rCond := incarnations.REval(cond);
+        context := RSolvers.Extend(context, rCond);        
+      case AAssertion(s) =>
+        Process([s], incarnations, context, BC.Empty(), smtEngine);
+        var L := Learn(s);
+        var rL := incarnations.REval(L);
+        context := RSolvers.Extend(context, rL);
+    }
+  }
+
+  method ConvertSpecificationToCheck(spec: seq<AExpr>) returns (stmts: seq<Stmt>)
+    requires forall ae <- spec :: ae.WellFormed() && StaticConsistency.ConsistentAExpr(ae)
+    ensures forall stmt <- stmts :: stmt.WellFormed() && StaticConsistency.ConsistentStmt(stmt)
+  {
+    stmts := [];
+    for i := 0 to |spec|
+      invariant forall stmt <- stmts :: stmt.WellFormed() && StaticConsistency.ConsistentStmt(stmt)
+    {
+      assert spec[i] in spec;
+      match spec[i]
+      case AExpr(cond) =>
+        stmts := stmts + [Check(cond)];
+      case AAssertion(s) =>
+        var L := Learn(s);
+        stmts := stmts + [Assume(L)];
     }
   }
 

@@ -350,6 +350,8 @@ module Resolver {
     }
   }
 
+  const ReturnLabelName: string := "return"
+
   method ResolveProcedure(proc: Raw.Procedure, rproc: Procedure, prs: ProcResolverState) returns (r: Result<(), string>)
     requires proc.SignatureWellFormed(prs.ers.b3) && rproc.SignatureWellFormed(proc) && prs.Valid()
     modifies rproc
@@ -378,7 +380,7 @@ module Resolver {
     var preScope := set p <- proc.parameters | p.mode.IsIncoming() :: p.name;
     var postScope := (set p <- proc.parameters :: p.name) + (set p <- proc.parameters | p.mode == Raw.InOut :: Raw.OldName(p.name));
 
-    var returnLabel := new Label("return");
+    var returnLabel := new Label(ReturnLabelName);
 
     var preVariables := MapProject(paramMap, preScope);
     assert preVariables.Keys == preScope;

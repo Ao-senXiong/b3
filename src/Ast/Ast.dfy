@@ -87,7 +87,7 @@ module Ast {
       && (forall i, j :: 0 <= i < j < |Parameters| ==> Parameters[i].name != Parameters[j].name)
       && (forall pre <- Pre :: pre.WellFormed())
       && (forall post <- Post :: post.WellFormed())
-      && (Body.Some? ==> Body.value.LabeledStmt? && Body.value.WellFormed())
+      && (Body.Some? ==> Body.value.WellFormed())
       // TODO: make sure free variables of Pre/Post/Body are the expected ones
     }
   }
