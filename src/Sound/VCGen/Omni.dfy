@@ -19,19 +19,66 @@ module VCGenOmni {
     ensures (forall e <- VCs :: e.Holds()) ==> 
       forall st: State :: 
         context_in.IsSatisfiedOn(st) ==>
-        Omni.Sem(s, context_in.AdjustState(st), context_in.AdjustedModels)
+        Omni.Sem(s, context_in.AdjustState(st), context.AdjustedModels)
   {
     context := context_in;
     match s
     case Check(e) =>
       VCs := [context_in.MkEntailment(e)];
+      if (forall e <- VCs :: e.Holds()) {
+        assert context.MkEntailment(e).Holds();
+        forall st: State | context.IsSatisfiedOn(st) 
+          ensures Omni.Sem(s, context_in.AdjustState(st), context.AdjustedModels) {
+          assert context.AdjustState(st).Eval(e) by { 
+            context.AdjustStateSubstituteLemma(st, e);
+            EvalConjLemma(context.ctx, st);
+          }
+        }
+      }
     case Assume(e) =>
       context := context_in.Add(e);
       VCs := [];
+      forall st: State | context_in.IsSatisfiedOn(st) 
+        ensures Omni.Sem(s, context_in.AdjustState(st), context.AdjustedModels) {
+        if context.AdjustState(st).Eval(e) {
+          context_in.SubstituteIsDefinedOnLemma(e);
+          context_in.AdjustStateSubstituteLemma(st, e);
+          FVarsConjUnionLemma(context_in.ctx, [context_in.Substitute(e)]);
+        }
+      }
     case Assign(v, x) =>
       ghost var vNew;
       vNew, context := context_in.AddEq(v, x);
       VCs := [];
+      forall st: State | context_in.IsSatisfiedOn(st) 
+        ensures Omni.Sem(s, context_in.AdjustState(st), context.AdjustedModels) {
+        context_in.SubstituteIsDefinedOnLemma(x);
+        var v' := st.Eval(context_in.Substitute(x));
+        var st' := st.Update(vNew, v');
+        var stTransformed := context_in.AdjustState(st).Update(v, context_in.AdjustState(st).Eval(x));
+
+        context.InAdjustedModelsLemma(stTransformed, st') by {
+          assert stTransformed == context.AdjustState(st') by {
+            context_in.AdjustStateSubstituteLemma(st, x);
+          }
+
+          assert context.IsSatisfiedOn(st') by {
+            context_in.SubstituteIsDefinedOnLemma(x);
+            FVarsEqLemma(Var(vNew), context_in.Substitute(x));
+            FVarsConjUnionLemma(context_in.ctx, [Eq(Var(vNew), context_in.Substitute(x))]);
+
+            context_in.Substitute(x).EvalFVarsLemma(st, st');
+            EvalEqLemma(Var(vNew), context_in.Substitute(x), st');
+            assert forall e: Expr :: e.FVars() <= context_in.FVars() ==> 
+              st.Eval(e) ==> st'.Eval(e) by 
+            {
+              forall e: Expr | e.FVars() <= context_in.FVars() && st.Eval(e) { 
+                e.EvalFVarsLemma(st, st');
+              }
+            }
+          }
+        }
+      }
   }
 
 method SeqVCGen(s: seq<Stmt>, context: Context) returns (VCs: seq<Expr>) 
@@ -64,15 +111,20 @@ method SeqVCGen(s: seq<Stmt>, context: Context) returns (VCs: seq<Expr>)
         SeqFunConcatLemmas(ss, cont);
         WellFormed.SeqLemma(ss, cont);
         VCs := SeqVCGen(ss + cont, context);
+        if (forall e <- VCs :: e.Holds()) {
+          forall st: State | context.IsSatisfiedOn(st) {
+            Omni.SeqLemma(ss, cont, context.AdjustState(st), AllStates);
+          }
+        }
       case Choice(ss0, ss1) =>
         var VCs0 := SeqVCGen([ss0] + cont, context);
         var VCs1 := SeqVCGen([ss1] + cont, context);
         VCs := VCs0 + VCs1;
-      case VarDecl(v, s) =>
-        ghost var vNew;
-        var context';
-        vNew, context' := context.AddVar(v);
-        VCs := SeqVCGen([s] + cont, context');
+      // case VarDecl(v, s) =>
+      //   ghost var vNew;
+      //   var context';
+      //   vNew, context' := context.AddVar(v);
+      //   VCs := SeqVCGen([s] + cont, context');
       case _ => assume {:axiom} false;
     }
   }

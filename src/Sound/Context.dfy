@@ -8,11 +8,13 @@ module Context {
   {
 
     ghost const Models : iset<State> := iset st: State | IsSatisfiedOn(st)
-    ghost const AdjustedModels : iset<State> := iset st: State | exists st' <- Models :: AdjustState(st') == st
+    // Q: is it correct way to set a trigger?
+    ghost const AdjustedModels : iset<State> := iset st: State | exists st' <- Models {:InAdjustedModelsLemma(st')} :: AdjustState(st') == st
 
-    lemma InAdjustedModelsLemma(st: State)
-      requires IsSatisfiedOn(st)
-      ensures AdjustState(st) in AdjustedModels
+    lemma InAdjustedModelsLemma(st: State, st': State)
+      requires IsSatisfiedOn(st')
+      requires st == AdjustState(st')
+      ensures st in AdjustedModels
     {
 
     }
