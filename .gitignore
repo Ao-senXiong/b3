@@ -8,3 +8,5 @@ doc/out/*
 /target/js/bin/b3.js
 /target/js/bin/bignumber.js
 test/**/Output
+/.vscode
+/test/.lit_test_times.txt
