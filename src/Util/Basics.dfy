@@ -92,12 +92,12 @@ module Basics {
     FoldLeft(s[0], s[1..], f)
   }
 
-  function FoldRight<X, Z>(s: seq<X>, z: Z, f: (X, Z) -> Z): Z {
+  function FoldRight<X, Z>(s: seq<X>, f: (X, Z) -> Z, z: Z): Z {
     if s == [] then
       z
     else
       var last := |s| - 1;
-      FoldRight(s[..last], f(s[last], z), f)
+      FoldRight(s[..last], f, f(s[last], z))
   }
 
   function ListFlatten<X>(l: List<List<X>>): List<X> {

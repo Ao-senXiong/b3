@@ -348,7 +348,7 @@ module Parser {
     parseLogicalExpr(c).Then(e0 =>
       Or([
         Sym("==>").e_I(parseLogicalExpr(c).RepSep(Sym("==>")))
-          .M(exprs => FoldRight(exprs, e0, (a, b) => OperatorExpr(Operator.LogicalImp, [b, a]))),
+          .M(exprs => FoldRight(exprs, (a, b) => OperatorExpr(Operator.LogicalImp, [b, a]), e0)),
         Sym("<==").e_I(parseLogicalExpr(c).RepSep(Sym("<==")))
           .M(exprs => FoldLeft(e0, exprs, (a, b) => OperatorExpr(Operator.LogicalImp, [b, a]))),
         Nothing.M(_ => e0)
@@ -413,7 +413,7 @@ module Parser {
       Sym("!").M(_ => Operator.LogicalNot),
       Sym("-").M(_ => Operator.UnaryMinus)
     ]).Rep().I_I(parsePrimaryExpr(c)).M2(MId, (unaryOperators, expr) =>
-      FoldRight(unaryOperators, expr, (op, e) => OperatorExpr(op, [e]))
+      FoldRight(unaryOperators, (op, e) => OperatorExpr(op, [e]), expr)
     )
   }
 
