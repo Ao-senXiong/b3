@@ -1,0 +1,366 @@
+module ResolvedPrinter {
+  import opened Std.Wrappers
+  import opened Basics
+  import opened Ast
+  import Types
+
+  method Program(b3: Program) {
+    print "// Resolved B3 program\n";
+
+    var types := b3.types;
+    while types != {} {
+      var typ :| typ in types;
+      types := types - {typ};
+      print "\n";
+      TypeDecl(typ);
+    }
+
+    var functions := b3.functions;
+    while functions != {} {
+      var func :| func in functions;
+      functions := functions - {func};
+      print "\n";
+      FunctionDecl(func);
+    }
+
+    var procedures := b3.procedures;
+    while procedures != {} {
+      var proc :| proc in procedures;
+      procedures := procedures - {proc};
+      print "\n";
+      Procedure(proc);
+    }
+  }
+
+  method TypeDecl(decl: Types.TypeDecl) {
+    print "type ", decl.Name, "\n";
+  }
+
+  method FunctionDecl(func: Function) {
+    print "function ", func.Name, "(";
+    var params := func.Parameters;
+    var sep := "";
+    for i := 0 to |params| {
+      var param := params[i];
+      print sep, if param.injective then "injective " else "", param.name, ": ", param.typ.ToString();
+      sep := ", ";
+    }
+    print ")\n";
+
+    if func.Definition.Some? {
+      var FunctionDefinition(when, body) := func.Definition.value;
+      for i := 0 to |when| {
+        Indent(IndentAmount);
+        print "when ";
+        Expression(when[i]);
+        print "\n";
+      }
+
+      print "{\n";
+      Indent(IndentAmount);
+      Expression(body, MultipleLines(IndentAmount));
+      print "\n}\n";
+    }
+  }
+
+  method Procedure(proc: Procedure) {
+    print "procedure ", proc.Name, "(";
+    var params := proc.Parameters;
+    var sep := "";
+    for i := 0 to |params| {
+      var param := params[i];
+      print sep, ParameterMode(param.mode), param.name, ": ", param.typ.ToString();
+      sep := ", ";
+    }
+    print ")\n";
+
+    PrintAExprs(IndentAmount, "requires", proc.Pre);
+    PrintAExprs(IndentAmount, "ensures", proc.Post);
+
+    match proc.Body
+    case None =>
+    case Some(body) => StmtAsBlock(body, 0);
+  }
+
+  method Indent(indent: nat) {
+    for i := 0 to indent {
+      print " ";
+    }
+  }
+
+  const IndentAmount := 2
+
+  method Statement(stmt: Stmt, indent: nat, followedByEndCurly: bool := false, omitInitialIndent: bool := false)
+    decreases stmt, 1
+  {
+    if !omitInitialIndent {
+      Indent(indent);
+    }
+
+    match stmt
+    case VarDecl(v, init, body) =>
+      if followedByEndCurly {
+        VariableDeclaration(v, init, body, indent, followedByEndCurly);
+      } else {
+        print "{\n";
+        Indent(indent + IndentAmount);
+        VariableDeclaration(v, init, body, indent + IndentAmount, true);
+        Indent(indent);
+        print "}\n";
+      }
+
+    case Assign(lhs, rhs) =>
+      print lhs, " := ";
+      Expression(rhs);
+      print "\n";
+
+    case Block(stmts) =>
+      print "{\n";
+      StatementList(stmts, indent + IndentAmount);
+      Indent(indent);
+      print "}\n";
+
+    case Call(proc, args) =>
+      print proc, "(";
+      var sep := "";
+      for i := 0 to |args| {
+        print sep;
+        sep := ", ";
+        match args[i]
+        case InArgument(e) =>
+          Expression(e);
+        case OutgoingArgument(isInOut, v) =>
+          print if isInOut then "inout " else "out ", v.name;
+      }
+      print ")\n";
+
+    case Check(e) =>
+      ExpressionStmt("check", e);
+
+    case Assume(e) =>
+      ExpressionStmt("assume", e);
+
+    case Assert(e) =>
+      ExpressionStmt("assert", e);
+
+    case AForall(v, body) =>
+      print "forall ", v.name, ": ", v.typ.ToString(), " ";
+      StmtAsBlock(body, indent);
+
+    case Choose(branches) =>
+      print "choose ";
+      if |branches| == 0 {
+        print "{ }\n";
+      } else {
+        for i := 0 to |branches| {
+          StmtAsBlock(branches[i], indent, if i == |branches| - 1 then "\n" else " or ");
+        }
+      }
+      
+    case Loop(invariants, body) =>
+      print "loop";
+      if |invariants| == 0 {
+        print " ";
+      } else {
+        print "\n";
+        PrintAExprs(indent + IndentAmount, "invariant", invariants, stmt);
+        Indent(indent);
+      }
+      StmtAsBlock(body, indent);
+
+    case LabeledStmt(lbl, body) =>
+      print lbl.Name, ": ";
+      if body.Loop? {
+        Statement(body, indent, omitInitialIndent := true);
+      } else {
+        StmtAsBlock(body, indent);
+      }
+
+    case Exit(lbl) =>
+      print "exit ", lbl.Name, "\n";
+
+    case Probe(e) =>
+      ExpressionStmt("probe", e);
+  }
+
+  method VariableDeclaration(v: Variable, init: Option<Expr>, body: Stmt, indent: nat, followedByEndCurly: bool)
+    decreases body, 3
+  {
+    IdTypeDecl(if v.IsMutable() then "var " else "val ", v.name, v.typ);
+    match init {
+      case None =>
+      case Some(e) =>
+        print " := ";
+        Expression(e);
+    }
+    print "\n";
+    BlockAsStatementList(body, indent, followedByEndCurly);
+  }
+
+  method IdTypeDecl(prefix: string, name: string, typ: Types.Type) {
+    print prefix, name, ": ", typ.ToString();
+  }
+
+  method StmtAsBlock(stmt: Stmt, indent: nat, suffix: string := "\n")
+    decreases stmt
+  {
+    print "{\n"; // always omits initial indent
+    match stmt {
+      case Block(stmts) =>
+        // omit the braces of the Block itself, since we're already printing braces
+        StatementList(stmts, indent + IndentAmount);
+      case _ =>
+        Statement(stmt, indent + IndentAmount);
+    }
+    Indent(indent);
+    print "}", suffix;
+  }
+
+  method BlockAsStatementList(stmt: Stmt, indent: nat, followedByEndCurly: bool)
+    decreases stmt, 2
+  {
+    match stmt
+    case Block(stmts) =>
+      StatementList(stmts, indent);
+    case _ =>
+      Statement(stmt, indent, followedByEndCurly);
+  }
+
+  method StatementList(stmts: seq<Stmt>, indent: nat, followedByEndCurly: bool := true) {
+    for i := 0 to |stmts| {
+      Statement(stmts[i], indent, followedByEndCurly && i == |stmts| - 1);
+    }
+  }
+
+  function ParameterMode(mode: ParameterMode): string {
+    match mode
+    case InOut => "inout "
+    case Out => "out "
+    case _ => ""
+  }
+
+  method PrintAExprs(indent: nat, prefix: string, aexprs: seq<AExpr>, ghost parent: Stmt := Loop(aexprs, Assert(BLiteral(true))))
+    requires forall ae <- aexprs :: ae.AAssertion? ==> ae.s < parent
+    decreases parent, 0
+  {
+    for i := 0 to |aexprs| {
+      Indent(indent);
+      print prefix, " ";
+      match aexprs[i]
+      case AExpr(e) =>
+        Expression(e);
+        print "\n";
+      case AAssertion(s) =>
+        Statement(s, indent, omitInitialIndent := true);
+    }
+  }
+
+  method ExpressionStmt(prefix: string, e: Expr) {
+    print prefix, " ";
+    Expression(e);
+    print "\n";
+  }
+
+  datatype ExprFormatOption = SingleLine | MultipleLines(indent: nat)
+  {
+    method Space() {
+      match this
+      case SingleLine => print " ";
+      case MultipleLines(indent) =>
+        print "\n";
+        Indent(indent);
+    }
+
+    function More(): ExprFormatOption {
+      match this
+      case SingleLine => this
+      case MultipleLines(indent) =>
+        MultipleLines(indent + IndentAmount)
+    }
+  }
+
+  // Print "expr" starting from the current position and ending without a final newline.
+  // If "format" allows, break lines at an indent of "format.indent".
+  method Expression(expr: Expr, format: ExprFormatOption := SingleLine) {
+    // TODO: add parentheses around the entire expression when necessary
+    match expr
+    case BLiteral(value) => print value;
+    case ILiteral(value) => print value;
+    case CustomLiteral(s, typ) => print "|", s, ": ", typ, "|";
+    case IdExpr(name) => print name;
+    case OperatorExpr(op, args) =>
+      if op == Operator.IfThenElse && op.ArgumentCount() == |args| {
+        var ind := format.More();
+        print "if ";
+        Expression(args[0]);
+        print " then";
+        ind.Space();
+        Expression(args[1], ind);
+        format.Space();
+        print "else";
+        if args[2].OperatorExpr? && args[2].op == Operator.IfThenElse {
+          // print as cascading if
+          print " ";
+          Expression(args[2], format);
+        } else {
+          ind.Space();
+          Expression(args[2], ind);
+        }
+      } else if op.ArgumentCount() == 1 == |args| {
+        print op.ToString();
+        Expression(args[0]);
+      } else if op.ArgumentCount() == 2 == |args| {
+        Expression(args[0]);
+        print " ", op.ToString();
+        if op in {Operator.LogicalImp, Operator.LogicalAnd, Operator.LogicalOr} {
+          format.Space();
+          Expression(args[1], format);
+        } else {
+          print " ";
+          Expression(args[1]);
+        }
+      } else {
+        print op.ToString(), "(";
+        ExpressionList(args);
+        print ")";
+      }
+    case FunctionCallExpr(name, args) =>
+      print name, "(";
+      ExpressionList(args);
+      print ")";
+    case LabeledExpr(name, body) =>
+      print name, ": ";
+      Expression(body, format);
+    case LetExpr(v, rhs, body) =>
+      IdTypeDecl("val ", v.name, v.typ);
+      print " := ";
+      Expression(rhs);
+      format.Space();
+      Expression(body, format);
+    case QuantifierExpr(univ, v, patterns, body) =>
+      IdTypeDecl(if univ then "forall " else "exists ", v.name, v.typ);
+      var ind := format.More();
+      if patterns == [] {
+        print " ";
+      } else {
+        for i := 0 to |patterns| {
+          ind.Space();
+          print "pattern ";
+          ExpressionList(patterns[i].exprs);
+        }
+        format.Space();
+      }
+      print "::";
+      ind.Space();
+      Expression(body, ind);
+  }
+
+  method ExpressionList(exprs: seq<Expr>) {
+    var sep := "";
+    for i := 0 to |exprs| {
+      print sep;
+      sep := ", ";
+      Expression(exprs[i]);
+    }
+  }
+}
