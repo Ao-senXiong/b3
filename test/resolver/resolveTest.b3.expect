@@ -1,24 +1,26 @@
 // Resolved B3 program
 
+type string
+
 type MyClass
+
+type Abc
 
 type MyString
 
-type string
+function F(a: int, injective b: bool)
 
-type Abc
+function G()
+  when true
+{
+  15
+}
 
 function H(injective str: string, a: int)
   when Ast.FParameter == Ast.FParameter
   when Ast.FParameter < 10
 {
   Ast.FParameter
-}
-
-function G()
-  when true
-{
-  15
 }
 
 function NicelyIndented(x: int, y: int, b: bool, c: MyClass)
@@ -36,8 +38,6 @@ function NicelyIndented(x: int, y: int, b: bool, c: MyClass)
     4000
 }
 
-function Inc(x: int)
-
 function AnotherNicelyIndented(x: int, y: int)
 {
   Ast.FParameter < Ast.FParameter && Ast.FParameter <= Ast.FParameter && Ast.FParameter != Ast.FParameter && Ast.FParameter < Ast.FParameter && Ast.FParameter <= Ast.FParameter && Ast.FParameter <= Ast.FParameter &&
@@ -49,24 +49,9 @@ function AnotherNicelyIndented(x: int, y: int)
     -1 + Ast.Function() != 75
 }
 
+function Inc(x: int)
+
 function Stringy(s: MyString)
-
-function F(a: int, injective b: bool)
-
-procedure M6(g: int, h: int, inout i: int, inout j: int, out k: int, out l: int)
-
-procedure Egon(testb: bool, inout testi: int, abc: bool, out xyz: string)
-
-procedure TestTypeUse(y: Abc)
-{
-  return: {
-    var x: Abc
-    Ast.LocalVariable := Ast.Parameter
-    check Ast.LocalVariable == Ast.Parameter
-    var k: int := 12
-    check Ast.Function(Ast.LocalVariable) == Ast.Function(12)
-  }
-}
 
 procedure Test(x: int)
 
@@ -208,26 +193,7 @@ procedure Mote()
   }
 }
 
-procedure M3(out g: int, h: int, inout i: int)
-
-procedure M2(out g: int, h: int)
-
-procedure M1(g: int)
-
-procedure UseQuantifier(t: MyString, u: MyString)
-{
-  return: {
-    assume forall s: MyString pattern Ast.Function(Ast.LocalVariable) :: Ast.LocalVariable != Ast.Parameter ==> Ast.Function(Ast.LocalVariable)
-    choose {
-      assume Ast.Parameter != Ast.Parameter
-      check Ast.Function(Ast.Parameter)
-    } or {
-      assume !Ast.Parameter != Ast.Parameter
-    }
-  }
-}
-
-procedure M4(g: int, out h: int, out i: int, out j: int)
+procedure Egon(testb: bool, inout testi: int, abc: bool, out xyz: string)
 
 procedure MyProc()
   requires true
@@ -261,4 +227,38 @@ procedure MyProc()
 
 procedure M0()
 
+procedure M1(g: int)
+
+procedure M2(out g: int, h: int)
+
+procedure M3(out g: int, h: int, inout i: int)
+
+procedure M4(g: int, out h: int, out i: int, out j: int)
+
 procedure M5(g: int, h: int, inout i: int, inout j: int, inout k: int)
+
+procedure M6(g: int, h: int, inout i: int, inout j: int, out k: int, out l: int)
+
+procedure TestTypeUse(y: Abc)
+{
+  return: {
+    var x: Abc
+    Ast.LocalVariable := Ast.Parameter
+    check Ast.LocalVariable == Ast.Parameter
+    var k: int := 12
+    check Ast.Function(Ast.LocalVariable) == Ast.Function(12)
+  }
+}
+
+procedure UseQuantifier(t: MyString, u: MyString)
+{
+  return: {
+    assume forall s: MyString pattern Ast.Function(Ast.LocalVariable) :: Ast.LocalVariable != Ast.Parameter ==> Ast.Function(Ast.LocalVariable)
+    choose {
+      assume Ast.Parameter != Ast.Parameter
+      check Ast.Function(Ast.Parameter)
+    } or {
+      assume !Ast.Parameter != Ast.Parameter
+    }
+  }
+}

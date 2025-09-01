@@ -28,7 +28,7 @@ module Ast {
 
   type Type = Types.Type
 
-  datatype Program = Program(types: set<Types.TypeDecl>, functions: set<Function>, procedures: set<Procedure>)
+  datatype Program = Program(types: seq<Types.TypeDecl>, functions: seq<Function>, procedures: seq<Procedure>)
   {
     predicate WellFormed()
       reads procedures, functions

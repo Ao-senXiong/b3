@@ -18,35 +18,23 @@ module Verifier {
     requires b3.WellFormed() && StaticConsistency.Consistent(b3)
   {
     var typeMap := map[];
-    var types := b3.types;
-    while types != {}
-      decreases types
-    {
-      var typ: Types.TypeDecl :| typ in types;
-      types := types - {typ};
+    for i := 0 to |b3.types| {
+      var typ := b3.types[i];
       var t := new STypeDecl(typ.Name);
       typeMap := typeMap[typ := t];
     }
 
     var functionMap := map[];
-    var funcs := b3.functions;
-    while funcs != {}
-      decreases funcs
-    {
-      var func: Function :| func in funcs;
-      funcs := funcs - {func};
+    for i := 0 to |b3.functions| {
+      var func := b3.functions[i];
       var inputTypes := SeqMap(func.Parameters, (parameter: FParameter) => I.DeclMappings.Type2STypeWithMap(parameter.typ, typeMap));
       var f := new SVar.Function(func.Name, inputTypes, I.DeclMappings.Type2STypeWithMap(func.ResultType, typeMap));
       functionMap := functionMap[func := f];
     }
 
     var declMap := I.DeclMappings(typeMap, functionMap);
-    var procs := b3.procedures;
-    while procs != {}
-    {
-      var proc: Procedure :| proc in procs;
-      procs := procs - {proc};
-
+    for i := 0 to |b3.procedures| {
+      var proc := b3.procedures[i];
       print "Verifying ", proc.Name, " ...\n";
       VerifyProcedure(proc, declMap, cli);
     }
