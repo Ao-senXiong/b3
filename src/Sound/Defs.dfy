@@ -1,5 +1,15 @@
 module Defs { 
 
+  ghost function UpdateSet(v: Variable, post: iset<State>): iset<State> 
+  {
+    iset st: State | st - {v} in post
+  }
+
+  ghost function DeleteSet(v: Variable, post: iset<State>): iset<State> {
+    iset st: State | exists st' <- post :: st == st' - {v}
+  }
+
+
   ghost const AllStates: iset<State> := iset st: State | true
 
   datatype Except<+T> =
@@ -101,6 +111,11 @@ module Defs {
     ghost predicate Holds() {
       forall s: State :: IsDefinedOn(s.Keys) ==> s.Eval(this)
     }
+
+    lemma IsDefinedOnFVarsLemma(s: State, v: Variable)
+      requires v !in FVars()
+      ensures IsDefinedOn(s.Keys + {v}) ==> IsDefinedOn(s.Keys)
+    {  }
 
     lemma EvalFVarsLemma(s1: State, s2: State) 
       requires IsDefinedOn(s1.Keys)

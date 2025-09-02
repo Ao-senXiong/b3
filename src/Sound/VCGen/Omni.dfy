@@ -126,7 +126,7 @@ method SeqVCGen(s: seq<Stmt>, context: Context) returns (VCs: seq<Expr>)
             ensures Omni.SeqSem([VarDecl(v, s)] + cont, context.AdjustState(st), AllStates) {
             Omni.SemNest(VarDecl(v, s), cont, context.AdjustState(st), AllStates) by {
               forall b: Value ensures Omni.Sem(s, context.AdjustState(st).Update(v, b), 
-                Omni.UpdateSet(v, Omni.SeqWP(cont, AllStates)))
+                UpdateSet(v, Omni.SeqWP(cont, AllStates)))
               {
                 assert context.AdjustState(st).Update(v,b) == context'.AdjustState(st.Update(vNew, b));
                 assert context'.IsSatisfiedOn(st.Update(vNew, b)) by {
@@ -137,7 +137,7 @@ method SeqVCGen(s: seq<Stmt>, context: Context) returns (VCs: seq<Expr>)
                 }
                 Omni.SemCons(s, context.AdjustState(st).Update(v, b), 
                   Omni.SeqWP(cont, AllStates), 
-                  Omni.UpdateSet(v, Omni.SeqWP(cont, AllStates))) by 
+                  UpdateSet(v, Omni.SeqWP(cont, AllStates))) by 
                 {
                   forall st | Omni.SeqSem(cont, st, AllStates) 
                     ensures Omni.SeqSem(cont, st - {v}, AllStates) {

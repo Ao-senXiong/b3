@@ -2,17 +2,7 @@ module Omni {
   import opened Defs
   export
     provides Defs, SeqLemma, SemNest, WP, SemCons, SeqFrameLemmaAll
-    reveals Sem, SeqSem, UpdateSet, SeqWP, DeleteSet
-
-
-  ghost function UpdateSet(v: Variable, post: iset<State>): iset<State> 
-  {
-    iset st: State | st - {v} in post
-  }
-
-  ghost function DeleteSet(v: Variable, post: iset<State>): iset<State> {
-    iset st: State | exists st' <- post :: st == st' - {v}
-  }
+    reveals Sem, SeqSem, SeqWP
 
   least predicate Sem(s: Stmt, st: State, post: iset<State>) {
     match s
@@ -101,11 +91,9 @@ module Omni {
         FrameLemma(s, v, st.Update(u, c), UpdateSet(u, post));
         assert forall c :: (st - {v}).Update(u, c) == st.Update(u, c) - {v};        
         SemCons(s, (st - {v}).Update(u, c), DeleteSet(v, UpdateSet(u, post)), UpdateSet(u, DeleteSet(v, post))) by {
-          assert DeleteSet(v, UpdateSet(u, post)) <= UpdateSet(u, DeleteSet(v, post)) by {
-            forall st | st in DeleteSet(v, UpdateSet(u, post)) 
-              ensures st in UpdateSet(u, DeleteSet(v, post)) {
-              assert forall b :: (st - {u}).Update(v, b) == st.Update(v, b) - {u};
-            }
+          forall st | st in DeleteSet(v, UpdateSet(u, post)) 
+            ensures st in UpdateSet(u, DeleteSet(v, post)) {
+            assert forall b :: (st - {u}).Update(v, b) == st.Update(v, b) - {u};
           }
         }
       }

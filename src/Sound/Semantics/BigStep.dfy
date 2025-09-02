@@ -10,23 +10,17 @@ module BigStep {
   {
     match s
     case Check(e) =>
-      e.IsDefinedOn(a.Keys) &&
-      z == if a.Eval(e) then Ok(a) else Error
+      z == if e.IsDefinedOn(a.Keys) && a.Eval(e) then Ok(a) else Error
     case Assume(e) =>
-      e.IsDefinedOn(a.Keys) &&
-      a.Eval(e) && z == Ok(a)
+      if e.IsDefinedOn(a.Keys) then a.Eval(e) && z == Ok(a) else z == Error
     case Seq(ss) => SeqSem(ss, a, z)
     case Assign(x, v) =>
       && v.IsDefinedOn(a.Keys) 
       && z == Ok(a.Update(x, a.Eval(v)))
-    case VarDecl(v, s) => exists b :: 
-      && Sem(s, a.Update(v, b), ExceptUpdate(z, v, b))
+    case VarDecl(v, s) => exists b, b' :: 
+      && Sem(s, a.Update(v, b), ExceptUpdate(z, v, b'))
       && (z.Ok? ==> v !in z.Extract().Keys)
     case Choice(s0, s1) => Sem(s0, a, z) || Sem(s1, a, z)
-    // case While(guard, inv, body) =>
-    //   if a.Eval(guard) then
-    //     Sem(Seq(body, While(guard, inv, body)), a, z)
-    // else z == Ok(a)
   }
 
   least predicate SeqSem[nat](ss: seq<Stmt>, a: State, z: Except<State>) 
@@ -74,31 +68,12 @@ module BigStep {
     ensures Sem(Seq(ss + cont), st, out)
   {
     assert SeqSem(ss + cont, st, out) by {
-    // if st' :| Sem(Seq(ss), st, Ok(st')) && SeqSem(cont, st', out) {
-    //   SeqBigStepConcatOkLemma(ss, cont, st, st', out);
-    // } else {
-    //   SeqBigStepConcatErrorLemma(ss, cont, st);
-    // }
     if 
     case st' :| Sem(Seq(ss), st, Ok(st')) && SeqSem(cont, st', out) => 
       SeqConcatOkLemma(ss, cont, st, st', out);
     case Sem(Seq(ss), st, out) && out.IsFailure() => 
       SeqConcatErrorLemma(ss, cont, st);
     }
-    //   /* 
-    //   if st' :| Sem(Seq(ss), st, ()) && 
-    //   */
-    //   var w :| Sem(Seq(ss), st, w) && 
-    //     match w {
-    //         case Ok(b) => SeqSem(cont, b, out)
-    //         case _ => out == w
-    //     };
-    //   match w
-    //   case Ok(st') =>
-    //     SeqBigStepConcatOkLemma(ss, cont, st, st', out);
-    //   case _ =>
-    //     SeqBigStepConcatErrorLemma(ss, cont, st);
-    // }
   } 
 
   lemma SeqChoiceLemma(s0: Stmt, s1: Stmt, cont: seq<Stmt>, st: State, out: Except<State>)
@@ -129,19 +104,23 @@ module BigStep {
       e.EvalFVarsLemma(st, st.Update(v, b));
       var ev := st.Eval(e);
       assert st.Update(v, b).Update(x, ev) == st.Update(x, ev).Update(v, b);
-    case Check(e) => e.EvalFVarsLemma(st, st.Update(v, b));
-    case Assume(e) => e.EvalFVarsLemma(st, st.Update(v, b));
+    case Check(e) =>
+      if e.IsDefinedOn(st.Keys) {
+        e.EvalFVarsLemma(st, st.Update(v, b));
+      }
+    case Assume(e) =>
+      if e.IsDefinedOn(st.Keys) {
+        e.EvalFVarsLemma(st, st.Update(v, b));
+      }
     case Seq(ss) => SeqFrameLemma(ss, v, b, st, out);
     case VarDecl(u, s) =>
-      var c :| 
-        && Sem(s, st.Update(u, c), ExceptUpdate(out, u, c))
-        && (out.Ok? ==> u !in out.Extract().Keys);
-      FrameLemma(s, v, b, st.Update(u, c), ExceptUpdate(out, u, c));
+      var c, c' :| Sem(s, st.Update(u, c), ExceptUpdate(out, u, c'));
+      FrameLemma(s, v, b, st.Update(u, c), ExceptUpdate(out, u, c'));
       assert st.Update(v, b).Update(u, c) == st.Update(u, c).Update(v, b);
-      assert ExceptUpdate(ExceptUpdate(out, u, c), v, b) == ExceptUpdate(ExceptUpdate(out, v, b), u, c) by {
+      assert ExceptUpdate(ExceptUpdate(out, u, c'), v, b) == ExceptUpdate(ExceptUpdate(out, v, b), u, c') by {
         match out
         case Ok(st') =>
-          assert st'.Update(v, b).Update(u, c) == st'.Update(u, c).Update(v, b);
+          assert st'.Update(v, b).Update(u, c') == st'.Update(u, c').Update(v, b);
         case _ =>
       }
     case Choice(s0, s1) =>
