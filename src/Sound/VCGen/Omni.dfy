@@ -55,24 +55,22 @@ module VCGenOmni {
         var st' := st.Update(vNew, v');
         var stTransformed := context_in.AdjustState(st).Update(v, context_in.AdjustState(st).Eval(x));
 
-        context.InAdjustedModelsLemma(stTransformed, st') by {
-          assert stTransformed == context.AdjustState(st') by {
-            context_in.AdjustStateSubstituteLemma(st, x);
-          }
+        assert stTransformed == context.AdjustState(st') by {
+          context_in.AdjustStateSubstituteLemma(st, x);
+        }
 
-          assert context.IsSatisfiedOn(st') by {
-            context_in.SubstituteIsDefinedOnLemma(x);
-            FVarsEqLemma(Var(vNew), context_in.Substitute(x));
-            FVarsConjUnionLemma(context_in.ctx, [Eq(Var(vNew), context_in.Substitute(x))]);
+        assert context.IsSatisfiedOn(st') by {
+          context_in.SubstituteIsDefinedOnLemma(x);
+          FVarsEqLemma(Var(vNew), context_in.Substitute(x));
+          FVarsConjUnionLemma(context_in.ctx, [Eq(Var(vNew), context_in.Substitute(x))]);
 
-            context_in.Substitute(x).EvalFVarsLemma(st, st');
-            EvalEqLemma(Var(vNew), context_in.Substitute(x), st');
-            assert forall e: Expr :: e.FVars() <= context_in.FVars() ==> 
-              st.Eval(e) ==> st'.Eval(e) by 
-            {
-              forall e: Expr | e.FVars() <= context_in.FVars() && st.Eval(e) { 
-                e.EvalFVarsLemma(st, st');
-              }
+          context_in.Substitute(x).EvalFVarsLemma(st, st');
+          EvalEqLemma(Var(vNew), context_in.Substitute(x), st');
+          assert forall e: Expr :: e.FVars() <= context_in.FVars() ==> 
+            st.Eval(e) ==> st'.Eval(e) by 
+          {
+            forall e: Expr | e.FVars() <= context_in.FVars() && st.Eval(e) { 
+              e.EvalFVarsLemma(st, st');
             }
           }
         }
