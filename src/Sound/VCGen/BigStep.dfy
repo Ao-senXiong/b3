@@ -44,15 +44,16 @@ module VCGenBigStep {
     case Assume(e) =>
       context := context_in.Add(e);
       VCs := [];
-      FVarsConjUnionLemma(context_in.ctx, [context_in.Substitute(e)]);
       forall st: State, out: Except<State> | 
-        context_in.IsSatisfiedOn(st) && BigStep.Sem(Assume(e), context_in.AdjustState(st), out) 
+        && context_in.IsSatisfiedOn(st)
+        && BigStep.Sem(Assume(e), context_in.AdjustState(st), out)
         ensures out == Ok(context.AdjustState(st))
         ensures context.IsSatisfiedOn(st)
         ensures context.incarnation.Values <= st.Keys 
       {
         context_in.SubstituteIsDefinedOnLemma(e);
         context_in.AdjustStateSubstituteLemma(st, e); 
+        FVarsConjUnionLemma(context_in.ctx, [context_in.Substitute(e)]);
       }
     case Assign(v, x) =>
       ghost var vNew;
@@ -69,10 +70,15 @@ module VCGenBigStep {
         context_in.SubstituteIsDefinedOnLemma(x);
         var v' := st.Eval(context_in.Substitute(x));
         var st' := st.Update(vNew, v');
+        var stTransformed := context_in.AdjustState(st).Update(v, context_in.AdjustState(st).Eval(x));
 
         context_in.SubstituteIsDefinedOnLemma(x);
         FVarsEqLemma(Var(vNew), context_in.Substitute(x));
         FVarsConjUnionLemma(context_in.ctx, [Eq(Var(vNew), context_in.Substitute(x))]);
+
+        assert context.AdjustState(st') == stTransformed by {
+          context_in.AdjustStateSubstituteLemma(st, x);
+        }
         
         assert context.IsSatisfiedOn(st') by {
           context_in.Substitute(x).EvalFVarsLemma(st, st');
@@ -84,11 +90,6 @@ module VCGenBigStep {
               e.EvalFVarsLemma(st, st');
             }
           }
-        }
-        assert context.AdjustState(st') == 
-          context_in.AdjustState(st).Update(v, context_in.AdjustState(st).Eval(x)) by 
-        {
-            context_in.AdjustStateSubstituteLemma(st, x);
         }
       }
   }
