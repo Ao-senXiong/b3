@@ -3,19 +3,21 @@ module Verifier {
   import opened Basics
   import opened Ast
   import opened SolverExpr
+  import AstValid
   import I = Incarnations
   import RSolvers
   import StaticConsistency
   import AssignmentTargets
+  import SpecConversions
   import BC = BlockContinuations
   import CLI = CommandLineOptions
 
   export
     provides Verify
-    provides Ast, CLI, StaticConsistency
+    provides Ast, AstValid, CLI, StaticConsistency
 
   method Verify(b3: Ast.Program, cli: CLI.CliResult)
-    requires b3.WellFormed() && StaticConsistency.Consistent(b3)
+    requires AstValid.Program(b3)
   {
     var typeMap := map[];
     for i := 0 to |b3.types| {
@@ -41,7 +43,7 @@ module Verifier {
   }
 
   method VerifyProcedure(proc: Ast.Procedure, declMap: I.DeclMappings, cli: CLI.CliResult)
-    requires proc.WellFormed() && StaticConsistency.ConsistentProc(proc)
+    requires AstValid.Procedure(proc)
   {
     var smtEngine := RSolvers.CreateEngine(cli);
     var context := RSolvers.CreateEmptyContext();
@@ -53,8 +55,8 @@ module Verifier {
 
     if proc.Body.Some? {
       var body := proc.Body.value;
-      assert body.WellFormed() && StaticConsistency.ConsistentStmt(body);
-      var postCheck := ConvertSpecificationToCheck(proc.Post);
+      assert AstValid.Stmt(body);
+      var postCheck := SpecConversions.ToCheck(proc.Post);
       Process([body] + postCheck, bodyIncarnations, context, BC.Empty(), smtEngine);
     }
   }
@@ -88,7 +90,7 @@ module Verifier {
   }
 
   method VetSpecification(spec: seq<AExpr>, incarnations: I.Incarnations, context_in: RSolvers.RContext, smtEngine: RSolvers.REngine) returns (context: RSolvers.RContext)
-    requires forall ae <- spec :: ae.WellFormed() && StaticConsistency.ConsistentAExpr(ae)
+    requires AstValid.AExprSeq(spec)
     requires smtEngine.Valid()
     modifies smtEngine.Repr
     ensures smtEngine.Valid()
@@ -104,34 +106,14 @@ module Verifier {
         context := RSolvers.Extend(context, rCond);        
       case AAssertion(s) =>
         Process([s], incarnations, context, BC.Empty(), smtEngine);
-        var L := Learn(s);
+        var L := SpecConversions.Learn(s);
         var rL := incarnations.REval(L);
         context := RSolvers.Extend(context, rL);
     }
   }
 
-  method ConvertSpecificationToCheck(spec: seq<AExpr>) returns (stmts: seq<Stmt>)
-    requires forall ae <- spec :: ae.WellFormed() && StaticConsistency.ConsistentAExpr(ae)
-    ensures forall stmt <- stmts :: stmt.WellFormed() && StaticConsistency.ConsistentStmt(stmt)
-  {
-    stmts := [];
-    for i := 0 to |spec|
-      invariant forall stmt <- stmts :: stmt.WellFormed() && StaticConsistency.ConsistentStmt(stmt)
-    {
-      assert spec[i] in spec;
-      match spec[i]
-      case AExpr(cond) =>
-        stmts := stmts + [Check(cond)];
-      case AAssertion(s) =>
-        var L := Learn(s);
-        stmts := stmts + [Assume(L)];
-    }
-  }
-
   method Process(stmts: seq<Stmt>, incarnations_in: I.Incarnations, context_in: RSolvers.RContext, B: BC.T, smtEngine: RSolvers.REngine)
-    requires forall stmt <- stmts :: stmt.WellFormed() && StaticConsistency.ConsistentStmt(stmt)
-    requires BC.Valid(B)
-    requires smtEngine.Valid()
+    requires AstValid.StmtSeq(stmts) && BC.Valid(B) && smtEngine.Valid()
     modifies smtEngine.Repr
     ensures smtEngine.Valid()
     decreases BC.StmtSeqMeasure(stmts) + BC.ContinuationsMeasure(B)
@@ -142,7 +124,7 @@ module Verifier {
 
     var incarnations, context := incarnations_in, context_in;
     var stmt, cont := stmts[0], stmts[1..];
-    assert stmt.WellFormed();
+    assert AstValid.Stmt(stmt);
     BC.StmtMeasureSplit(stmts);
     match stmt
     case VarDecl(v, init, body) =>
@@ -184,7 +166,7 @@ module Verifier {
       BC.AboutStmtSeqMeasureSingleton(body);
       Process([body], bodyIncarnations, context, B, smtEngine);
       assert !StaticConsistency.ContainsNonAssertions(stmt);
-      var L := Learn(stmt);
+      var L := SpecConversions.Learn(stmt);
       var rL := incarnations.REval(L);
       context := RSolvers.Extend(context, rL);
       Process(cont, incarnations, context, B, smtEngine);
@@ -223,7 +205,7 @@ module Verifier {
   }
 
   method ProcessLoop(stmt: Stmt, incarnations_in: I.Incarnations, context_in: RSolvers.RContext, B: BC.T, smtEngine: RSolvers.REngine)
-    requires stmt.Loop? && stmt.WellFormed() && StaticConsistency.ConsistentStmt(stmt)
+    requires stmt.Loop? && AstValid.Stmt(stmt)
     requires BC.Valid(B) && smtEngine.Valid()
     modifies smtEngine.Repr
     ensures smtEngine.Valid()
@@ -260,7 +242,7 @@ module Verifier {
   }
 
   method CheckAExprs(aexprs: seq<AExpr>, incarnations: I.Incarnations, context: RSolvers.RContext, smtEngine: RSolvers.REngine, errorText: string)
-    requires forall ae <- aexprs :: ae.WellFormed()
+    requires AstValid.AExprSeq(aexprs)
     requires smtEngine.Valid()
     modifies smtEngine.Repr
     ensures smtEngine.Valid()
@@ -268,7 +250,7 @@ module Verifier {
     for i := 0 to |aexprs|
       invariant smtEngine.Valid()
     {
-      assert aexprs[i].WellFormed();
+      assert AstValid.AExpr(aexprs[i]);
       match aexprs[i]
       case AExpr(e) =>
         var rExpr := incarnations.REval(e);
@@ -279,7 +261,7 @@ module Verifier {
 
   method AssumeAExprs(aexprs: seq<AExpr>, incarnations: I.Incarnations, context_in: RSolvers.RContext, smtEngine: RSolvers.REngine)
       returns (context: RSolvers.RContext)
-    requires forall ae <- aexprs :: ae.WellFormed()
+    requires AstValid.AExprSeq(aexprs)
     requires smtEngine.Valid()
     modifies smtEngine.Repr
     ensures smtEngine.Valid()
@@ -288,7 +270,7 @@ module Verifier {
     for i := 0 to |aexprs|
       invariant smtEngine.Valid()
     {
-      assert aexprs[i].WellFormed();
+      assert AstValid.AExpr(aexprs[i]);
       match aexprs[i]
       case AExpr(e) =>
         var rExpr := incarnations.REval(e);
@@ -311,30 +293,5 @@ module Verifier {
     case Unproved(reason) =>
       print "Error: Failed to prove ", errorText, " ", errorReportingInfo.ToString(), "\n";
       print "Reason: ", reason, "\n";
-  }
-
-  function Learn(stmt: Stmt): Expr
-    requires stmt.WellFormed() && !StaticConsistency.ContainsNonAssertions(stmt)
-    ensures Learn(stmt).WellFormed()
-  {
-    match stmt
-    case VarDecl(v, Some(rhs), body) =>
-      Expr.CreateLet(v, rhs, Learn(body))
-    case Block(stmts) =>
-      var ll := SeqMap(stmts, (s: Stmt) requires s in stmts => Learn(s));
-      Expr.CreateBigAnd(ll)
-    case Check(_) =>
-      Expr.CreateTrue()
-    case Assume(e) =>
-      e
-    case Assert(e) =>
-      e
-    case AForall(v, body) =>
-      Expr.CreateForall(v, Learn(body))
-    case Choose(branches) =>
-      var ll := SeqMap(branches, (s: Stmt) requires s in branches => Learn(s));
-      Expr.CreateBigOr(ll)
-    case Probe(_) =>
-      Expr.CreateTrue()
   }
 }
