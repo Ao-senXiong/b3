@@ -4,8 +4,6 @@ module VCGenOmni {
   import Omni
   import WellFormed
 
-  ghost const AllStates: iset<State> := iset st: State | true
-
   method VCGen(s: Stmt, context_in: Context) returns (context: Context, VCs: seq<Expr>) 
     requires s.BVars() <= context_in.bVars
     requires s.IsDefinedOn(context_in.incarnation.Keys)
@@ -120,12 +118,38 @@ method SeqVCGen(s: seq<Stmt>, context: Context) returns (VCs: seq<Expr>)
         var VCs0 := SeqVCGen([ss0] + cont, context);
         var VCs1 := SeqVCGen([ss1] + cont, context);
         VCs := VCs0 + VCs1;
-      // case VarDecl(v, s) =>
-      //   ghost var vNew;
-      //   var context';
-      //   vNew, context' := context.AddVar(v);
-      //   VCs := SeqVCGen([s] + cont, context');
-      case _ => assume {:axiom} false;
+      case VarDecl(v, s) =>
+        ghost var vNew;
+        var context';
+        vNew, context' := context.AddVar(v);
+        VCs := SeqVCGen([s] + cont, context');
+        if (forall e <- VCs :: e.Holds()) {
+          forall st: State | context.IsSatisfiedOn(st)
+            ensures Omni.SeqSem([VarDecl(v, s)] + cont, context.AdjustState(st), AllStates) {
+            Omni.SemNest(VarDecl(v, s), cont, context.AdjustState(st), AllStates) by {
+              forall b: Value ensures Omni.Sem(s, context.AdjustState(st).Update(v, b), 
+                Omni.UpdateSet(v, Omni.SeqWP(cont, AllStates)))
+              {
+                assert context.AdjustState(st).Update(v,b) == context'.AdjustState(st.Update(vNew, b));
+                assert context'.IsSatisfiedOn(st.Update(vNew, b)) by {
+                  forall e <- context'.ctx 
+                    ensures st.Update(vNew, b).Eval(e) {
+                    e.EvalFVarsLemma(st, st.Update(vNew, b));
+                  }
+                }
+                Omni.SemCons(s, context.AdjustState(st).Update(v, b), 
+                  Omni.SeqWP(cont, AllStates), 
+                  Omni.UpdateSet(v, Omni.SeqWP(cont, AllStates))) by 
+                {
+                  forall st | Omni.SeqSem(cont, st, AllStates) 
+                    ensures Omni.SeqSem(cont, st - {v}, AllStates) {
+                    Omni.SeqFrameLemmaAll(cont, v, st);
+                  }
+                }
+              }
+            }
+          }
+        }
     }
   }
 }

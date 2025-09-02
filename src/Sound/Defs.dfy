@@ -1,5 +1,7 @@
 module Defs { 
 
+  ghost const AllStates: iset<State> := iset st: State | true
+
   datatype Except<+T> =
     | Ok(res: T)
     | Error
