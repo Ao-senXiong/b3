@@ -1,6 +1,7 @@
 module BlockContinuations {
   import Ast
-  import StaticConsistency
+  import AstValid
+  import SpecConversions
 
   export
     reveals T, Continuation
@@ -11,14 +12,14 @@ module BlockContinuations {
     provides StmtSeqMeasure
     provides AboutStmtSeqMeasureSingleton, StmtPairMeasure, StmtMeasurePrepend, StmtMeasureSplit, AboutStmtSeqMeasureConcat, StmtSeqElement
     provides ContinuationsMeasure, AboutContinuationsMeasure, AboutContinuationsMeasureAdd, AboutContinuationsMeasureUpdate
-    provides Ast, StaticConsistency
+    provides Ast, AstValid, SpecConversions
 
   datatype Continuation = Continuation(variablesInScope: set<Ast.Variable>, continuation: seq<Ast.Stmt>)
 
   type T = map<Ast.Label, Continuation>
 
   predicate Valid(t: T) {
-    forall lbl <- t, stmt <- t[lbl].continuation :: stmt.WellFormed() && StaticConsistency.ConsistentStmt(stmt)
+    forall lbl <- t :: AstValid.StmtSeq(t[lbl].continuation)
   }
 
   function Empty(): T
@@ -29,7 +30,7 @@ module BlockContinuations {
 
   function Add(t: T, lbl: Ast.Label, variablesInScope: set<Ast.Variable>, continuation: seq<Ast.Stmt>): (r: T)
     requires Valid(t)
-    requires forall stmt <- continuation :: stmt.WellFormed() && StaticConsistency.ConsistentStmt(stmt)
+    requires AstValid.StmtSeq(continuation)
     ensures Valid(r)
   {
     t[lbl := Continuation(variablesInScope, continuation)]
@@ -44,7 +45,7 @@ module BlockContinuations {
 
   function Get(t: T, lbl: Ast.Label): (r: Continuation)
     requires Valid(t) && lbl in t
-    ensures forall stmt <- r.continuation :: stmt.WellFormed() && StaticConsistency.ConsistentStmt(stmt)
+    ensures AstValid.StmtSeq(r.continuation)
   {
     t[lbl]
   }
@@ -192,7 +193,7 @@ module BlockContinuations {
 
   lemma AboutContinuationsMeasureAdd(B: T, lbl: Ast.Label, V: set<Ast.Variable>, cont: seq<Ast.Stmt>)
     requires Valid(B)
-    requires forall stmt <- cont :: stmt.WellFormed() && StaticConsistency.ConsistentStmt(stmt)
+    requires AstValid.StmtSeq(cont)
     ensures ContinuationsMeasure(B) + StmtSeqMeasure(cont) >= ContinuationsMeasure(Add(B, lbl, V, cont))
   {
     AboutContinuationsMeasureUpdate(B, lbl, V, cont);
