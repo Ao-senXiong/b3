@@ -103,7 +103,7 @@ module Verifier {
       match spec[i]
       case AExpr(cond) =>
         var rCond := incarnations.REval(cond);
-        context := RSolvers.Extend(context, rCond);        
+        context := RSolvers.Extend(context, rCond);
       case AAssertion(s) =>
         Process([s], incarnations, context, BC.Empty(), smtEngine);
         var L := SpecConversions.Learn(s);
@@ -300,18 +300,25 @@ module Verifier {
     // check preconditions
     assert AstValid.AExprSeq(proc.Pre); // this should come from well-formedness of program/context
     var preChecks := SpecConversions.ToCheck(proc.Pre);
-    for i := 0 to |preChecks|
-      invariant smtEngine.Valid()
-    {
-      context := ProcessPredicateStmt(preChecks[i], preIncarnations, context, smtEngine);
-    }
+    context := ProcessPredicateStmts(preChecks, preIncarnations, context, smtEngine);
 
     // learn postconditions
     var postLearning := SpecConversions.ToLearn(proc.Post);
-    for i := 0 to |postLearning|
+    context := ProcessPredicateStmts(postLearning, postIncarnations, context, smtEngine);
+  }
+
+  method ProcessPredicateStmts(stmts: seq<Stmt>, incarnations: I.Incarnations, context_in: RSolvers.RContext, smtEngine: RSolvers.REngine) returns (context: RSolvers.RContext)
+    requires AstValid.StmtSeq(stmts) && SpecConversions.JustPredicateStmts(stmts)
+    requires smtEngine.Valid()
+    modifies smtEngine.Repr
+    ensures smtEngine.Valid()
+  {
+    context := context_in;
+
+    for i := 0 to |stmts|
       invariant smtEngine.Valid()
     {
-      context := ProcessPredicateStmt(postLearning[i], postIncarnations, context, smtEngine);
+      context := ProcessPredicateStmt(stmts[i], incarnations, context, smtEngine);
     }
   }
 
