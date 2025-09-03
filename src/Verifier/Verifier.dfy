@@ -367,20 +367,12 @@ module Verifier {
     var maintainanceChecks := SpecConversions.ToCheck(invariants);
     // Process body
     assert BC.StmtMeasure(stmt) > BC.StmtSeqMeasure(assumeInvariants + [body] + maintainanceChecks) by {
-      assert BC.StmtSeqMeasure(assumeInvariants) + BC.StmtSeqMeasure(maintainanceChecks) <= 4 * |invariants| by {
-        assert BC.StmtSeqMeasure(assumeInvariants) <= 2 * |assumeInvariants| by {
-          BC.JustPredicateStmtsMeasure(assumeInvariants);
-        }
-        assert BC.StmtSeqMeasure(maintainanceChecks) <= 2 * |maintainanceChecks| by {
-          BC.JustPredicateStmtsMeasure(maintainanceChecks);
-        }
-      }
       calc {
         BC.StmtMeasure(stmt);
         1 + BC.AExprsMeasure(invariants, stmt) + 4 * |invariants| + BC.StmtMeasure(body);
       >=
         1 + 4 * |invariants| + BC.StmtMeasure(body);
-      >  // above
+      >  { BC.JustPredicateStmtsMeasure(assumeInvariants); BC.JustPredicateStmtsMeasure(maintainanceChecks); }
         BC.StmtSeqMeasure(assumeInvariants) + BC.StmtMeasure(body) + BC.StmtSeqMeasure(maintainanceChecks);
         { BC.AboutStmtSeqMeasureSingleton(body); }
         BC.StmtSeqMeasure(assumeInvariants) + BC.StmtSeqMeasure([body]) + BC.StmtSeqMeasure(maintainanceChecks);
