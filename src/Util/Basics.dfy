@@ -132,6 +132,12 @@ module Basics {
     forall x0 <- m.Keys, x1 <- m.Keys :: x0 != x1 ==> m[x0] != m[x1]
   }
 
+  lemma SeqContentsSplit<X>(s: seq<X>)
+    requires |s| != 0
+    ensures s[0] in s && forall x <- s[1..] :: x in s
+  {
+  }
+
   function Int2String(x: int): string {
     if x == 0 then
       "0"
