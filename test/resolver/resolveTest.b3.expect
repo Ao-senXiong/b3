@@ -17,36 +17,36 @@ function G()
 }
 
 function H(injective str: string, a: int)
-  when Ast.FParameter == Ast.FParameter
-  when Ast.FParameter < 10
+  when str == str
+  when a < 10
 {
-  Ast.FParameter
+  str
 }
 
 function NicelyIndented(x: int, y: int, b: bool, c: MyClass)
 {
-  if Ast.FParameter == 12 then
+  if x == 12 then
     20
-  else if Ast.FParameter == 13 then
-    val u: int := 2 * Ast.FParameter
-    val v: int := 3 * Ast.LocalVariable + Ast.FParameter
-    if Ast.LocalVariable + Ast.LocalVariable <= Ast.LocalVariable + Ast.LocalVariable then
+  else if x == 13 then
+    val u: int := 2 * y
+    val v: int := 3 * u + x
+    if u + v <= v + u then
       300
     else
-      -1 + Ast.Function()
+      -1 + G()
   else
     4000
 }
 
 function AnotherNicelyIndented(x: int, y: int)
 {
-  Ast.FParameter < Ast.FParameter && Ast.FParameter <= Ast.FParameter && Ast.FParameter != Ast.FParameter && Ast.FParameter < Ast.FParameter && Ast.FParameter <= Ast.FParameter && Ast.FParameter <= Ast.FParameter &&
+  x < y && x <= y && x != y && y < x && y <= x && x <= y &&
   val u: int := 19
   val v: int := 21
-  if Ast.LocalVariable + Ast.LocalVariable <= Ast.LocalVariable + Ast.LocalVariable then
+  if u + v <= v + u then
     300 < 400
   else
-    -1 + Ast.Function() != 75
+    -1 + G() != 75
 }
 
 function Inc(x: int)
@@ -82,7 +82,7 @@ procedure Mote()
     forall x: int {
       check true
       val y: bool := false
-      assume Ast.LocalVariable
+      assume y
     }
     choose {
       assume false
@@ -94,9 +94,9 @@ procedure Mote()
     hello: {
       var something: bool
       choose {
-        assume Ast.LocalVariable
+        assume something
       } or {
-        assume !Ast.LocalVariable
+        assume !something
         exit hello
       }
     }
@@ -106,17 +106,17 @@ procedure Mote()
         var BbB: bool
         var CcC: bool
         choose {
-          assume Ast.LocalVariable
+          assume AaA
         } or {
-          assume !Ast.LocalVariable
+          assume !AaA
           choose {
-            assume Ast.LocalVariable
+            assume BbB
           } or {
-            assume !Ast.LocalVariable
+            assume !BbB
             choose {
-              assume Ast.LocalVariable
+              assume CcC
             } or {
-              assume !Ast.LocalVariable
+              assume !CcC
             }
           }
         }
@@ -132,16 +132,16 @@ procedure Mote()
         var s602: bool
         var s603: bool
         choose {
-          assume Ast.LocalVariable
+          assume s600
           exit yes
         } or {
-          assume !Ast.LocalVariable
+          assume !s600
           choose {
-            assume Ast.LocalVariable
+            assume s601
           } or {
-            assume Ast.LocalVariable
+            assume s602
           } or {
-            assume Ast.LocalVariable
+            assume s603
             check true
           }
         }
@@ -150,10 +150,10 @@ procedure Mote()
     var a: int
     var x: int
     var y: int
-    Ast.LocalVariable := 800
-    Ast.LocalVariable := 801
+    x := 800
+    y := 801
     loop: loop {
-      Ast.LocalVariable := 1
+      a := 1
     }
     loop: loop
       invariant true
@@ -178,18 +178,18 @@ procedure Mote()
         exit asap
       }
     }
-    Ast.Procedure()
-    Ast.Procedure(1000)
-    Ast.Procedure(out x, 1000)
-    Ast.Procedure(out x, 1000, inout y)
+    M0()
+    M1(1000)
+    M2(out x, 1000)
+    M3(out x, 1000, inout y)
     var b: int
     var c: int
     var z: int
-    Ast.Procedure(1000, out a, out b, out c)
-    Ast.Procedure(1000, 2000, inout x, inout y, inout z)
+    M4(1000, out a, out b, out c)
+    M5(1000, 2000, inout x, inout y, inout z)
     var m: int
     var n: int
-    Ast.Procedure(1000, 2000, inout m, inout n, out x, out z)
+    M6(1000, 2000, inout m, inout n, out x, out z)
   }
 }
 
@@ -243,22 +243,31 @@ procedure TestTypeUse(y: Abc)
 {
   return: {
     var x: Abc
-    Ast.LocalVariable := Ast.Parameter
-    check Ast.LocalVariable == Ast.Parameter
+    x := y
+    check x == y
     var k: int := 12
-    check Ast.Function(Ast.LocalVariable) == Ast.Function(12)
+    check Inc(k) == Inc(12)
   }
 }
 
 procedure UseQuantifier(t: MyString, u: MyString)
 {
   return: {
-    assume forall s: MyString pattern Ast.Function(Ast.LocalVariable) :: Ast.LocalVariable != Ast.Parameter ==> Ast.Function(Ast.LocalVariable)
+    assume forall s: MyString pattern Stringy(s) :: s != t ==> Stringy(s)
     choose {
-      assume Ast.Parameter != Ast.Parameter
-      check Ast.Function(Ast.Parameter)
+      assume t != u
+      check Stringy(u)
     } or {
-      assume !Ast.Parameter != Ast.Parameter
+      assume !t != u
     }
+  }
+}
+
+procedure OptionalType(w: int, x: int, out r: int)
+{
+  return: {
+    var y: int := x
+    var z: int := 5 + val u: int := if w < x then 2 else y u + u
+    r := y + z
   }
 }

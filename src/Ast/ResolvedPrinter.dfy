@@ -97,7 +97,7 @@ module ResolvedPrinter {
       }
 
     case Assign(lhs, rhs) =>
-      print lhs, " := ";
+      print lhs.name, " := ";
       Expression(rhs);
       print "\n";
 
@@ -108,7 +108,7 @@ module ResolvedPrinter {
       print "}\n";
 
     case Call(proc, args) =>
-      print proc, "(";
+      print proc.Name, "(";
       var sep := "";
       for i := 0 to |args| {
         print sep;
@@ -256,7 +256,7 @@ module ResolvedPrinter {
     case BLiteral(value) => print value;
     case ILiteral(value) => print value;
     case CustomLiteral(s, typ) => print "|", s, ": ", typ, "|";
-    case IdExpr(name) => print name;
+    case IdExpr(v) => print v.name;
     case OperatorExpr(op, args) =>
       if op == Operator.IfThenElse && op.ArgumentCount() == |args| {
         var ind := format.More();
@@ -293,12 +293,12 @@ module ResolvedPrinter {
         ExpressionList(args);
         print ")";
       }
-    case FunctionCallExpr(name, args) =>
-      print name, "(";
+    case FunctionCallExpr(func, args) =>
+      print func.Name, "(";
       ExpressionList(args);
       print ")";
-    case LabeledExpr(name, body) =>
-      print name, ": ";
+    case LabeledExpr(lbl, body) =>
+      print lbl.Name, ": ";
       Expression(body, format);
     case LetExpr(v, rhs, body) =>
       IdTypeDecl("val ", v.name, v.typ);

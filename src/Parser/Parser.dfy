@@ -108,6 +108,13 @@ module Parser {
     S(s).I_e(W)
   }
 
+  function SymNotPrefix(s: string, suffixesToAvoid: seq<string>): B<string> {
+    if suffixesToAvoid == [] then
+      S(s).I_e(W)
+    else
+      B(P.Not(P.Lookahead(S(suffixesToAvoid[0]).apply))).e_I(SymNotPrefix(s, suffixesToAvoid[1..]))
+  }
+
   function parseParenthesized<X>(parser: B<X>): B<X> {
     S("(").I_e(W).e_I(parser).I_e(S(")")).I_e(W)
   }
@@ -196,7 +203,10 @@ module Parser {
     )
 
   const parseIdType: B<(string, string)> :=
-    parseId.I_e(Sym(":")).I_I(parseType)
+    parseId.I_I(Sym(":").e_I(parseType))
+
+  const parseIdOptionalType: B<(string, Option<string>)> :=
+    parseId.I_I(SymNotPrefix(":", [":="]).e_I(parseType).Option())
 
   const parseType: B<Types.TypeName> := parseId
 
@@ -248,7 +258,7 @@ module Parser {
   }
 
   function parseVariableDeclaration(isMutable: bool, c: StmtRecSel): B<Stmt> {
-    parseIdType.M2(MId, (name: string, typ: string) => Variable(name, isMutable, typ)).
+    parseIdOptionalType.M2(MId, (name: string, optionalType: Option<string>) => Variable(name, isMutable, optionalType)).
     I_I(Sym(":=").e_I(parseExpr).Option()).
     I_I(c("stmt").Rep()).M3(Unfold3l, (v, init, stmts) =>
                               VarDecl(v, init, Block(stmts)))
@@ -422,8 +432,8 @@ module Parser {
       T("if").e_I(c("expr")).Then(guard =>
         T("then").e_I(c("expr")).I_I(T("else").e_I(c("expr"))).M2(MId, (thn, els) => OperatorExpr(IfThenElse, [guard, thn, els]))
       ),
-      T("val").e_I(parseIdType.Then(p => var (name: string, typ: Types.TypeName) := p;
-        Sym(":=").e_I(c("expr")).I_I(c("expr")).M2(MId, (rhs, body) => LetExpr(name, typ, rhs, body)))
+      T("val").e_I(parseIdOptionalType.Then(p => var (name: string, optionalType: Option<Types.TypeName>) := p;
+        Sym(":=").e_I(c("expr")).I_I(c("expr")).M2(MId, (rhs, body) => LetExpr(name, optionalType, rhs, body)))
       ),
       Or([T("forall").M(_ => true), T("exists").M(_ => false)]).Then(universal =>
         parseIdType.Then(p => var (name: string, typ: Types.TypeName) := p;

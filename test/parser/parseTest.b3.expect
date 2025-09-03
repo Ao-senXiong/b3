@@ -215,3 +215,10 @@ procedure UseQuantifier(t: MyString, u: MyString)
     check Stringy(u)
   }
 }
+
+procedure OptionalType(w: int, x: int, out r: int)
+{
+  var y := x
+  var z := 5 + val u := if w < x then 2 else y u + u
+  r := y + z
+}

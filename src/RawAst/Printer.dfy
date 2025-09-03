@@ -202,7 +202,7 @@ module Printer {
   method VariableDeclaration(v: Variable, init: Option<Expr>, body: Stmt, indent: nat, followedByEndCurly: bool)
     decreases body, 3
   {
-    IdTypeDecl(if v.isMutable then "var " else "val ", v.name, v.typ);
+    IdTypeDecl(if v.isMutable then "var " else "val ", v.name, v.optionalType);
     match init {
       case None =>
       case Some(e) =>
@@ -213,8 +213,11 @@ module Printer {
     BlockAsStatementList(body, indent, followedByEndCurly);
   }
 
-  method IdTypeDecl(prefix: string, name: string, typ: Types.TypeName) {
-    print prefix, name, ": ", typ;
+  method IdTypeDecl(prefix: string, name: string, optionalType: Option<Types.TypeName>) {
+    print prefix, name;
+    match optionalType
+    case None =>
+    case Some(typ) => print ": ", typ;
   }
 
   method StmtAsBlock(stmt: Stmt, indent: nat, suffix: string := "\n")
@@ -329,14 +332,14 @@ module Printer {
     case LabeledExpr(name, body) =>
       print name, ": ";
       Expression(body, format);
-    case LetExpr(name, typ, rhs, body) =>
-      IdTypeDecl("val ", name, typ);
+    case LetExpr(name, optionalType, rhs, body) =>
+      IdTypeDecl("val ", name, optionalType);
       print " := ";
       Expression(rhs);
       format.Space();
       Expression(body, format);
     case QuantifierExpr(univ, name, typ, patterns, body) =>
-      IdTypeDecl(if univ then "forall " else "exists ", name, typ);
+      IdTypeDecl(if univ then "forall " else "exists ", name, Some(typ));
       var ind := format.More();
       if patterns == [] {
         print " ";
