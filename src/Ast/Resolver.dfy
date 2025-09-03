@@ -454,8 +454,6 @@ module Resolver {
         if !Raw.LegalVariableName(variable.name) {
           return Failure("illegal variable name: " + variable.name);
         }
-        var typ :- ResolveType(variable.typ, prs.ers.typeMap);
-        var v := new LocalVariable(variable.name, variable.isMutable, typ);
         var i;
         if init == None {
           i := None;
@@ -463,6 +461,17 @@ module Resolver {
           var e :- ResolveExpr(init.value, prs.ers, ls.varMap);
           i := Some(e);
         }
+        var typ;
+        match variable.optionalType {
+          case None =>
+            if i == None {
+              return Failure("variable declaration must give a type or an initializing expression (or both)");
+            }
+            typ := i.value.ExprType();
+          case Some(typeName) =>
+            typ :- ResolveType(typeName, prs.ers.typeMap);
+        }
+        var v := new LocalVariable(variable.name, variable.isMutable, typ);
         var ls' := ls.AddVariable(variable.name, v);
         assert ls'.varMap.Keys == ls.varMap.Keys + {v.name};
         var b :- ResolveStmt(body, prs, ls');
@@ -699,13 +708,19 @@ module Resolver {
         var lbl := new Label(name);
         var b :- ResolveExpr(body, ers, varMap);
         r := LabeledExpr(lbl, b);
-      case LetExpr(name, typeName, rhs, body) =>
+      case LetExpr(name, optionalTypeName, rhs, body) =>
         if !Raw.LegalVariableName(name) {
           return Failure("illegal variable name: " + name);
         }
-        var typ :- ResolveType(typeName, ers.typeMap);
-        var letVariable := new LocalVariable(name, false, typ);
         var rRhs :- ResolveExpr(rhs, ers, varMap);
+        var typ;
+        match optionalTypeName {
+          case None =>
+            typ := rRhs.ExprType();
+          case Some(typeName) =>
+            typ :- ResolveType(typeName, ers.typeMap);
+        }
+        var letVariable := new LocalVariable(name, false, typ);
         var varMap' := varMap[name := letVariable];
         assert varMap'.Keys == varMap.Keys + {name};
         var rBody :- ResolveExpr(body, ers, varMap');

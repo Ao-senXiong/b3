@@ -114,7 +114,7 @@ module RawAst {
 
   type Scope = set<string>
 
-  datatype Variable = Variable(name: string, isMutable: bool, typ: TypeName) // TODO: add auto-invariant
+  datatype Variable = Variable(name: string, isMutable: bool, optionalType: Option<TypeName>) // TODO: add auto-invariant
   {
     static predicate UniqueNames(variables: seq<Variable>) {
       forall i, j :: 0 <= i < j < |variables| ==> variables[i].name != variables[j].name
@@ -232,8 +232,9 @@ module RawAst {
       match this
       case VarDecl(v, init, body) =>
         && LegalVariableName(v.name)
-        && b3.IsType(v.typ)
+        && (v.optionalType.Some? ==> b3.IsType(v.optionalType.value))
         && (init.Some? ==> init.value.WellFormed(b3, scope))
+        && (v.optionalType.Some? || init.Some?)
         && body.WellFormed(b3, scope + {v.name}, labels, insideLoop)
       case Assign(lhs, rhs) =>
         && lhs in scope
@@ -402,7 +403,7 @@ module RawAst {
     | OperatorExpr(op: Operator, args: seq<Expr>)
     | FunctionCallExpr(name: string, args: seq<Expr>)
     | LabeledExpr(name: string, expr: Expr)
-    | LetExpr(name: string, typ: TypeName, rhs: Expr, body: Expr)
+    | LetExpr(name: string, optionalType: Option<TypeName>, rhs: Expr, body: Expr)
     | QuantifierExpr(univ: bool, name: string, typ: TypeName, patterns: seq<Pattern>, body: Expr)
   {
     predicate WellFormed(b3: Program, scope: Scope) {
