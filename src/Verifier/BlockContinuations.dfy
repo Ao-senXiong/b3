@@ -1,4 +1,5 @@
 module BlockContinuations {
+  import opened Basics
   import Ast
   import AstValid
   import SpecConversions
@@ -9,9 +10,10 @@ module BlockContinuations {
     reveals Add, Remove, Get
     provides Valid
     reveals StmtMeasure
-    provides StmtSeqMeasure
-    provides AboutStmtSeqMeasureSingleton, StmtPairMeasure, StmtMeasurePrepend, StmtMeasureSplit, AboutStmtSeqMeasureConcat, StmtSeqElement
-    provides ContinuationsMeasure, AboutContinuationsMeasure, AboutContinuationsMeasureAdd, AboutContinuationsMeasureUpdate
+    provides StmtSeqMeasure, AExprsMeasure
+    provides AboutStmtSeqMeasureSingleton, JustPredicateStmtsMeasure, StmtPairMeasure, StmtMeasurePrepend, StmtMeasureSplit
+    provides AboutStmtSeqMeasureConcat, StmtSeqElement, AboutAExprsMeasure
+    provides ContinuationsMeasure, ContinuationsMeasureEmpty, AboutContinuationsMeasure, AboutContinuationsMeasureAdd, AboutContinuationsMeasureUpdate
     provides Ast, AstValid, SpecConversions
 
   datatype Continuation = Continuation(variablesInScope: set<Ast.Variable>, continuation: seq<Ast.Stmt>)
@@ -63,7 +65,7 @@ module BlockContinuations {
     case Assert(_) => 2
     case AForall(_, body) => 1 + StmtMeasure(body)
     case Choose(branches) => 1 + StmtSeqMeasure(branches)
-    case Loop(_, body) => 1 + StmtMeasure(body) // TODO
+    case Loop(invariants, body) => 1 + AExprsMeasure(invariants, stmt) + 4 * |invariants| + StmtMeasure(body)
     case LabeledStmt(_, body) => 2 + StmtMeasure(body)
     case Exit(_) => 1
     case Probe(_) => 1
@@ -71,6 +73,34 @@ module BlockContinuations {
 
   ghost function StmtSeqMeasure(stmts: seq<Ast.Stmt>): nat {
     if stmts == [] then 0 else StmtMeasure(stmts[0]) + StmtSeqMeasure(stmts[1..])
+  }
+
+  ghost function AExprsMeasure(aexprs: seq<Ast.AExpr>, parent: Ast.Stmt): nat
+    requires forall aexpr <- aexprs :: aexpr < parent
+    decreases parent, |aexprs|
+  {
+    if aexprs == [] then
+      0
+    else
+      SeqContentsSplit(aexprs);
+      match aexprs[0] {
+        case AExpr(e) => 1
+        case AAssertion(s) => 1 + StmtMeasure(s)
+      } +
+      AExprsMeasure(aexprs[1..], parent)
+  }
+
+  lemma AboutAExprsMeasure(s: Ast.Stmt, aexprs: seq<Ast.AExpr>, parent: Ast.Stmt)
+    requires Ast.AAssertion(s) in aexprs
+    requires forall aexpr <- aexprs :: aexpr < parent
+    ensures StmtMeasure(s) < AExprsMeasure(aexprs, parent)
+  {
+    if aexprs[0] == Ast.AAssertion(s) {
+    } else {
+      SeqContentsSplit(aexprs);
+      assert AExprsMeasure(aexprs[1..], parent) < AExprsMeasure(aexprs, parent);
+      AboutAExprsMeasure(s, aexprs[1..], parent);
+    }
   }
 
   lemma StmtSeqElement(stmts: seq<Ast.Stmt>, i: nat)
@@ -94,6 +124,24 @@ module BlockContinuations {
   lemma AboutStmtSeqMeasureSingleton(s: Ast.Stmt)
     ensures StmtSeqMeasure([s]) == StmtMeasure(s)
   {}
+
+  lemma JustPredicateStmtsMeasure(stmts: seq<Ast.Stmt>)
+    requires SpecConversions.JustPredicateStmts(stmts)
+    ensures StmtSeqMeasure(stmts) <= 2 * |stmts|
+  {
+    if stmts == [] {
+    } else {
+      calc {
+        StmtSeqMeasure(stmts);
+        StmtMeasure(stmts[0]) + StmtSeqMeasure(stmts[1..]);
+      <=  { JustPredicateStmtsMeasure(stmts[1..]); }
+        StmtMeasure(stmts[0]) + 2 * |stmts[1..]|;
+      <=  { assert stmts[0].IsPredicateStmt(); assert StmtMeasure(stmts[0]) <= 2; }
+        2 + 2 * |stmts[1..]|;
+        2 * |stmts|;
+      }
+    }
+  }
 
   lemma StmtPairMeasure(a: Ast.Stmt, b: Ast.Stmt)
     ensures StmtSeqMeasure([a, b]) == StmtMeasure(a) + StmtMeasure(b)
@@ -143,6 +191,11 @@ module BlockContinuations {
     requires |s| != 0
   {
     var x :| x in s; x
+  }
+
+  lemma ContinuationsMeasureEmpty()
+    ensures ContinuationsMeasure(Empty()) == 0
+  {
   }
 
   lemma AboutContinuationsMeasure(B: T, x: Ast.Label, V: set<Ast.Variable>, cont: seq<Ast.Stmt>)

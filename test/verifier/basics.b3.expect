@@ -17,7 +17,13 @@ Verifying MyProc ...
   true
 ----- Proof obligation:
   true
+  |-
   true
+----- Proof obligation:
+  true
+  |-
+  true
+----- Proof obligation:
   true
   and(true, and(true, and(or(and(false, and(false, true)), or(and(not(false), true), false)), true)))
   and(true, and(true, and(or(and(false, and(false, true)), or(and(not(false), true), false)), true)))

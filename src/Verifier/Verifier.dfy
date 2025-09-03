@@ -55,7 +55,11 @@ module Verifier {
 
     if proc.Body.Some? {
       var body := proc.Body.value;
-      assert AstValid.Stmt(body);
+      context := RSolvers.CreateEmptyContext();
+
+      var preLearning := SpecConversions.ToLearn(proc.Pre);
+      context := ProcessPredicateStmts(preLearning, postIncarnations, context, smtEngine);
+
       var postCheck := SpecConversions.ToCheck(proc.Post);
       Process([body] + postCheck, bodyIncarnations, context, BC.Empty(), smtEngine);
     }
@@ -89,11 +93,16 @@ module Verifier {
     }
   }
 
-  method VetSpecification(spec: seq<AExpr>, incarnations: I.Incarnations, context_in: RSolvers.RContext, smtEngine: RSolvers.REngine) returns (context: RSolvers.RContext)
+  method VetSpecification(spec: seq<AExpr>,
+                          incarnations: I.Incarnations, context_in: RSolvers.RContext, smtEngine: RSolvers.REngine,
+                          ghost parent: Stmt := Loop(spec, Block([])))
+      returns (context: RSolvers.RContext)
     requires AstValid.AExprSeq(spec)
+    requires forall aexpr <- spec :: aexpr < parent
     requires smtEngine.Valid()
     modifies smtEngine.Repr
     ensures smtEngine.Valid()
+    decreases BC.AExprsMeasure(spec, parent)
   {
     context := context_in;
     for i := 0 to |spec|
@@ -105,6 +114,11 @@ module Verifier {
         var rCond := incarnations.REval(cond);
         context := RSolvers.Extend(context, rCond);
       case AAssertion(s) =>
+        assert BC.AExprsMeasure(spec, parent) > BC.StmtSeqMeasure([s]) + BC.ContinuationsMeasure(BC.Empty()) by {
+          BC.AboutAExprsMeasure(s, spec, parent);
+          BC.AboutStmtSeqMeasureSingleton(s);
+          BC.ContinuationsMeasureEmpty();
+        }
         Process([s], incarnations, context, BC.Empty(), smtEngine);
         var L := SpecConversions.Learn(s);
         var rL := incarnations.REval(L);
@@ -172,7 +186,7 @@ module Verifier {
         BC.StmtMeasurePrepend(branches[i], cont);
         Process([branches[i]] + cont, incarnations, context, B, smtEngine);
       }
-    case Loop(invariants, body) =>
+    case Loop(_, _) =>
       // `cont` is ignored, since a `loop` never has any normal exit
       ProcessLoop(stmt, incarnations, context, B, smtEngine);
     case LabeledStmt(lbl, body) =>
@@ -297,10 +311,10 @@ module Verifier {
     var preIncarnations := incarnations.CreateSubMap(preMap);
     var postIncarnations := incarnations.CreateSubMap(postMap);
 
-    // check preconditions
+    // check preconditions, then drop them
     assert AstValid.AExprSeq(proc.Pre); // this should come from well-formedness of program/context
     var preChecks := SpecConversions.ToCheck(proc.Pre);
-    context := ProcessPredicateStmts(preChecks, preIncarnations, context, smtEngine);
+    var _ := ProcessPredicateStmts(preChecks, preIncarnations, context, smtEngine);
 
     // learn postconditions
     var postLearning := SpecConversions.ToLearn(proc.Post);
@@ -323,19 +337,21 @@ module Verifier {
   }
 
   method ProcessLoop(stmt: Stmt, incarnations_in: I.Incarnations, context_in: RSolvers.RContext, B: BC.T, smtEngine: RSolvers.REngine)
-    requires stmt.Loop? && AstValid.Stmt(stmt)
+    requires AstValid.Stmt(stmt) && stmt.Loop?
     requires BC.Valid(B) && smtEngine.Valid()
     modifies smtEngine.Repr
     ensures smtEngine.Valid()
     decreases BC.StmtMeasure(stmt) + BC.ContinuationsMeasure(B), 0
   {
+    var Loop(invariants, body) := stmt;
     var incarnations, context := incarnations_in, context_in;
 
-    // Check invariants on entry
-    CheckAExprs(stmt.invariants, incarnations, context, smtEngine, "invariant on entry");
+    // check the invariant on entry, then drop it
+    var initChecks := SpecConversions.ToCheck(invariants);
+    var _ := ProcessPredicateStmts(initChecks, incarnations, context, smtEngine);
 
     // Havoc the assignment targets of the loop body
-    var assignmentTargets := AssignmentTargets.Compute(stmt.body);
+    var assignmentTargets := AssignmentTargets.Compute(body);
     while assignmentTargets != {}
       invariant smtEngine.Valid()
     {
@@ -345,56 +361,36 @@ module Verifier {
       incarnations, sv := incarnations.Update(v);
     }
 
-    // TODO: should also vet the invariants
+    var _ := VetSpecification(invariants, incarnations, context, smtEngine, stmt);
 
-    // Assume invariants
-    context := AssumeAExprs(stmt.invariants, incarnations, context, smtEngine);
+    var assumeInvariants := SpecConversions.ToLearn(invariants);
+    var maintainanceChecks := SpecConversions.ToCheck(invariants);
     // Process body
-    BC.AboutStmtSeqMeasureSingleton(stmt.body);
-    Process([stmt.body], incarnations, context, B, smtEngine);
-
-    // TODO: postcondition checking should be appended to body, not checked separately
-
-    // Check that invariants are maintained
-    CheckAExprs(stmt.invariants, incarnations, context, smtEngine, "invariant maintained");
-  }
-
-  method CheckAExprs(aexprs: seq<AExpr>, incarnations: I.Incarnations, context: RSolvers.RContext, smtEngine: RSolvers.REngine, errorText: string)
-    requires AstValid.AExprSeq(aexprs)
-    requires smtEngine.Valid()
-    modifies smtEngine.Repr
-    ensures smtEngine.Valid()
-  {
-    for i := 0 to |aexprs|
-      invariant smtEngine.Valid()
-    {
-      assert AstValid.AExpr(aexprs[i]);
-      match aexprs[i]
-      case AExpr(e) =>
-        var rExpr := incarnations.REval(e);
-        ProveAndReport(context, rExpr, errorText, e, smtEngine);
-      case _ => // TODO
+    assert BC.StmtMeasure(stmt) > BC.StmtSeqMeasure(assumeInvariants + [body] + maintainanceChecks) by {
+      assert BC.StmtSeqMeasure(assumeInvariants) + BC.StmtSeqMeasure(maintainanceChecks) <= 4 * |invariants| by {
+        assert BC.StmtSeqMeasure(assumeInvariants) <= 2 * |assumeInvariants| by {
+          BC.JustPredicateStmtsMeasure(assumeInvariants);
+        }
+        assert BC.StmtSeqMeasure(maintainanceChecks) <= 2 * |maintainanceChecks| by {
+          BC.JustPredicateStmtsMeasure(maintainanceChecks);
+        }
+      }
+      calc {
+        BC.StmtMeasure(stmt);
+        1 + BC.AExprsMeasure(invariants, stmt) + 4 * |invariants| + BC.StmtMeasure(body);
+      >=
+        1 + 4 * |invariants| + BC.StmtMeasure(body);
+      >  // above
+        BC.StmtSeqMeasure(assumeInvariants) + BC.StmtMeasure(body) + BC.StmtSeqMeasure(maintainanceChecks);
+        { BC.AboutStmtSeqMeasureSingleton(body); }
+        BC.StmtSeqMeasure(assumeInvariants) + BC.StmtSeqMeasure([body]) + BC.StmtSeqMeasure(maintainanceChecks);
+        { BC.AboutStmtSeqMeasureConcat(assumeInvariants, [body]); }
+        BC.StmtSeqMeasure(assumeInvariants + [body]) + BC.StmtSeqMeasure(maintainanceChecks);
+        { BC.AboutStmtSeqMeasureConcat(assumeInvariants + [body], maintainanceChecks); }
+        BC.StmtSeqMeasure(assumeInvariants + [body] + maintainanceChecks);
+      }
     }
-  }
-
-  method AssumeAExprs(aexprs: seq<AExpr>, incarnations: I.Incarnations, context_in: RSolvers.RContext, smtEngine: RSolvers.REngine)
-      returns (context: RSolvers.RContext)
-    requires AstValid.AExprSeq(aexprs)
-    requires smtEngine.Valid()
-    modifies smtEngine.Repr
-    ensures smtEngine.Valid()
-  {
-    context := context_in;
-    for i := 0 to |aexprs|
-      invariant smtEngine.Valid()
-    {
-      assert AstValid.AExpr(aexprs[i]);
-      match aexprs[i]
-      case AExpr(e) =>
-        var rExpr := incarnations.REval(e);
-        context := RSolvers.Extend(context, rExpr);
-      case _ => // TODO
-    }
+    Process(assumeInvariants + [body] + maintainanceChecks, incarnations, context, B, smtEngine);
   }
 
   // `errorReportingInfo` is currently an expression that, together with `errorText`, gets printed
