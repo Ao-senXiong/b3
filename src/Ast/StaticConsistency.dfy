@@ -22,12 +22,18 @@ module StaticConsistency {
     forall proc <- b3.procedures :: ConsistentProc(proc)
   }
 
+  predicate ConsistentProcHeader(proc: Procedure)
+    requires proc.WellFormedHeader()
+  {
+    && (forall ae <- proc.Pre :: ConsistentAExpr(ae))
+    && (forall ae <- proc.Post :: ConsistentAExpr(ae))
+  }
+
   predicate ConsistentProc(proc: Procedure)
     requires proc.WellFormed()
     reads proc
   {
-    && (forall ae <- proc.Pre :: ConsistentAExpr(ae))
-    && (forall ae <- proc.Post :: ConsistentAExpr(ae))
+    && ConsistentProcHeader(proc)
     && (proc.Body.Some? ==> ConsistentStmt(proc.Body.value))
   }
 

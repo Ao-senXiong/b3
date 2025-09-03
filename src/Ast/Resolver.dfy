@@ -202,7 +202,10 @@ module Resolver {
       // user-defined types seen so far have distinct names
       invariant forall i, j :: 0 <= i < j < n ==> b3.procedures[i].name != b3.procedures[j].name
       // the procedures seen so far are well-formed
-      invariant forall proc <- b3.procedures[..n] :: proc.SignatureWellFormed(b3) && procMap[proc.name].SignatureWellFormed(proc)
+      invariant forall proc <- b3.procedures[..n] ::
+        && proc.SignatureWellFormed(b3)
+        && procMap[proc.name].SignatureWellFormed(proc)
+        && procMap[proc.name].WellFormedHeader()
    {
       var proc := b3.procedures[n];
       var name := proc.name;
@@ -213,14 +216,12 @@ module Resolver {
       procMap := procMap[name := rproc];
     }
 
-    var prs := ProcResolverState(ers, procMap);
+    var prs := ProcResolverState(ers, Some(procMap));
     for n := 0 to |b3.procedures|
-      invariant forall proc <- b3.procedures :: proc.SignatureWellFormed(b3) && procMap[proc.name].SignatureWellFormed(proc)
-      invariant forall proc <- b3.procedures[..n] :: proc.WellFormed(b3)
-      invariant forall proc <- b3.procedures[..n] :: procMap[proc.name].WellFormed()
+      invariant forall proc <- b3.procedures[..n] :: proc.WellFormed(b3) && procMap[proc.name].WellFormed()
     {
       var proc := b3.procedures[n];
-      var _ :- ResolveProcedure(proc, procMap[proc.name], prs);
+      var _ :- ResolveProcedureBody(proc, procMap[proc.name], prs);
     }
 
     return Success(procMap);
@@ -229,7 +230,7 @@ module Resolver {
   method ResolveProcedureSignature(proc: Raw.Procedure, ers: ExprResolverState) returns (r: Result<Procedure, string>)
     requires ers.Valid()
     ensures r.Success? ==> proc.SignatureWellFormed(ers.b3)
-    ensures r.Success? ==> fresh(r.value) && r.value.SignatureWellFormed(proc)
+    ensures r.Success? ==> fresh(r.value) && r.value.SignatureWellFormed(proc) && r.value.WellFormedHeader()
   {
     var paramMap: map<string, Variable> := map[];
     var formals: seq<Parameter> := [];
@@ -268,7 +269,19 @@ module Resolver {
       formals := formals + [formal];
     }
 
-    var rproc := new Procedure(proc.name, formals);
+    var preScope := set p <- proc.parameters | p.mode.IsIncoming() :: p.name;
+    var postScope := (set p <- proc.parameters :: p.name) + (set p <- proc.parameters | p.mode == Raw.InOut :: Raw.OldName(p.name));
+
+    var preVariables := MapProject(paramMap, preScope);
+    assert preVariables.Keys == preScope;
+    var pre :- ResolveAExprs(proc.pre, ers, LocalResolverState(preVariables, map[], None, None));
+
+    var postVariables := MapProject(paramMap, postScope);
+    assert postVariables.Keys == postScope;
+    var ls := LocalResolverState(postVariables, map[], None, None);
+    var post :- ResolveAExprs(proc.post, ers, ls);
+
+    var rproc := new Procedure(proc.name, formals, pre, post);
     return Success(rproc);
   }
 
@@ -287,17 +300,21 @@ module Resolver {
     return Success(UserType(typeMap[typename]));
   }
 
-  datatype ProcResolverState = ProcResolverState(ers: ExprResolverState, procMap: map<string, Procedure>)
+  datatype ProcResolverState = ProcResolverState(ers: ExprResolverState, maybeProcMap: Option<map<string, Procedure>>)
   {
     ghost predicate Valid() {
       && ers.Valid()
-      && (forall procname <- procMap :: exists proc <- ers.b3.procedures :: proc.name == procname)
-      && (forall rawProc <- ers.b3.procedures ::
-            && rawProc.name in procMap
-            && var proc := procMap[rawProc.name];
-            && |rawProc.parameters| == |proc.Parameters|
-            && (forall i :: 0 <= i < |rawProc.parameters| ==> rawProc.parameters[i].mode == proc.Parameters[i].mode)
-         )
+      && match maybeProcMap {
+        case None => true
+        case Some(procMap) =>
+          && (forall procname <- procMap :: exists proc <- ers.b3.procedures :: proc.name == procname)
+          && (forall rawProc <- ers.b3.procedures ::
+                && rawProc.name in procMap
+                && var proc := procMap[rawProc.name];
+                && |rawProc.parameters| == |proc.Parameters|
+                && (forall i :: 0 <= i < |rawProc.parameters| ==> rawProc.parameters[i].mode == proc.Parameters[i].mode)
+            )
+      }
     }
   }
 
@@ -318,7 +335,7 @@ module Resolver {
     varMap: map<string, Variable>,
     labelMap: map<string, Label>,
     loopLabel: Option<Label>,
-    returnLabel: Label)
+    returnLabel: Option<Label>)
   {
     function AddVariable(name: string, v: Variable): LocalResolverState
       ensures AddVariable(name, v).varMap.Keys == varMap.Keys + {name}
@@ -357,85 +374,71 @@ module Resolver {
 
   const ReturnLabelName: string := "return"
 
-  method ResolveProcedure(proc: Raw.Procedure, rproc: Procedure, prs: ProcResolverState) returns (r: Result<(), string>)
-    requires proc.SignatureWellFormed(prs.ers.b3) && rproc.SignatureWellFormed(proc) && prs.Valid()
+  method ResolveProcedureBody(proc: Raw.Procedure, rproc: Procedure, prs: ProcResolverState) returns (r: Result<(), string>)
+    requires proc.SignatureWellFormed(prs.ers.b3)
+    requires rproc.SignatureWellFormed(proc) && rproc.WellFormedHeader()
+    requires prs.Valid()
     modifies rproc
+    ensures r.Success? && proc.body.Some? ==>
+      var postScope := proc.AllParameterNames();
+      proc.body.value.WellFormed(prs.ers.b3, postScope, {}, false)
     ensures r.Success? ==> proc.WellFormed(prs.ers.b3) && rproc.WellFormed()
   {
+    if proc.body == None {
+      rproc.Body := None;
+      return Success(());
+    }
+
     var formals := rproc.Parameters;
-    var n := |formals|;
-    assert forall formal: Parameter <- formals :: Raw.LegalVariableName(formal.name);
-    assert forall i, j :: 0 <= i < j < n ==> formals[i].name != formals[j].name;
-    forall i, j | 0 <= i < j < n
+    ghost var postScope := proc.AllParameterNames();
+    forall i, j | 0 <= i < j < |formals|
       ensures Raw.OldName(formals[i].name) != Raw.OldName(formals[j].name)
     {
       var a, b := formals[i].name, formals[j].name;
       assert a != b;
       assert Raw.OldName(a)[|Raw.OldPrefix|..] == a;
-      assert Raw.OldName(a) != Raw.OldName(b);
     }
-    var paramMap :=
-      (map formal <- rproc.Parameters :: formal.name := formal) +
-      (map formal <- rproc.Parameters | formal.oldInOut.Some? :: Raw.OldName(formal.name) := formal.oldInOut.value);
-
-    assert n == |proc.parameters|;
-    assert forall i :: 0 <= i < n ==> formals[i].name == proc.parameters[i].name;
-    assert forall i :: 0 <= i < n ==> (formals[i].oldInOut.Some? <==> proc.parameters[i].mode == Raw.InOut);
-
-    var preScope := set p <- proc.parameters | p.mode.IsIncoming() :: p.name;
-    var postScope := (set p <- proc.parameters :: p.name) + (set p <- proc.parameters | p.mode == Raw.InOut :: Raw.OldName(p.name));
+    var varMap: map<string, Variable> :=
+      (map formal <- formals :: formal.name := formal) +
+      (map formal <- formals | formal.oldInOut.Some? :: Raw.OldName(formal.name) := formal.oldInOut.value);
+    assert varMap.Keys == proc.AllParameterNames();
 
     var returnLabel := new Label(ReturnLabelName);
+    var ls := LocalResolverState(varMap, map[], None, Some(returnLabel));
 
-    var preVariables := MapProject(paramMap, preScope);
-    assert preVariables.Keys == preScope;
-    var pre :- ResolveAExprs(proc.pre, prs, LocalResolverState(preVariables, map[], None, returnLabel));
+    var body :- ResolveStmt(proc.body.value, prs, ls);
 
-    var postVariables := MapProject(paramMap, postScope);
-    assert postVariables.Keys == postScope;
-    var ls := LocalResolverState(postVariables, map[], None, returnLabel);
-    var post :- ResolveAExprs(proc.post, prs, ls);
-
-    var body;
-    if proc.body == None {
-      body := None;
-    } else {
-      var b :- ResolveStmt(proc.body.value, prs, ls);
-      body := Some(LabeledStmt(returnLabel, b));
-    }
-
-    rproc.Pre := pre;
-    rproc.Post := post;
-    rproc.Body := body;
+    rproc.Body := Some(LabeledStmt(returnLabel, body));
     return Success(());
   }
 
-  method ResolveAExprs(aexprs: seq<Raw.AExpr>, prs: ProcResolverState, ls: LocalResolverState) returns (r: Result<seq<AExpr>, string>)
-    requires prs.Valid()
-    ensures r.Success? ==> forall ae <- aexprs :: ae.WellFormed(prs.ers.b3, ls.varMap.Keys)
+  method ResolveAExprs(aexprs: seq<Raw.AExpr>, ers: ExprResolverState, ls: LocalResolverState) returns (r: Result<seq<AExpr>, string>)
+    requires ers.Valid()
+    ensures r.Success? ==> forall ae <- aexprs :: ae.WellFormed(ers.b3, ls.varMap.Keys)
     ensures r.Success? ==> forall ae <- r.value :: ae.WellFormed()
   {
     var result := [];
     for n := 0 to |aexprs|
-      invariant forall ae <- aexprs[..n] :: ae.WellFormed(prs.ers.b3, ls.varMap.Keys)
+      invariant forall ae <- aexprs[..n] :: ae.WellFormed(ers.b3, ls.varMap.Keys)
       invariant forall ae: AExpr <- result :: ae.WellFormed()
     {
-      var ae :- ResolveAExpr(aexprs[n], prs, ls);
+      var ae :- ResolveAExpr(aexprs[n], ers, ls);
       result := result + [ae];
     }
     return Success(result);
   }
 
-  method ResolveAExpr(aexpr: Raw.AExpr, prs: ProcResolverState, ls: LocalResolverState) returns (r: Result<AExpr, string>)
-    requires prs.Valid()
-    ensures r.Success? ==> aexpr.WellFormed(prs.ers.b3, ls.varMap.Keys)
+  method ResolveAExpr(aexpr: Raw.AExpr, ers: ExprResolverState, ls: LocalResolverState) returns (r: Result<AExpr, string>)
+    requires ers.Valid()
+    ensures r.Success? ==> aexpr.WellFormed(ers.b3, ls.varMap.Keys)
     ensures r.Success? ==> r.value.WellFormed()
   {
     match aexpr
     case AExpr(e) =>
-      var expr :- ResolveExpr(e, prs.ers, ls.varMap);
+      var expr :- ResolveExpr(e, ers, ls.varMap);
       return Success(AExpr(expr));
     case AAssertion(s) =>
+      var prs := ProcResolverState(ers, None);
       var stmt :- ResolveStmt(s, prs, ls.(labelMap := map[], loopLabel := None));
       return Success(AAssertion(stmt));
   }
@@ -549,7 +552,7 @@ module Resolver {
         r := Choose(branches);
 
       case Loop(invariants, body) =>
-        var invs :- ResolveAExprs(invariants, prs, ls);
+        var invs :- ResolveAExprs(invariants, prs.ers, ls);
         var loopLabel, ls' := ls.GenerateLoopLabel();
         var b :- ResolveStmt(body, prs, ls');
         r := LabeledStmt(loopLabel, Loop(invs, b));
@@ -582,7 +585,10 @@ module Resolver {
         }
 
       case Return =>
-        r := Exit(ls.returnLabel);
+        if ls.returnLabel == None {
+          return Failure("a 'return' statement cannot be used here");
+        }
+        r := Exit(ls.returnLabel.value);
 
       case Probe(expr) =>
         var e :- ResolveExpr(expr, prs.ers, ls.varMap);
@@ -598,10 +604,17 @@ module Resolver {
   {
     var Call(name, args) := stmt;
 
-    if name !in prs.procMap {
-      return Failure("call to undeclared procedure: " + name);
+    var proc;
+    match prs.maybeProcMap {
+      case None =>
+        return Failure("procedure calls are not allowed in this context: " + name);
+      case Some(procMap) =>
+        if name !in procMap {
+          return Failure("call to undeclared procedure: " + name);
+        }
+        proc := procMap[name];
     }
-    var proc := prs.procMap[name];
+
     var rawProc :| rawProc in prs.ers.b3.procedures && rawProc.name == name;
     assert |rawProc.parameters| == |proc.Parameters|;
 
