@@ -77,10 +77,9 @@ module RSolvers {
       if patterns == [] then
         []
       else
+        SeqContentsSplit(patterns);
         var pattern := patterns[0];
-        assert pattern in patterns;
         var terms := RExprListToSExprs(pattern.exprs, parent);
-        assert forall tr <- patterns[1..] :: tr in patterns;
         [SAnnotation("pattern", terms)] + PatternListToSAnnotationList(patterns[1..], parent)
     }
 
@@ -149,9 +148,8 @@ module RSolvers {
       if patterns == [] then
         ""
       else
+        SeqContentsSplit(patterns);
         var pattern := patterns[0];
-        assert pattern in patterns;
-        assert forall tr <- patterns[1..] :: tr in patterns;
         " pattern " + RExprListToString(pattern.exprs, parent) + PatternsToString(patterns[1..], parent)
     }
   }
