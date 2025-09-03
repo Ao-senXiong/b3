@@ -10,7 +10,7 @@ module Ast {
     reveals Program.WellFormed, Procedure.WellFormed, Parameter.WellFormed, AExpr.WellFormed, Stmt.WellFormed, Expr.WellFormed, CallArgument.WellFormed
     reveals CallArgument.CorrespondingMode
     provides Procedure.Name, Procedure.Parameters, Procedure.Pre, Procedure.Post, Procedure.Body
-    reveals Procedure.SignatureWellFormed
+    reveals Procedure.SignatureWellFormed, Procedure.WellFormedHeader
     reveals Function, FParameter, FunctionDefinition
     provides Function.Name, Function.Parameters, Function.ResultType, Function.Definition, FParameter.injective
     reveals Function.SignatureWellFormed, Function.WellFormed, FParameter.WellFormed, FunctionDefinition.WellFormed
@@ -18,6 +18,7 @@ module Ast {
     provides Variable.IsMutable, LocalVariable.IsMutable, Parameter.IsMutable, FParameter.IsMutable
     provides Parameter.mode, Parameter.oldInOut
     provides Label.Name
+    reveals Stmt.IsPredicateStmt
     reveals Expr.ExprType, Expr.HasType
     provides Expr.ToString
     provides Expr.CreateTrue, Expr.CreateFalse, Expr.CreateNegation, Expr.CreateLet, Expr.CreateForall
@@ -58,16 +59,17 @@ module Ast {
   class Procedure {
     const Name: string
     const Parameters: seq<Parameter>
-    var Pre: seq<AExpr>
-    var Post: seq<AExpr>
+    const Pre: seq<AExpr>
+    const Post: seq<AExpr>
     var Body: Option<Stmt>
 
-    constructor (name: string, parameters: seq<Parameter>)
+    constructor (name: string, parameters: seq<Parameter>, pre: seq<AExpr>, post: seq<AExpr>)
       ensures Name == name && Parameters == parameters
-      ensures Pre == [] && Post == [] && Body == None
+      ensures Pre == pre && Post == post && Body == None
     {
       Name, Parameters := name, parameters;
-      Pre, Post, Body := [], [], None; // these are set after construction
+      Pre, Post := pre, post;
+      Body := None; // this is set after construction
     }
 
     ghost predicate SignatureWellFormed(proc: Raw.Procedure) {
@@ -80,13 +82,17 @@ module Ast {
       && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].WellFormed())
     }
 
-    predicate WellFormed()
-      reads this
-    {
+    predicate WellFormedHeader() {
       && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].WellFormed())
       && (forall i, j :: 0 <= i < j < |Parameters| ==> Parameters[i].name != Parameters[j].name)
       && (forall pre <- Pre :: pre.WellFormed())
       && (forall post <- Post :: post.WellFormed())
+    }
+
+    predicate WellFormed()
+      reads this
+    {
+      && WellFormedHeader()
       && (Body.Some? ==> Body.value.WellFormed())
       // TODO: make sure free variables of Pre/Post/Body are the expected ones
     }
@@ -251,6 +257,10 @@ module Ast {
       case LabeledStmt(lbl, body) => body.WellFormed()
       case Exit(_) => true
       case Probe(e) => e.WellFormed()
+    }
+    
+    predicate IsPredicateStmt() {
+      Check? || Assume? || Assert?
     }
   }
 

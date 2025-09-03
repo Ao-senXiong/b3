@@ -126,6 +126,13 @@ module Verifier {
     var stmt, cont := stmts[0], stmts[1..];
     assert AstValid.Stmt(stmt);
     BC.StmtMeasureSplit(stmts);
+
+    if stmt.IsPredicateStmt() {
+      context := ProcessPredicateStmt(stmt, incarnations, context, smtEngine);
+      Process(cont, incarnations, context, B, smtEngine);
+      return;
+    }
+
     match stmt
     case VarDecl(v, init, body) =>
       var sv;
@@ -146,20 +153,7 @@ module Verifier {
       BC.AboutStmtSeqMeasureConcat(stmts, cont);
       Process(stmts + cont, incarnations, context, B, smtEngine);
     case Call(_, _) =>
-      print "UNHANDLED STATEMENT: Call\n"; // TODO
-      Process(cont, incarnations, context, B, smtEngine);
-    case Check(cond) =>
-      var rCond := incarnations.REval(cond);
-      ProveAndReport(context, rCond, "check", cond, smtEngine);
-      Process(cont, incarnations, context, B, smtEngine);
-    case Assume(cond) =>
-      var rCond := incarnations.REval(cond);
-      context := RSolvers.Extend(context, rCond);
-      Process(cont, incarnations, context, B, smtEngine);
-    case Assert(cond) =>
-      var rCond := incarnations.REval(cond);
-      ProveAndReport(context, rCond, "assert", cond, smtEngine);
-      context := RSolvers.Extend(context, rCond);
+      incarnations, context := ProcessCall(stmt, incarnations, context, smtEngine);
       Process(cont, incarnations, context, B, smtEngine);
     case AForall(v, body) =>
       var bodyIncarnations, _ := incarnations.Update(v);
@@ -202,6 +196,123 @@ module Verifier {
       var rExpr := incarnations.REval(e);
       context := RSolvers.Record(context, rExpr, incarnations.Type2SType(e.ExprType()));
       Process(cont, incarnations, context, B, smtEngine);
+  }
+
+  method ProcessPredicateStmt(stmt: Stmt, incarnations: I.Incarnations, context_in: RSolvers.RContext, smtEngine: RSolvers.REngine)
+      returns (context: RSolvers.RContext)
+    requires AstValid.Stmt(stmt) && stmt.IsPredicateStmt()
+    requires smtEngine.Valid()
+    modifies smtEngine.Repr
+    ensures smtEngine.Valid()
+  {
+    context := context_in;
+    match stmt
+    case Check(cond) =>
+      var rCond := incarnations.REval(cond);
+      ProveAndReport(context, rCond, "check", cond, smtEngine);
+    case Assume(cond) =>
+      var rCond := incarnations.REval(cond);
+      context := RSolvers.Extend(context, rCond);
+    case Assert(cond) =>
+      var rCond := incarnations.REval(cond);
+      ProveAndReport(context, rCond, "assert", cond, smtEngine);
+      context := RSolvers.Extend(context, rCond);
+  }
+
+  method ProcessCall(stmt: Stmt, incarnations_in: I.Incarnations, context_in: RSolvers.RContext, smtEngine: RSolvers.REngine)
+      returns (incarnations: I.Incarnations, context: RSolvers.RContext)
+    requires AstValid.Stmt(stmt) && stmt.Call?
+    requires smtEngine.Valid()
+    modifies smtEngine.Repr
+    ensures smtEngine.Valid()
+  {
+    var Call(proc, args) := stmt;
+    assume {:axiom} AstValid.ProcedureHeader(proc); // TODO
+    incarnations, context := incarnations_in, context_in;
+
+    // While evolving "incarnations", create two incarnation sub-maps:
+    //   * preIncarnations, whose domain is proc's in- and inout-parameters
+    //   * postIncarnations, whose domain is proc's in-parameters, old and new inout-parameters, and out-parameters.
+    // Both of these sub-maps will take proc's in-parameters to fresh names in "incarnations".
+    // "preIncarnations" will take the inout-parameters to the (same incarnations as the) actual inout-parameters (in the pre-state of the call),
+    // and "postIncarnations" will take the old inout-parameters to those same incarnations.
+    // "postIncarnations" will take the inout- and out-parameters to fresh names for the actual inout- and out-parameters.
+    // Meanwhile, the fresh names used for the in-parameters must not be used again in "incarnations", and the final
+    // incarnations for the actual inout- and out-parameters will be those used in "postIncarnations".
+    //
+    // Example: Suppose "proc" is declared with formal parameters
+    //     procedure proc(x, inout y, out z)
+    // and "args" uses the actual parameters
+    //     call proc(e, inout b, out c)
+    // where "e" is an expression and "b" and "c" are variables. Suppose furthermore that "incarnations" includes the
+    // following mappings:
+    //     b := "b14"
+    //     c := "c8"
+    //     x := "x10"
+    //     y := "y29"
+    //     z := "z2"
+    //     k := "k19"
+    // "preIncarnations" will then be computed to be:
+    //     x := "x11"
+    //     y := "b14"
+    // "postIncarnations" will be:
+    //     x := "x11"
+    //     y.old := "b14"
+    //     y := "b15"
+    //     z := "c9"
+    // The returned value of "incarnations" will be:
+    //     b := "b15"
+    //     c := "c9"
+    //     x := "x10"  // but the subsequent incarnation for "x" will be "x12", since "x11" has already been used
+    //     y := "y29"
+    //     z := "z2"
+    //     k := "k19"
+    var preMap: map<Variable, SVar>, postMap: map<Variable, SVar> := map[], map[];
+    for i := 0 to |args|
+      invariant smtEngine.Valid()
+    {
+      assert args[i] in args;
+      var formal := proc.Parameters[i];
+      match args[i]
+      case InArgument(e) =>
+        var freshIncarnation;
+        incarnations, freshIncarnation := incarnations.Reserve(formal);
+        preMap := preMap[formal := freshIncarnation];
+        postMap := postMap[formal := freshIncarnation];
+
+        var actual := incarnations_in.REval(e);
+        context := RSolvers.ExtendWithEquality(context, preMap[formal], actual);
+
+      case OutgoingArgument(isInOut, v) =>
+        if isInOut {
+          assert formal.oldInOut.Some?;
+          var incomingIncarnation := incarnations_in.Get(v);
+          preMap := preMap[formal := incomingIncarnation];
+          postMap := postMap[formal.oldInOut.value := incomingIncarnation];
+        }
+        var freshIncarnation;
+        incarnations, freshIncarnation := incarnations.Update(formal);
+        postMap := postMap[formal := freshIncarnation];
+    }
+    var preIncarnations := incarnations.CreateSubMap(preMap);
+    var postIncarnations := incarnations.CreateSubMap(postMap);
+
+    // check preconditions
+    assert AstValid.AExprSeq(proc.Pre); // this should come from well-formedness of program/context
+    var preChecks := SpecConversions.ToCheck(proc.Pre);
+    for i := 0 to |preChecks|
+      invariant smtEngine.Valid()
+    {
+      context := ProcessPredicateStmt(preChecks[i], preIncarnations, context, smtEngine);
+    }
+
+    // learn postconditions
+    var postLearning := SpecConversions.ToLearn(proc.Post);
+    for i := 0 to |postLearning|
+      invariant smtEngine.Valid()
+    {
+      context := ProcessPredicateStmt(postLearning[i], postIncarnations, context, smtEngine);
+    }
   }
 
   method ProcessLoop(stmt: Stmt, incarnations_in: I.Incarnations, context_in: RSolvers.RContext, B: BC.T, smtEngine: RSolvers.REngine)

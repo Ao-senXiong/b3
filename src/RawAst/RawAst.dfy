@@ -87,22 +87,27 @@ module RawAst {
 
   datatype Procedure = Procedure(name: string, parameters: seq<Parameter>, pre: seq<AExpr>, post: seq<AExpr>, body: Option<Stmt>)
   {
+    function AllParameterNames(): set<string> {
+      (set p <- parameters :: p.name) + (set p <- parameters | p.mode == InOut :: OldName(p.name))
+    }
+
     predicate SignatureWellFormed(b3: Program) {
       // parameters have legal names and valid types
       && (forall p <- parameters :: LegalVariableName(p.name) && b3.IsType(p.typ))
       // formal parameters have distinct names
       && Parameter.UniqueNames(parameters)
+      // set up the scopes: precondition, postcondition, body
+      && var preScope := set p <- parameters | p.mode.IsIncoming() :: p.name;
+      && var postScope := AllParameterNames();
+      // pre- and postconditions are well-formed
+      && (forall ae <- pre :: ae.WellFormed(b3, preScope))
+      && (forall ae <- post :: ae.WellFormed(b3, postScope))
     }
     
     predicate WellFormed(b3: Program) {
       && SignatureWellFormed(b3)
-      // set up the scopes: precondition, postcondition, body
-      && var preScope := set p <- parameters | p.mode.IsIncoming() :: p.name;
-      && var postScope := (set p <- parameters :: p.name) + (set p <- parameters | p.mode == InOut :: OldName(p.name));
-      // pre- and postconditions are well-formed
-      && (forall ae <- pre :: ae.WellFormed(b3, preScope))
-      && (forall ae <- post :: ae.WellFormed(b3, postScope))
       // body, if any, is well-formed
+      && var postScope := AllParameterNames();
       && (body == None || body.value.WellFormed(b3, postScope, {}, false))
     }
   }

@@ -3,7 +3,7 @@ module AstValid {
   import StaticConsistency
 
   export
-    reveals Program, Procedure, StmtSeq, Stmt, AExprSeq, AExpr
+    reveals Program, Procedure, ProcedureHeader, StmtSeq, Stmt, AExprSeq, AExpr
     provides Ast, StaticConsistency
 
   predicate Program(b3: Ast.Program)
@@ -16,6 +16,10 @@ module AstValid {
     reads proc
   {
     proc.WellFormed() && StaticConsistency.ConsistentProc(proc)
+  }
+
+  predicate ProcedureHeader(proc: Ast.Procedure) {
+    proc.WellFormedHeader() && StaticConsistency.ConsistentProcHeader(proc)
   }
 
   predicate StmtSeq(stmts: seq<Ast.Stmt>) {

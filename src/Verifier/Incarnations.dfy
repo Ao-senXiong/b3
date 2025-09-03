@@ -9,8 +9,10 @@ module Incarnations {
     reveals DeclMappings
     provides DeclMappings.Type2SType, DeclMappings.Type2STypeWithMap
     provides Incarnations
-    provides Incarnations.Empty, Incarnations.Set, Incarnations.Update, Incarnations.Variables, Incarnations.DomainRestrict
-    provides Incarnations.REval, Incarnations.Type2SType
+    provides Incarnations.Empty, Incarnations.DeclMap
+    provides Incarnations.Update, Incarnations.Reserve, Incarnations.Variables, Incarnations.DomainRestrict
+    provides Incarnations.Set, Incarnations.CreateSubMap
+    provides Incarnations.Get, Incarnations.REval, Incarnations.SubstituteVariable, Incarnations.Type2SType
     provides Types, Ast, SolverExpr, RSolvers
 
   type RExpr = RSolvers.RExpr
@@ -38,6 +40,10 @@ module Incarnations {
       Incarnations(map[], map[], declMap)
     }
 
+    function DeclMap(): DeclMappings {
+      declMap
+    }
+
     function Type2SType(typ: Type): SType {
       declMap.Type2SType(typ)
     }
@@ -46,22 +52,42 @@ module Incarnations {
       m.Keys
     }
 
+    function Get(v: Variable): SVar {
+      assume {:axiom} v in m; // TODO
+      m[v]
+    }
+
     // `Set` is intended to be used only during custom initializations of an Incarnations.
     function Set(v: Variable, sv: SVar): Incarnations {
       this.(nextSequenceCount := map[v.name := 0] + nextSequenceCount, m := m[v := sv])
     }
 
-    method Update(v: Variable) returns (incarnations: Incarnations, x: SVar) {
+    // `Set` is intended to be used only during custom initializations of an Incarnations.
+    function CreateSubMap(customMap: map<Variable, SVar>): Incarnations {
+      Incarnations(nextSequenceCount, customMap, declMap)
+    }
+
+    method ReserveAux(v: Variable) returns (next: nat, x: SVar) {
       var name := v.name;
-      var nextSequenceNumber;
       if name in nextSequenceCount.Keys {
         var n := nextSequenceCount[name];
         name := name + "%" + Int2String(n);
-        nextSequenceNumber := n + 1;
+        next := n + 1;
       } else {
-        nextSequenceNumber := 0;
+        next := 0;
       }
       x := new SVar(name, declMap.Type2SType(v.typ));
+    }
+
+    method Reserve(v: Variable) returns (incarnations: Incarnations, x: SVar) {
+      var nextSequenceNumber;
+      nextSequenceNumber, x := ReserveAux(v);
+      incarnations := this.(nextSequenceCount := nextSequenceCount[v.name := nextSequenceNumber]);
+    }
+
+    method Update(v: Variable) returns (incarnations: Incarnations, x: SVar) {
+      var nextSequenceNumber;
+      nextSequenceNumber, x := ReserveAux(v);
       incarnations := this.(nextSequenceCount := nextSequenceCount[v.name := nextSequenceNumber], m := m[v := x]);
     }
 
@@ -117,6 +143,11 @@ module Incarnations {
       r := incarnations.Substitute(expr);
     }
 
+    function SubstituteVariable(v: Variable): SVar {
+      assume {:axiom} v in m; // TODO
+      m[v]
+    }
+
     function Substitute(expr: Expr): RSolvers.RExpr
       requires expr.WellFormed()
     {
@@ -125,9 +156,8 @@ module Incarnations {
       case ILiteral(value) => RExpr.Integer(value)
       case CustomLiteral(s, typ) => RExpr.CustomLiteral(s, declMap.Type2SType(typ))
       case IdExpr(v) =>
-        assume {:axiom} v in m;
-        // TODO: it would be nice to be able to keep the original variable if there's no incarnation; that would be the case for the bound variable in a let expression or quantifier
-        RExpr.Id(m[v])
+        var sv := SubstituteVariable(v);
+        RExpr.Id(sv)
       case OperatorExpr(op, args) =>
         var rArgs := SubstituteList(args);
         match op {

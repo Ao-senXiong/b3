@@ -57,7 +57,7 @@ module BlockContinuations {
     case VarDecl(_, _, body) => 1 + StmtMeasure(body)
     case Assign(_, _) => 1
     case Block(stmts) => 1 + StmtSeqMeasure(stmts)
-    case Call(_, _) => 1 // TODO
+    case Call(proc, _) => 1
     case Check(_) => 1
     case Assume(_) => 1
     case Assert(_) => 2

@@ -6,11 +6,16 @@ module SpecConversions {
 
   export
     provides ToCheck, ToLearn, Learn
+    reveals JustPredicateStmts
     provides Basics, Ast, AstValid, StaticConsistency
+
+  predicate JustPredicateStmts(stmts: seq<Stmt>) {
+    forall stmt <- stmts :: stmt.IsPredicateStmt()
+  }
 
   function ToCheck(spec: seq<AExpr>): (stmts: seq<Stmt>)
     requires AstValid.AExprSeq(spec)
-    ensures AstValid.StmtSeq(stmts)
+    ensures AstValid.StmtSeq(stmts) && JustPredicateStmts(stmts)
   {
     if spec == [] then
       []
@@ -27,7 +32,7 @@ module SpecConversions {
 
   function ToLearn(spec: seq<AExpr>): (stmts: seq<Stmt>)
     requires AstValid.AExprSeq(spec)
-    ensures AstValid.StmtSeq(stmts)
+    ensures AstValid.StmtSeq(stmts) && JustPredicateStmts(stmts)
   {
     if spec == [] then
       []
