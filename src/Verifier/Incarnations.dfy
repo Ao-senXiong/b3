@@ -17,7 +17,7 @@ module Incarnations {
 
   type RExpr = RSolvers.RExpr
 
-  datatype DeclMappings = DeclMappings(typeMap: map<Types.TypeDecl, STypeDecl>, functionMap: map<Function, STypedDeclaration>)
+  datatype DeclMappings = DeclMappings(typeMap: map<Types.TypeDecl, STypeDecl>, taggerMap: map<Tagger, STypedDeclaration>, functionMap: map<Function, STypedDeclaration>)
   {
     function Type2SType(typ: Type): SType {
       Type2STypeWithMap(typ, typeMap)

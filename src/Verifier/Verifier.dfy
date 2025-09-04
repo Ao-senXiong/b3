@@ -19,11 +19,21 @@ module Verifier {
   method Verify(b3: Ast.Program, cli: CLI.CliResult)
     requires AstValid.Program(b3)
   {
+    // Create STypeDecl and SVar declarations for the B3 types, taggers, and functions
+
     var typeMap := map[];
     for i := 0 to |b3.types| {
       var typ := b3.types[i];
       var t := new STypeDecl(typ.Name);
       typeMap := typeMap[typ := t];
+    }
+
+    var taggerMap := map[];
+    for i := 0 to |b3.taggers| {
+      var tagger := b3.taggers[i];
+      var forType := I.DeclMappings.Type2STypeWithMap(tagger.ForType, typeMap);
+      var f := new SVar.Function("_tag_" + tagger.Name, [forType], I.DeclMappings.Type2STypeWithMap(Types.IntType, typeMap));
+      taggerMap := taggerMap[tagger := f];
     }
 
     var functionMap := map[];
@@ -34,19 +44,31 @@ module Verifier {
       functionMap := functionMap[func := f];
     }
 
-    var declMap := I.DeclMappings(typeMap, functionMap);
+    var declMap := I.DeclMappings(typeMap, taggerMap, functionMap);
+
+    // Add axioms to context
+    var context := RSolvers.CreateEmptyContext();
+    var axiomIncarnations := I.Incarnations.Empty(declMap);
+    for i := 0 to |b3.axioms| {
+      var axiom := b3.axioms[i];
+      var cond := axiomIncarnations.REval(axiom);
+      context := RSolvers.Extend(context, cond);
+    }
+
+    // Verify each procedure
+
     for i := 0 to |b3.procedures| {
       var proc := b3.procedures[i];
       print "Verifying ", proc.Name, " ...\n";
-      VerifyProcedure(proc, declMap, cli);
+      VerifyProcedure(proc, context, declMap, cli);
     }
   }
 
-  method VerifyProcedure(proc: Ast.Procedure, declMap: I.DeclMappings, cli: CLI.CliResult)
+  method VerifyProcedure(proc: Ast.Procedure, context: RSolvers.RContext, declMap: I.DeclMappings, cli: CLI.CliResult)
     requires AstValid.Procedure(proc)
   {
     var smtEngine := RSolvers.CreateEngine(cli);
-    var context := RSolvers.CreateEmptyContext();
+    var context := context;
 
     var preIncarnations, bodyIncarnations, postIncarnations := CreateProcIncarnations(proc.Parameters, declMap);
 
