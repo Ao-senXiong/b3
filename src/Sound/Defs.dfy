@@ -155,6 +155,7 @@ module Defs {
     | Seq(ss: seq<Stmt>)
     | Assign(lhs: Variable, rhs: Expr)
     | VarDecl(v: Variable, s: Stmt)
+    // | Loop(inv: Expr, body: Stmt)
     // | While(guard: Expr, inv: Expr, body: Stmt)
     | Choice(0: Stmt, 1: Stmt)
   {
