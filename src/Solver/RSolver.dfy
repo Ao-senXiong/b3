@@ -36,11 +36,11 @@ module RSolvers {
     | Boolean(b: bool)
     | Integer(x: int)
     | CustomLiteral(s: string, typ: SolverExpr.SType)
-    | Id(v: SolverExpr.SVar)
+    | Id(v: SolverExpr.SConstant)
     | FuncAppl(op: ROperator, args: seq<RExpr>)
     | IfThenElse(guard: RExpr, thn: RExpr, els: RExpr)
-    | LetExpr(v: SolverExpr.SVar, rhs: RExpr, body: RExpr)
-    | QuantifierExpr(univ: bool, v: SolverExpr.SVar, patterns: seq<RPattern>, body: RExpr)
+    | LetExpr(v: SolverExpr.SConstant, rhs: RExpr, body: RExpr)
+    | QuantifierExpr(univ: bool, v: SolverExpr.SConstant, patterns: seq<RPattern>, body: RExpr)
   {
     function ToSExpr(): SExpr {
       match this
@@ -262,13 +262,13 @@ module RSolvers {
     r := new RContextNode(context, expr);
   }
 
-  method ExtendWithEquality(context: RContext, sv: SolverExpr.SVar, expr: RExpr) returns (r: RContext) {
+  method ExtendWithEquality(context: RContext, sv: SolverExpr.SConstant, expr: RExpr) returns (r: RContext) {
     r := Extend(context, RExpr.Eq(RExpr.Id(sv), expr));
   }
 
   method Record(context: RContext, expr: RExpr, typ: SolverExpr.SType) returns (r: RContext) {
     var name := "probe%" + Int2String(context.depth);
-    var p := new SolverExpr.SVar(name, typ);
+    var p := new SolverExpr.SConstant(name, typ);
     var eq := RExpr.Eq(RExpr.Id(p), expr);
     r := Extend(context, eq);
   }
@@ -363,7 +363,7 @@ module RSolvers {
       state.AddAssumption(contextx.expr.ToSExpr());
     }
 
-    method DeclareNewSymbols(r: RExpr, exclude: set<SolverExpr.SVar> := {})
+    method DeclareNewSymbols(r: RExpr, exclude: set<SolverExpr.SConstant> := {})
       requires Valid()
       modifies Repr
       ensures Valid() && state.stack == old(state.stack)

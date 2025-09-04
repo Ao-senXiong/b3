@@ -34,7 +34,7 @@ module Incarnations {
     }
   }
 
-  datatype Incarnations = Incarnations(nextSequenceCount: map<string, nat>, m: map<Variable, SVar>, declMap: DeclMappings)
+  datatype Incarnations = Incarnations(nextSequenceCount: map<string, nat>, m: map<Variable, SConstant>, declMap: DeclMappings)
   {
     static function Empty(declMap: DeclMappings): Incarnations {
       Incarnations(map[], map[], declMap)
@@ -52,22 +52,22 @@ module Incarnations {
       m.Keys
     }
 
-    function Get(v: Variable): SVar {
+    function Get(v: Variable): SConstant {
       assume {:axiom} v in m; // TODO
       m[v]
     }
 
     // `Set` is intended to be used only during custom initializations of an Incarnations.
-    function Set(v: Variable, sv: SVar): Incarnations {
+    function Set(v: Variable, sv: SConstant): Incarnations {
       this.(nextSequenceCount := map[v.name := 0] + nextSequenceCount, m := m[v := sv])
     }
 
     // `Set` is intended to be used only during custom initializations of an Incarnations.
-    function CreateSubMap(customMap: map<Variable, SVar>): Incarnations {
+    function CreateSubMap(customMap: map<Variable, SConstant>): Incarnations {
       Incarnations(nextSequenceCount, customMap, declMap)
     }
 
-    method ReserveAux(v: Variable) returns (next: nat, x: SVar) {
+    method ReserveAux(v: Variable) returns (next: nat, x: SConstant) {
       var name := v.name;
       if name in nextSequenceCount.Keys {
         var n := nextSequenceCount[name];
@@ -76,16 +76,16 @@ module Incarnations {
       } else {
         next := 0;
       }
-      x := new SVar(name, declMap.Type2SType(v.typ));
+      x := new SConstant(name, declMap.Type2SType(v.typ));
     }
 
-    method Reserve(v: Variable) returns (incarnations: Incarnations, x: SVar) {
+    method Reserve(v: Variable) returns (incarnations: Incarnations, x: SConstant) {
       var nextSequenceNumber;
       nextSequenceNumber, x := ReserveAux(v);
       incarnations := this.(nextSequenceCount := nextSequenceCount[v.name := nextSequenceNumber]);
     }
 
-    method Update(v: Variable) returns (incarnations: Incarnations, x: SVar) {
+    method Update(v: Variable) returns (incarnations: Incarnations, x: SConstant) {
       var nextSequenceNumber;
       nextSequenceNumber, x := ReserveAux(v);
       incarnations := this.(nextSequenceCount := nextSequenceCount[v.name := nextSequenceNumber], m := m[v := x]);
@@ -134,7 +134,7 @@ module Incarnations {
         r := r.CreateForBoundVariables(body);
     }
 
-    // Create SVar's for the bound variables in "expr" and then substitute these and the other incarnations
+    // Create SConstant's for the bound variables in "expr" and then substitute these and the other incarnations
     // into "expr".
     method REval(expr: Expr) returns (r: RSolvers.RExpr)
       requires expr.WellFormed()
@@ -143,7 +143,7 @@ module Incarnations {
       r := incarnations.Substitute(expr);
     }
 
-    function SubstituteVariable(v: Variable): SVar {
+    function SubstituteVariable(v: Variable): SConstant {
       assume {:axiom} v in m; // TODO
       m[v]
     }

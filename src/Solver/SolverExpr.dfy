@@ -8,8 +8,8 @@ module SolverExpr {
     reveals SType, STypeDecl
     provides SType.TypesToSExpr, SType.ToSExpr, SType.ToString
     reveals STypedDeclaration, STypedDeclaration.inputTypes, STypedDeclaration.typ
-    reveals SVar
-    provides SVar.Function
+    reveals SConstant
+    provides SConstant.Function
     reveals SExprPrintConfig
     reveals SExpr
     provides SExpr.ToString
@@ -55,7 +55,7 @@ module SolverExpr {
     const inputTypes: seq<SType>
   }
 
-  class SVar extends STypedDeclaration {
+  class SConstant extends STypedDeclaration {
     constructor (name: string, typ: SType) {
       this.name := name;
       this.typ := typ;
@@ -114,7 +114,7 @@ module SolverExpr {
     static function Integer(x: int): SExpr {
       S(Int2String(x))
     }
-    static function Id(x: SVar): SExpr {
+    static function Id(x: SConstant): SExpr {
       S(x.name)
     }
     static function FuncAppl(op: string, args: seq<SExpr>): SExpr {

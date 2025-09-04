@@ -19,7 +19,7 @@ module Verifier {
   method Verify(b3: Ast.Program, cli: CLI.CliResult)
     requires AstValid.Program(b3)
   {
-    // Create STypeDecl and SVar declarations for the B3 types, taggers, and functions
+    // Create STypeDecl and SConstant declarations for the B3 types, taggers, and functions
 
     var typeMap := map[];
     for i := 0 to |b3.types| {
@@ -32,7 +32,7 @@ module Verifier {
     for i := 0 to |b3.taggers| {
       var tagger := b3.taggers[i];
       var forType := I.DeclMappings.Type2STypeWithMap(tagger.ForType, typeMap);
-      var f := new SVar.Function("_tag_" + tagger.Name, [forType], I.DeclMappings.Type2STypeWithMap(Types.IntType, typeMap));
+      var f := new SConstant.Function("_tag_" + tagger.Name, [forType], I.DeclMappings.Type2STypeWithMap(Types.IntType, typeMap));
       taggerMap := taggerMap[tagger := f];
     }
 
@@ -40,7 +40,7 @@ module Verifier {
     for i := 0 to |b3.functions| {
       var func := b3.functions[i];
       var inputTypes := SeqMap(func.Parameters, (parameter: FParameter) => I.DeclMappings.Type2STypeWithMap(parameter.typ, typeMap));
-      var f := new SVar.Function(func.Name, inputTypes, I.DeclMappings.Type2STypeWithMap(func.ResultType, typeMap));
+      var f := new SConstant.Function(func.Name, inputTypes, I.DeclMappings.Type2STypeWithMap(func.ResultType, typeMap));
       functionMap := functionMap[func := f];
     }
 
@@ -96,20 +96,20 @@ module Verifier {
       var parameter := parameters[i];
       match parameter.mode
       case In =>
-        var v := new SVar(parameter.name, declMap.Type2SType(parameter.typ));
+        var v := new SConstant(parameter.name, declMap.Type2SType(parameter.typ));
         preIncarnations := preIncarnations.Set(parameter, v);
         bodyIncarnations := bodyIncarnations.Set(parameter, v);
         postIncarnations := postIncarnations.Set(parameter, v);
       case InOut =>
-        var vOld := new SVar(parameter.name + "%old", declMap.Type2SType(parameter.typ));
+        var vOld := new SConstant(parameter.name + "%old", declMap.Type2SType(parameter.typ));
         preIncarnations := preIncarnations.Set(parameter, vOld);
         bodyIncarnations := bodyIncarnations.Set(parameter.oldInOut.value, vOld);
         bodyIncarnations := bodyIncarnations.Set(parameter, vOld);
         postIncarnations := postIncarnations.Set(parameter.oldInOut.value, vOld);
-        var v := new SVar(parameter.name, declMap.Type2SType(parameter.typ));
+        var v := new SConstant(parameter.name, declMap.Type2SType(parameter.typ));
         postIncarnations := postIncarnations.Set(parameter, v);
       case out =>
-        var v := new SVar(parameter.name, declMap.Type2SType(parameter.typ));
+        var v := new SConstant(parameter.name, declMap.Type2SType(parameter.typ));
         bodyIncarnations := bodyIncarnations.Set(parameter, v);
         postIncarnations := postIncarnations.Set(parameter, v);
     }
@@ -303,7 +303,7 @@ module Verifier {
     //     y := "y29"
     //     z := "z2"
     //     k := "k19"
-    var preMap: map<Variable, SVar>, postMap: map<Variable, SVar> := map[], map[];
+    var preMap: map<Variable, SConstant>, postMap: map<Variable, SConstant> := map[], map[];
     for i := 0 to |args|
       invariant smtEngine.Valid()
     {
