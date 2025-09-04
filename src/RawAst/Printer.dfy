@@ -11,9 +11,17 @@ module Printer {
       print "\n";
       TypeDecl(b3.types[i]);
     }
+    for i := 0 to |b3.taggers| {
+      print "\n";
+      TaggerDecl(b3.taggers[i]);
+    }
     for i := 0 to |b3.functions| {
       print "\n";
       FunctionDecl(b3.functions[i]);
+    }
+    for i := 0 to |b3.axioms| {
+      print "\n";
+      AxiomDecl(b3.axioms[i]);
     }
     for i := 0 to |b3.procedures| {
       print "\n";
@@ -25,6 +33,10 @@ module Printer {
     print "type ", ty, "\n";
   }
 
+  method TaggerDecl(tagger: Tagger) {
+    print "tagger ", tagger.name, " for ", tagger.typ, "\n";
+  }
+
   method FunctionDecl(func: Function) {
     print "function ", func.name, "(";
     var params := func.parameters;
@@ -34,7 +46,7 @@ module Printer {
       print sep, if param.injective then "injective " else "", param.name, ": ", param.typ;
       sep := ", ";
     }
-    print ")\n";
+    print "): ", func.resultType, "\n";
 
     if func.definition.Some? {
       var FunctionDefinition(when, body) := func.definition.value;
@@ -50,6 +62,12 @@ module Printer {
       Expression(body, MultipleLines(IndentAmount));
       print "\n}\n";
     }
+  }
+
+  method AxiomDecl(expr: Expr) {
+    print "axiom ";
+    Expression(expr);
+    print "\n";
   }
 
   method Procedure(proc: Procedure) {

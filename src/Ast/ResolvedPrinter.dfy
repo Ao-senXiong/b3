@@ -14,10 +14,20 @@ module ResolvedPrinter {
       TypeDecl(typ);
     }
 
+    for i := 0 to |b3.taggers| {
+      print "\n";
+      TaggerDecl(b3.taggers[i]);
+    }
+
     for i := 0 to |b3.functions| {
       var func := b3.functions[i];
       print "\n";
       FunctionDecl(func);
+    }
+
+    for i := 0 to |b3.axioms| {
+      print "\n";
+      AxiomDecl(b3.axioms[i]);
     }
 
     for i := 0 to |b3.procedures| {
@@ -31,6 +41,10 @@ module ResolvedPrinter {
     print "type ", decl.Name, "\n";
   }
 
+  method TaggerDecl(tagger: Tagger) {
+    print "tagger ", tagger.Name, " for ", tagger.ForType.ToString(), "\n";
+  }
+
   method FunctionDecl(func: Function) {
     print "function ", func.Name, "(";
     var params := func.Parameters;
@@ -40,7 +54,7 @@ module ResolvedPrinter {
       print sep, if param.injective then "injective " else "", param.name, ": ", param.typ.ToString();
       sep := ", ";
     }
-    print ")\n";
+    print "): ", func.ResultType.ToString(), "\n";
 
     if func.Definition.Some? {
       var FunctionDefinition(when, body) := func.Definition.value;
@@ -56,6 +70,12 @@ module ResolvedPrinter {
       Expression(body, MultipleLines(IndentAmount));
       print "\n}\n";
     }
+  }
+
+  method AxiomDecl(expr: Expr) {
+    print "axiom ";
+    Expression(expr);
+    print "\n";
   }
 
   method Procedure(proc: Procedure) {

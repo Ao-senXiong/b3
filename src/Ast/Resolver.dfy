@@ -14,14 +14,17 @@ module Resolver {
     ensures r.Success? ==> b3.WellFormed() && r.value.WellFormed()
   {
     var typeMap :- ResolveAllTypes(b3);
+    var taggerMap :- ResolveAllTaggers(b3, typeMap);
     var functionMap :- ResolveAllFunctions(b3, typeMap);
     var ers := ExprResolverState(b3, typeMap, functionMap);
+    var axioms :- ResolveAllAxioms(ers);
     var procMap :- ResolveAllProcedures(ers);
 
     var types := SeqMap(b3.types, typeName requires typeName in typeMap => typeMap[typeName]);
+    var taggers := SeqMap(b3.taggers, (tagger: Raw.Tagger) requires tagger.name in taggerMap => taggerMap[tagger.name]);
     var functions := SeqMap(b3.functions, (func: Raw.Function) requires func.name in functionMap => functionMap[func.name]);
     var procedures := SeqMap(b3.procedures, (proc: Raw.Procedure) requires proc.name in procMap => procMap[proc.name]);
-    var r3 := Program(types, functions, procedures);
+    var r3 := Program(types, taggers, functions, axioms, procedures);
 
     return Success(r3);
   }
@@ -30,7 +33,7 @@ module Resolver {
     ensures r.Success? ==> var typeMap := r.value;
       && typeMap.Keys == (set typename <- b3.types)
       && MapIsInjective(typeMap)
-      && (forall typename <- typeMap.Keys :: typeMap[typename].Name == typename)
+      && (forall typename <- typeMap :: typeMap[typename].Name == typename)
       && (forall typename <- b3.types :: typename !in BuiltInTypes)
       && (forall i, j :: 0 <= i < j < |b3.types| ==> b3.types[i] != b3.types[j])
   {
@@ -40,7 +43,7 @@ module Resolver {
       invariant typeMap.Keys == set typename <- b3.types[..n]
       invariant MapIsInjective(typeMap)
       // typeMap organizes type-declaration objects correctly according to their names
-      invariant forall typename <- typeMap.Keys :: typeMap[typename].Name == typename
+      invariant forall typename <- typeMap :: typeMap[typename].Name == typename
       // no user-defined type seen so far uses the name of a built-in type
       invariant forall typename <- b3.types[..n] :: typename !in BuiltInTypes
       // the user-defined types seen so far have distinct names
@@ -56,6 +59,43 @@ module Resolver {
       typeMap := typeMap[name := decl];
     }
     return Success(typeMap);
+  }
+
+  method ResolveAllTaggers(b3: Raw.Program, typeMap: map<string, TypeDecl>) returns (r: Result<map<string, Tagger>, string>)
+    requires forall typename :: b3.IsType(typename) <==> typename in BuiltInTypes || typename in typeMap
+    ensures r.Success? ==>
+      && (forall i, j :: 0 <= i < j < |b3.taggers| ==> b3.taggers[i].name != b3.taggers[j].name)
+      && (forall tagger <- b3.taggers :: tagger.WellFormed(b3))
+    ensures r.Success? ==> var taggerMap := r.value;
+      && (forall taggerName <- taggerMap :: exists tagger <- b3.taggers :: tagger.name == taggerName)
+      && (forall rawTagger <- b3.taggers :: rawTagger.name in taggerMap)
+    ensures r.Success? ==> var taggers: set<Tagger> := r.value.Values;
+      && (forall tagger0 <- taggers, tagger1 <- taggers :: tagger0.Name == tagger1.Name ==> tagger0 == tagger1)
+      && (forall tagger <- taggers :: tagger.WellFormed())
+  {
+    var taggerMap: map<string, Tagger> := map[];
+    for n := 0 to |b3.taggers|
+      // taggerMap maps the user-defined taggers seen so far to distinct and fresh tagger-declaration objects
+      invariant taggerMap.Keys == set tagger <- b3.taggers[..n] :: tagger.name
+      invariant MapIsInjective(taggerMap)
+      invariant forall name <- taggerMap :: fresh(taggerMap[name])
+      // taggerMap organizes tagger-declaration objects correctly according to their names
+      invariant forall taggerName <- taggerMap :: taggerMap[taggerName].Name == taggerName
+      // taggers seen so far have distinct names
+      invariant forall i, j :: 0 <= i < j < n ==> b3.taggers[i].name != b3.taggers[j].name
+      // the taggers seen so far are well-formed
+      invariant forall tagger <- b3.taggers[..n] :: tagger.WellFormed(b3) && taggerMap[tagger.name].WellFormed()
+    {
+      var tagger := b3.taggers[n];
+      var name := tagger.name;
+      if name in taggerMap.Keys {
+        return Failure("duplicate tagger name: " + name);
+      }
+      var typ :- ResolveType(tagger.typ, typeMap);
+      var rTagger := new Tagger(name, typ);
+      taggerMap := taggerMap[name := rTagger];
+    }
+    return Success(taggerMap);
   }
 
   method ResolveAllFunctions(b3: Raw.Program, typeMap: map<string, TypeDecl>) returns (r: Result<map<string, Function>, string>)
@@ -81,7 +121,7 @@ module Resolver {
       invariant MapIsInjective(functionMap)
       invariant forall name <- functionMap :: fresh(functionMap[name])
       // functionMap organizes function-declaration objects correctly according to their names
-      invariant forall functionName <- functionMap.Keys :: functionMap[functionName].Name == functionName
+      invariant forall functionName <- functionMap :: functionMap[functionName].Name == functionName
       // functions seen so far have distinct names
       invariant forall i, j :: 0 <= i < j < n ==> b3.functions[i].name != b3.functions[j].name
       // the functions seen so far are well-formed
@@ -179,6 +219,27 @@ module Resolver {
     return Success(());
   }
 
+  method ResolveAllAxioms(ers: ExprResolverState) returns (r: Result<seq<Expr>, string>)
+    requires ers.Valid()
+    ensures r.Success? ==> forall axiom <- ers.b3.axioms :: axiom.WellFormed(ers.b3, {})
+    ensures r.Success? ==> forall axiom <- r.value :: axiom.WellFormed()
+  {
+    var b3 := ers.b3;
+    var resolvedAxioms: seq<Expr> := [];
+    for n := 0 to |b3.axioms|
+      // the axioms seen so far are well-formed
+      invariant forall axiom <- b3.axioms[..n] :: axiom.WellFormed(b3, {})
+      invariant forall axiom <- resolvedAxioms :: axiom.WellFormed()
+   {
+      var axiom := b3.axioms[n];
+      assert (map[] as map<string, Variable>).Keys == {};
+      var expr :- ResolveExpr(axiom, ers, map[]);
+      resolvedAxioms := resolvedAxioms + [expr];
+    }
+
+    return Success(resolvedAxioms);
+  }
+
   method ResolveAllProcedures(ers: ExprResolverState) returns (r: Result<map<string, Procedure>, string>)
     requires ers.Valid()
     ensures r.Success? ==>
@@ -198,7 +259,7 @@ module Resolver {
       invariant MapIsInjective(procMap)
       invariant forall name <- procMap :: fresh(procMap[name])
       // procMap organizes procedure-declaration objects correctly according to their names
-      invariant forall procname <- procMap.Keys :: procMap[procname].Name == procname
+      invariant forall procname <- procMap :: procMap[procname].Name == procname
       // user-defined types seen so far have distinct names
       invariant forall i, j :: 0 <= i < j < n ==> b3.procedures[i].name != b3.procedures[j].name
       // the procedures seen so far are well-formed

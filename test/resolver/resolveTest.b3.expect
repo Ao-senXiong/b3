@@ -8,22 +8,24 @@ type Abc
 
 type MyString
 
-function F(a: int, injective b: bool)
+tagger MyTag for MyClass
 
-function G()
+function F(a: int, injective b: bool): bool
+
+function G(): int
   when true
 {
   15
 }
 
-function H(injective str: string, a: int)
+function H(injective str: string, a: int): string
   when str == str
   when a < 10
 {
   str
 }
 
-function NicelyIndented(x: int, y: int, b: bool, c: MyClass)
+function NicelyIndented(x: int, y: int, b: bool, c: MyClass): int
 {
   if x == 12 then
     20
@@ -38,7 +40,7 @@ function NicelyIndented(x: int, y: int, b: bool, c: MyClass)
     4000
 }
 
-function AnotherNicelyIndented(x: int, y: int)
+function AnotherNicelyIndented(x: int, y: int): bool
 {
   x < y && x <= y && x != y && y < x && y <= x && x <= y &&
   val u: int := 19
@@ -49,9 +51,15 @@ function AnotherNicelyIndented(x: int, y: int)
     -1 + G() != 75
 }
 
-function Inc(x: int)
+function Inc(x: int): int
 
-function Stringy(s: MyString)
+function Stringy(s: MyString): bool
+
+function NotStringy(s: MyString): bool
+
+axiom true ==> 5 < 7
+
+axiom forall s: MyString pattern Stringy(s) pattern NotStringy(s) :: Stringy(s) || NotStringy(s)
 
 procedure Test(x: int)
 

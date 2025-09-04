@@ -6,7 +6,7 @@ module RawAst {
   // Top-level program
 
   // A raw program reflects program that has been parsed.
-  datatype Program = Program(types: seq<TypeName>, functions: seq<Function>, procedures: seq<Procedure>)
+  datatype Program = Program(types: seq<TypeName>, taggers: seq<Tagger>, functions: seq<Function>, axioms: seq<Expr>, procedures: seq<Procedure>)
   {
     // A raw program is well-formed when its identifiers resolve to declarations and some basic
     // properties hold:
@@ -39,6 +39,15 @@ module RawAst {
 
     predicate IsType(typ: TypeName) {
       typ in BuiltInTypes || typ in types
+    }
+  }
+
+  // Taggers
+
+  datatype Tagger = Tagger(name: string, typ: TypeName)
+  {
+    predicate WellFormed(b3: Program) {
+      true
     }
   }
 

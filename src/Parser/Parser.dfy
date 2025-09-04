@@ -19,8 +19,8 @@ module Parser {
   const TopLevel: B<Program> :=
     W.e_I(RepTill(parseTopLevelDecl.I_e(W), EOS)).M(
       decls =>
-        var (tt, ff, pp) := SeparateTopLevelDecls(decls);
-        Program(tt, ff, pp))
+        var (tt, gg, ff, aa, pp) := SeparateTopLevelDecls(decls);
+        Program(tt, gg, ff, aa, pp))
 
   // ----- Parser helpers
 
@@ -129,26 +129,38 @@ module Parser {
 
   // ----- Top-level declarations
 
-  datatype TopLevelDecl = TType(typeDecl: Types.TypeName) | TFunc(funcDecl: Function) | TProc(procDecl: Procedure)
+  datatype TopLevelDecl =
+    | TType(typeDecl: Types.TypeName)
+    | TTagger(taggerDecl: Tagger)
+    | TFunction(funcDecl: Function)
+    | TAxiom(axiomDecl: Expr)
+    | TProc(procDecl: Procedure)
 
   const parseTopLevelDecl: B<TopLevelDecl> :=
     Or([
          parseTypeDecl.M(decl => TType(decl)),
-         parseFunctionDecl.M(decl => TFunc(decl)),
+         parseTaggerDecl.M(decl => TTagger(decl)),
+         parseFunctionDecl.M(decl => TFunction(decl)),
+         parseAxiomDecl.M(decl => TAxiom(decl)),
          parseProcDecl.M(decl => TProc(decl))
        ])
 
-  function SeparateTopLevelDecls(decls: seq<TopLevelDecl>): (seq<Types.TypeName>, seq<Function>, seq<Procedure>) {
-    if decls == [] then ([], [], []) else
-      var (tt, ff, pp) := SeparateTopLevelDecls(decls[1..]);
+  function SeparateTopLevelDecls(decls: seq<TopLevelDecl>): (seq<Types.TypeName>, seq<Tagger>, seq<Function>, seq<Expr>, seq<Procedure>) {
+    if decls == [] then ([], [], [], [], []) else
+      var (tt, gg, ff, aa, pp) := SeparateTopLevelDecls(decls[1..]);
       match decls[0]
-      case TType(typeDecl) => ([typeDecl] + tt, ff, pp)
-      case TFunc(funcDecl) => (tt, [funcDecl] + ff, pp)
-      case TProc(procDecl) => (tt, ff, [procDecl] + pp)
+      case TType(decl) => ([decl] + tt, gg, ff, aa, pp)
+      case TTagger(decl) => (tt, [decl] + gg, ff, aa, pp)
+      case TFunction(decl) => (tt, gg, [decl] + ff, aa, pp)
+      case TAxiom(decl) => (tt, gg, ff, [decl] + aa, pp)
+      case TProc(decl) => (tt, gg, ff, aa, [decl] + pp)
   }
 
   const parseTypeDecl: B<Types.TypeName> :=
     T("type").e_I(parseId)
+
+  const parseTaggerDecl: B<Tagger> :=
+    T("tagger").e_I(parseId).I_e(T("for")).I_I(parseType).M2(MId, (name, typeName) => Tagger(name, typeName))
 
   const parseFunctionDecl: B<Function> :=
     T("function").e_I(parseId).Then(name =>
@@ -168,6 +180,9 @@ module Parser {
 
   const parseWhenClause: B<Expr> :=
     T("when").e_I(parseExpr)
+
+  const parseAxiomDecl: B<Expr> :=
+    T("axiom").e_I(parseExpr)
 
   const parseProcDecl: B<Procedure> :=
     T("procedure")
@@ -359,7 +374,7 @@ module Parser {
       Or([
         Sym("==>").e_I(parseLogicalExpr(c).RepSep(Sym("==>")))
           .M(exprs => FoldRight(exprs, (a, b) => OperatorExpr(Operator.LogicalImp, [b, a]), e0)),
-        Sym("<==").e_I(parseLogicalExpr(c).RepSep(Sym("<==")))
+        SymNotPrefix("<==", ["<==>"]).e_I(parseLogicalExpr(c).RepSep(SymNotPrefix("<==", ["<==>"])))
           .M(exprs => FoldLeft(e0, exprs, (a, b) => OperatorExpr(Operator.LogicalImp, [b, a]))),
         Nothing.M(_ => e0)
       ])
@@ -389,10 +404,10 @@ module Parser {
   }
   const parseComparisonOperator: B<(Operator, bool)> :=
     Or([
-      Sym("==").M(_ => (Operator.Eq, false)),
+      SymNotPrefix("==", ["==>"]).M(_ => (Operator.Eq, false)),
       Sym("!=").M(_ => (Operator.Neq, false)),
-      Sym("<=").M(_ => (Operator.AtMost, false)),
-      Sym("<").M(_ => (Operator.Less, false)),
+      SymNotPrefix("<=", ["<=="]).M(_ => (Operator.AtMost, false)),
+      SymNotPrefix("<", ["<=="]).M(_ => (Operator.Less, false)),
       Sym(">=").M(_ => (Operator.AtMost, true)),
       Sym(">").M(_ => (Operator.Less, true))
     ])
@@ -420,7 +435,7 @@ module Parser {
 
   function parseUnaryExpr(c: ExprRecSel): B<Expr> {
     Or([
-      Sym("!").M(_ => Operator.LogicalNot),
+      SymNotPrefix("!", ["!="]).M(_ => Operator.LogicalNot),
       Sym("-").M(_ => Operator.UnaryMinus)
     ]).Rep().I_I(parsePrimaryExpr(c)).M2(MId, (unaryOperators, expr) =>
       FoldRight(unaryOperators, (op, e) => OperatorExpr(op, [e]), expr)

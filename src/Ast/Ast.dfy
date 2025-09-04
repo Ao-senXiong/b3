@@ -14,6 +14,7 @@ module Ast {
     reveals Function, FParameter, FunctionDefinition
     provides Function.Name, Function.Parameters, Function.ResultType, Function.Definition, FParameter.injective
     reveals Function.SignatureWellFormed, Function.WellFormed, FParameter.WellFormed, FunctionDefinition.WellFormed
+    reveals Tagger, Tagger.Name, Tagger.ForType, Tagger.WellFormed
     provides Variable.name, Variable.typ
     provides Variable.IsMutable, LocalVariable.IsMutable, Parameter.IsMutable, FParameter.IsMutable
     provides Parameter.mode, Parameter.oldInOut
@@ -29,11 +30,14 @@ module Ast {
 
   type Type = Types.Type
 
-  datatype Program = Program(types: seq<Types.TypeDecl>, functions: seq<Function>, procedures: seq<Procedure>)
+  datatype Program = Program(types: seq<Types.TypeDecl>, taggers: seq<Tagger>, functions: seq<Function>, axioms: seq<Expr>, procedures: seq<Procedure>)
   {
     predicate WellFormed()
       reads procedures, functions
     {
+      // axioms are well-formed
+      && (forall axiom <- axioms :: axiom.WellFormed())
+
       // type declarations have distinct names
       && (forall typ0 <- types, typ1 <- types :: typ0.Name == typ1.Name ==> typ0 == typ1)
       // function declarations have distinct names
@@ -123,6 +127,22 @@ module Ast {
   }
 
   type ParameterMode = Raw.ParameterMode
+
+  class Tagger {
+    const Name: string
+    const ForType: Type
+
+    constructor (name: string, forType: Type)
+      ensures Name == name && ForType == forType
+    {
+      Name := name;
+      ForType := forType;
+    }
+
+    predicate WellFormed() {
+      true
+    }
+  }
 
   class Function {
     const Name: string

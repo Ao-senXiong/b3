@@ -201,3 +201,13 @@ procedure OptionalType(w: int, x: int, out r: int) {
     u + u
   r := y + z
 }
+
+// ------- axioms and taggers
+
+axiom true ==> 5 < 7
+
+tagger MyTag for MyClass
+
+function NotStringy(s: MyString): bool
+
+axiom forall s: MyString pattern Stringy(s) pattern NotStringy(s) :: Stringy(s) || NotStringy(s)

@@ -13,10 +13,18 @@ module TypeChecker {
     requires b3.WellFormed()
     ensures outcome.Pass? ==> TypeCorrect(b3)
   {
+    // Nothing to check for type declarations and tagger declarations
+
     for n := 0 to |b3.functions|
       invariant forall func <- b3.functions[..n] :: TypeCorrectFunction(func)
     {
       :- CheckFunction(b3.functions[n]);
+    }
+
+    for n := 0 to |b3.axioms|
+      invariant forall axiom <- b3.axioms[..n] :: TypeCorrectExpr(axiom) && axiom.HasType(BoolType)
+    {
+      :- TypeCheckAs(b3.axioms[n], BoolType);
     }
 
     for n := 0 to |b3.procedures|
@@ -32,7 +40,9 @@ module TypeChecker {
     requires b3.WellFormed()
     reads b3.functions, b3.procedures
   {
-    forall proc <- b3.procedures :: TypeCorrectProc(proc)
+    && (forall func <- b3.functions :: TypeCorrectFunction(func))
+    && (forall axiom <- b3.axioms :: TypeCorrectExpr(axiom) && axiom.HasType(BoolType))
+    && (forall proc <- b3.procedures :: TypeCorrectProc(proc))
   }
 
   predicate TypeCorrectFunction(func: Function)
