@@ -54,7 +54,11 @@ module ResolvedPrinter {
       print sep, if param.injective then "injective " else "", param.name, ": ", param.typ.ToString();
       sep := ", ";
     }
-    print "): ", func.ResultType.ToString(), "\n";
+    print "): ", func.ResultType.ToString();
+    if func.Tag.Some? {
+      print " tag ", func.Tag.value.Name;
+    }
+    print "\n";
 
     if func.Definition.Some? {
       var FunctionDefinition(when, body) := func.Definition.value;

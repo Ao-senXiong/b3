@@ -8,7 +8,15 @@ type Abc
 
 type MyString
 
+type Color
+
+type List
+
 tagger MyTag for MyClass
+
+tagger ColorTag for Color
+
+tagger ListTag for List
 
 function F(a: int, injective b: bool): bool
 
@@ -56,6 +64,16 @@ function Inc(x: int): int
 function Stringy(s: MyString): bool
 
 function NotStringy(s: MyString): bool
+
+function Red(): Color tag ColorTag
+
+function Green(): Color tag ColorTag
+
+function Gray(injective n: int): Color tag ColorTag
+
+function Nil(): List tag ListTag
+
+function Cons(injective head: int, injective tail: List): List tag ListTag
 
 axiom true ==> 5 < 7
 

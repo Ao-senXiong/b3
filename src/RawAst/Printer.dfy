@@ -46,7 +46,11 @@ module Printer {
       print sep, if param.injective then "injective " else "", param.name, ": ", param.typ;
       sep := ", ";
     }
-    print "): ", func.resultType, "\n";
+    print "): ", func.resultType;
+    if func.tag.Some? {
+      print " tag ", func.tag.value;
+    }
+    print "\n";
 
     if func.definition.Some? {
       var FunctionDefinition(when, body) := func.definition.value;

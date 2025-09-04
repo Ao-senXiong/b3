@@ -53,7 +53,7 @@ module RawAst {
 
   // Functions
 
-  datatype Function = Function(name: string, parameters: seq<FParameter>, resultType: TypeName, definition: Option<FunctionDefinition>)
+  datatype Function = Function(name: string, parameters: seq<FParameter>, resultType: TypeName, tag: Option<string>, definition: Option<FunctionDefinition>)
   {
     predicate SignatureWellFormed(b3: Program) {
       // parameters have legal names and valid types

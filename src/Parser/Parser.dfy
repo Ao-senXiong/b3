@@ -166,9 +166,10 @@ module Parser {
     T("function").e_I(parseId).Then(name =>
       parseParenthesized(parseCommaDelimitedSeq(parseFunctionFormal)).Then(formals =>
         Sym(":").e_I(parseType).Then(resultType =>
-          parseFunctionDefinition.Option().M(optDefinition =>
-            Function(name, formals, resultType, optDefinition)
-          ))))
+          T("tag").e_I(parseId).Option().Then(maybeTag =>
+            parseFunctionDefinition.Option().M(maybeDefinition =>
+              Function(name, formals, resultType, maybeTag, maybeDefinition)
+    )))))
 
   const parseFunctionFormal: B<FParameter> :=
     T("injective").Option().M(opt => opt != None).Then(injective =>

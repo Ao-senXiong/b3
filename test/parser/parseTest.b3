@@ -211,3 +211,18 @@ tagger MyTag for MyClass
 function NotStringy(s: MyString): bool
 
 axiom forall s: MyString pattern Stringy(s) pattern NotStringy(s) :: Stringy(s) || NotStringy(s)
+
+// ------- use of taggers
+
+type Color
+tagger ColorTag for Color
+
+function Red(): Color tag ColorTag
+function Green(): Color tag ColorTag
+function Gray(injective n: int): Color tag ColorTag
+
+type List
+tagger ListTag for List
+
+function Nil(): List tag ListTag
+function Cons(injective head: int, injective tail: List): List tag ListTag
