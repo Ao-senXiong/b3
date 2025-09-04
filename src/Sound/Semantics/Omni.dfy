@@ -28,7 +28,7 @@ module Omni {
     iset st: State | SeqSem(ss, st, post)
   }
 
-  lemma SemCons(s: Stmt, st: State, post: iset<State>, post': iset<State>)
+  least lemma SemCons(s: Stmt, st: State, post: iset<State>, post': iset<State>)
     requires Sem(s, st, post)
     requires post <= post'
     ensures Sem(s, st, post')
@@ -45,7 +45,7 @@ module Omni {
     ensures SeqSem(ss, st, post')
   {  }
 
-  lemma SemNest(s: Stmt, ss: seq<Stmt>, st: State, post: iset<State>) 
+  least lemma SemNest(s: Stmt, ss: seq<Stmt>, st: State, post: iset<State>) 
     requires Sem(s, st, SeqWP(ss, post))
     ensures SeqSem([s] + ss, st, post)
   {
