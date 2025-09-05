@@ -32,7 +32,7 @@ module Verifier {
     for i := 0 to |b3.taggers| {
       var tagger := b3.taggers[i];
       var forType := I.DeclMappings.Type2STypeWithMap(tagger.ForType, typeMap);
-      var f := new SConstant.Function("_tag_" + tagger.Name, [forType], I.DeclMappings.Type2STypeWithMap(Types.IntType, typeMap));
+      var f := new SConstant.Function("_tagger_" + tagger.Name, [forType], I.DeclMappings.Type2STypeWithMap(Types.IntType, typeMap));
       taggerMap := taggerMap[tagger := f];
     }
 
@@ -64,20 +64,21 @@ module Verifier {
     }
   }
 
-  method VerifyProcedure(proc: Ast.Procedure, context: RSolvers.RContext, declMap: I.DeclMappings, cli: CLI.CliResult)
+  method VerifyProcedure(proc: Ast.Procedure, context_in: RSolvers.RContext, declMap: I.DeclMappings, cli: CLI.CliResult)
     requires AstValid.Procedure(proc)
   {
     var smtEngine := RSolvers.CreateEngine(cli);
-    var context := context;
-
     var preIncarnations, bodyIncarnations, postIncarnations := CreateProcIncarnations(proc.Parameters, declMap);
 
-    context := VetSpecification(proc.Pre, preIncarnations, context, smtEngine);
-    var _ := VetSpecification(proc.Post, postIncarnations, context, smtEngine);
+    {
+      var context := context_in;
+      context := VetSpecification(proc.Pre, preIncarnations, context, smtEngine);
+      var _ := VetSpecification(proc.Post, postIncarnations, context, smtEngine);
+    }
 
     if proc.Body.Some? {
       var body := proc.Body.value;
-      context := RSolvers.CreateEmptyContext();
+      var context := context_in;
 
       var preLearning := SpecConversions.ToLearn(proc.Pre);
       context := ProcessPredicateStmts(preLearning, postIncarnations, context, smtEngine);

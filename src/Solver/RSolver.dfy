@@ -17,18 +17,20 @@ module RSolvers {
     provides RContext, CreateEmptyContext, Extend, ExtendWithEquality, Record
     reveals REngine
     provides CreateEngine, REngine.Repr, REngine.Valid, REngine.Prove
-    provides SolverExpr, Solvers, Ast, CLI
+    provides SolverExpr, Solvers, Ast, CLI, Wrappers
 
   // ===== RExpr =====
 
   type SExpr = SolverExpr.SExpr
 
-  datatype ROperator = BuiltInOperator(name: string) | UserDefinedFunction(decl: SolverExpr.STypedDeclaration)
+  datatype ROperator =
+    | BuiltInOperator(name: string)
+    | UserDefinedFunction(decl: SolverExpr.STypedDeclaration, maybeTagger: Option<SolverExpr.STypedDeclaration>)
   {
     function ToString(): string {
       match this
       case BuiltInOperator(name) => name
-      case UserDefinedFunction(decl) => decl.name
+      case UserDefinedFunction(decl, _) => decl.name
     }
   }
 
@@ -40,7 +42,7 @@ module RSolvers {
     | FuncAppl(op: ROperator, args: seq<RExpr>)
     | IfThenElse(guard: RExpr, thn: RExpr, els: RExpr)
     | LetExpr(v: SolverExpr.SConstant, rhs: RExpr, body: RExpr)
-    | QuantifierExpr(univ: bool, v: SolverExpr.SConstant, patterns: seq<RPattern>, body: RExpr)
+    | QuantifierExpr(univ: bool, vv: seq<SolverExpr.SConstant>, patterns: seq<RPattern>, body: RExpr)
   {
     function ToSExpr(): SExpr {
       match this
@@ -56,11 +58,22 @@ module RSolvers {
       case LetExpr(v, rhs, body) =>
         var binding := SExpr.PP([SExpr.Id(v), rhs.ToSExpr()]);
         SExpr.FuncAppl("let", [SExpr.PP([binding]), body.ToSExpr()])
-      case QuantifierExpr(univ, v, patterns, body) =>
-        var boundVar := SExpr.PP([SExpr.Id(v), v.typ.ToSExpr()]); // "(x Int)"
-        var annotations := PatternListToSAnnotationList(patterns, this);
-        var sbody := Annotate(body.ToSExpr(), annotations);
-        SExpr.FuncAppl(if univ then "forall" else "exists", [SExpr.PP([boundVar]), sbody])
+      case QuantifierExpr(univ, vv, patterns, body) =>
+        if |vv| == 0 then
+          body.ToSExpr()
+        else
+          var boundVars := BoundVarsToSExpr(vv);
+          var annotations := PatternListToSAnnotationList(patterns, this);
+          var sbody := Annotate(body.ToSExpr(), annotations);
+          SExpr.FuncAppl(if univ then "forall" else "exists", [SExpr.PP(boundVars), sbody])
+    }
+
+    static function BoundVarsToSExpr(vv: seq<SolverExpr.SConstant>): seq<SExpr> {
+      SeqMap(vv, BoundVarToSExpr)
+    }
+
+    static function BoundVarToSExpr(v: SolverExpr.SConstant): SExpr {
+      SExpr.PP([SExpr.Id(v), v.typ.ToSExpr()]) // "(x Int)"
     }
 
     static function RExprListToSExprs(exprs: seq<RExpr>, ghost parent: RExpr): seq<SExpr>
@@ -126,11 +139,19 @@ module RSolvers {
         "(if " + guard.ToString() + " then " + thn.ToString() + " else " + els.ToString() + ")"
       case LetExpr(v, rhs, body) =>
         "(val " + v.name + ": " + v.typ.ToString() + " := " + rhs.ToString() + " " + body.ToString() + ")"
-      case QuantifierExpr(univ, v, patterns, body) =>
+      case QuantifierExpr(univ, vv, patterns, body) =>
         (if univ then "(forall " else "(exists ") +
-        v.name + ": " + v.typ.ToString() +
+        BoundVarsToString(vv) +
         PatternsToString(patterns, this) +
         " :: " + body.ToString() + ")"
+    }
+
+    static function BoundVarsToString(vv: seq<SolverExpr.SConstant>): string {
+      SeqToString(vv, BoundVarToString, ", ")
+    }
+
+    static function BoundVarToString(v: SolverExpr.SConstant): string {
+      v.name + ": " + v.typ.ToString()
     }
 
     static function RExprListToString(exprs: seq<RExpr>, ghost parent: RExpr): string
@@ -380,15 +401,23 @@ module RSolvers {
       case FuncAppl(op, args) =>
         match op {
           case BuiltInOperator(_) =>
-          case UserDefinedFunction(funcDecl) =>
+          case UserDefinedFunction(funcDecl, maybeTagger) =>
             if funcDecl !in state.declarations {
+              // declare the types in the function's signature
               for i := 0 to |funcDecl.inputTypes|
                 invariant Valid() && state.stack == old(state.stack)
               {
                 DeclareNewTypes(funcDecl.inputTypes[i]);
               }
               DeclareNewTypes(funcDecl.typ);
+              // declare the function itself
               state.DeclareSymbol(funcDecl);
+              // TODO: for each injective parameter x of function f, declare and axiomatize a function f.x (this should also be done during resolution)
+              // set up tagger
+              if maybeTagger.Some? {
+                // TODO: declare a function f.tag that can be used in the B3 program (this should also be done during resolution)
+                DeclareAndUseTagger(maybeTagger.value, funcDecl);
+              }
             }
         }
         for i := 0 to |args|
@@ -405,9 +434,15 @@ module RSolvers {
         DeclareNewSymbols(rhs, exclude);
         var exclude' := exclude + {v};
         DeclareNewSymbols(body, exclude');
-      case QuantifierExpr(_, v, patterns, body) =>
-        DeclareNewTypes(v.typ);
-        var exclude' := exclude + {v};
+      case QuantifierExpr(_, vv, patterns, body) =>
+        var exclude' := exclude;
+        for i := 0 to |vv|
+          invariant Valid() && state.stack == old(state.stack)
+        {
+          var v := vv[i];
+          DeclareNewTypes(v.typ);
+          exclude' := exclude' + {v};
+        }
         for i := 0 to |patterns|
           invariant Valid() && state.stack == old(state.stack)
         {
@@ -419,6 +454,37 @@ module RSolvers {
           }
         }
         DeclareNewSymbols(body, exclude');
+    }
+
+    method DeclareAndUseTagger(taggerFunc: SolverExpr.STypedDeclaration, func: SolverExpr.STypedDeclaration)
+      requires Valid()
+      modifies Repr
+      ensures Valid() && state.stack == old(state.stack)
+    {
+      // Declare the tagger function, if it hasn't already been declared.
+      // We assume its .ForType has already been declared by the caller.
+      if taggerFunc !in state.declarations {
+        state.DeclareSymbol(taggerFunc);
+      }
+
+      // TODO: It would be better to generate this axiom earlier, so that (for example) it could be shown the "Proof obligation" debug output
+      // Allocate a new tag number, n, and extend the state with
+      //     forall x: X pattern func(x) :: taggerFunc(func(x)) == n
+      var n := Integer(|state.declarations|);
+      var boundedVars, functionArguments := [], [];
+      for i := 0 to |func.inputTypes|
+        invariant Valid() && state.stack == old(state.stack)
+      {
+        var name := "x" + Int2String(i);
+        var bv := new SolverExpr.SConstant(name, func.inputTypes[i]);
+        var arg := Id(bv);
+        boundedVars, functionArguments := boundedVars + [bv], functionArguments + [arg];
+      }
+      var funcX := FuncAppl(UserDefinedFunction(func, None), functionArguments);
+      var taggerFuncX := FuncAppl(UserDefinedFunction(taggerFunc, None), [funcX]);
+      var eq := RExpr.Eq(taggerFuncX, n);
+      var axiom := QuantifierExpr(true, boundedVars, [RPattern([funcX])], eq);
+      state.AddAssumption(axiom.ToSExpr());
     }
 
     method DeclareNewTypes(typ: SolverExpr.SType)

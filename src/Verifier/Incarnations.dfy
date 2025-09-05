@@ -1,4 +1,5 @@
 module Incarnations {
+  import opened Std.Wrappers
   import opened Basics
   import opened Ast
   import opened SolverExpr
@@ -172,7 +173,14 @@ module Incarnations {
       case FunctionCallExpr(func, args) =>
         var rArgs := SubstituteList(args);
         assume {:axiom} func in declMap.functionMap;
-        RExpr.FuncAppl(RSolvers.UserDefinedFunction(declMap.functionMap[func]), rArgs)
+        var f := declMap.functionMap[func];
+        var t := match func.Tag {
+          case None => None
+          case Some(tagger) =>
+            assume {:axiom} tagger in declMap.taggerMap;
+            Some(declMap.taggerMap[tagger])
+        };
+        RExpr.FuncAppl(RSolvers.UserDefinedFunction(f, t), rArgs)
       case LabeledExpr(_, body) =>
         // TODO: do something with the label
         Substitute(body)
@@ -185,7 +193,7 @@ module Incarnations {
         var sVar := m[v];
         var trs := SubstitutePatterns(patterns);
         var b := Substitute(body);
-        RExpr.QuantifierExpr(univ, sVar, trs, b)
+        RExpr.QuantifierExpr(univ, [sVar], trs, b)
     }
 
     function SubstituteList(exprs: seq<Expr>): seq<RSolvers.RExpr>

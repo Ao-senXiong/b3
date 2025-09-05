@@ -118,7 +118,10 @@ module SolverExpr {
       S(x.name)
     }
     static function FuncAppl(op: string, args: seq<SExpr>): SExpr {
-      PP([S(op)] + args)
+      if |args| == 0 then
+        S(op)
+      else
+        PP([S(op)] + args)
     }
     static function Eq(e0: SExpr, e1: SExpr): SExpr {
       PP([S(EQ), e0, e1])

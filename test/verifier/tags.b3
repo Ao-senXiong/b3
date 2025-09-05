@@ -1,0 +1,39 @@
+// RUN: %b3 verify "%s" > "%t"
+// RUN: %diff "%s.expect" "%t"
+
+// ----- Color -----
+
+type Color
+tagger ColorTag for Color
+
+function Red(): Color tag ColorTag
+function Green(): Color tag ColorTag
+function Gray(injective n: int): Color tag ColorTag
+
+procedure TestColors(c: Color) {
+  var red := Red()
+  val green := Green()
+  check red != green
+  if c == Gray(50) {
+    check red != c
+  }
+}
+
+// ----- List -----
+
+type List
+tagger ListTag for List
+
+function Nil(): List tag ListTag
+function Cons(injective head: int, injective tail: List): List tag ListTag
+
+function Length(list: List): int
+axiom forall list: List pattern Length(list) :: 0 <= Length(list)
+
+procedure TestLists(list: List) {
+  var a := Nil()
+  var b := Cons(500, list)
+  assert a != b
+  var n := Length(list)
+  check n != -9
+}
