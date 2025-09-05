@@ -1,4 +1,4 @@
-module VCGenOmni {
+/*module VCGenOmni {
   import opened Defs
   import opened Context
   import Omni
@@ -150,4 +150,4 @@ method SeqVCGen(s: seq<Stmt>, context: Context) returns (VCs: seq<Expr>)
         }
     }
   }
-}
+}*/

@@ -52,6 +52,7 @@ module Defs {
   //   }
   // }
   type Variable = string
+  type Label = string
 
   datatype Expr =
     | BConst(bvalue: bool)
@@ -150,14 +151,18 @@ module Defs {
   {  }
     
   datatype Stmt =
+    // First order statements
     | Check(e: Expr)
     | Assume(e: Expr)
-    | Seq(ss: seq<Stmt>)
     | Assign(lhs: Variable, rhs: Expr)
+    // Higher order statements
+    | Seq(ss: seq<Stmt>)
     | VarDecl(v: Variable, s: Stmt)
-    // | Loop(inv: Expr, body: Stmt)
-    // | While(guard: Expr, inv: Expr, body: Stmt)
     | Choice(0: Stmt, 1: Stmt)
+    // | Loop(inv: Expr, body: Stmt)
+    // Control flow
+    | Exit(lbl: Label)
+    | LabeledStmt(lbl: Label, s: Stmt)
   {
     function Size(): nat {
       match this
@@ -167,6 +172,8 @@ module Defs {
       case Assign(_, _) => 1
       case Choice(s0, s1) => 1 + s0.Size() + s1.Size()
       case VarDecl(_, s) => 1 + s.Size()
+      case LabeledStmt(_, s) => 1 + s.Size()
+      case Exit(_) => 1
     }
 
     function FVars(): set<Variable> {
@@ -177,6 +184,8 @@ module Defs {
       case Assign(lhs, rhs) => {lhs} + rhs.FVars()
       case VarDecl(v, s) => s.FVars() - {v}
       case Choice(s0, s1) => s0.FVars() + s1.FVars()
+      case LabeledStmt(_, s) => s.FVars()
+      case Exit(_) => {}
     }
 
     function BVars(): set<Variable> {
@@ -187,6 +196,8 @@ module Defs {
       case Assign(lhs, rhs) => rhs.BVars()
       case VarDecl(v, s) => s.BVars() + {v}
       case Choice(s0, s1) => s0.BVars() + s1.BVars()
+      case LabeledStmt(_, s) => s.BVars()
+      case Exit(_) => {}
     }
 
     predicate NoShadowing() {
@@ -199,6 +210,8 @@ module Defs {
       case Assign(lhs, rhs) => rhs.NoShadowing()
       case VarDecl(v, s) => v !in s.BVars() && s.NoShadowing()
       case Choice(s0, s1) => s0.NoShadowing() && s1.NoShadowing()
+      case LabeledStmt(_, s) => s.NoShadowing()
+      case Exit(_) => true
     }
 
     predicate WellFormed() {
