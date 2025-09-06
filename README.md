@@ -14,6 +14,19 @@ make verify
 
 ## B3 documentation
 
+### Reference manual
+
+The B3 reference manual, _This is B3_, is written in MyST Markdown within Sphinx.
+
+To install
+
+    pip install sphinx
+    pip install myst-parser
+    pip install renku-sphinx-theme
+    pip install pygments
+
+### Other documents
+
 [B3 concept document](doc/out/krml301.html)
 
 To edit the documentation, use [Madoko source](doc/krml301.mdk)
