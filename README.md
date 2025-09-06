@@ -25,6 +25,15 @@ To install
     pip install renku-sphinx-theme
     pip install pygments
 
+To build
+
+    cd doc/refman
+    make
+
+To read
+
+    open doc/refman/_build/html/index.html
+
 ### Other documents
 
 [B3 concept document](doc/out/krml301.html)
