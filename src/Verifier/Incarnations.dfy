@@ -180,7 +180,7 @@ module Incarnations {
             assume {:axiom} tagger in declMap.taggerMap;
             Some(declMap.taggerMap[tagger])
         };
-        RExpr.FuncAppl(RSolvers.UserDefinedFunction(f, t), rArgs)
+        RExpr.FuncAppl(RSolvers.UserDefinedFunction(func, f, t), rArgs)
       case LabeledExpr(_, body) =>
         // TODO: do something with the label
         Substitute(body)

@@ -4,9 +4,11 @@ module Ast {
   import Types
   import Raw = RawAst
   import opened Values
+  import opened DeclarationMarkers
 
   export
-    reveals Program, Type, Variable, Expr, Operator, Procedure, Label, Parameter, ParameterMode, AExpr, Stmt, CallArgument, LocalVariable
+    reveals Program, Type, Variable, Procedure, Label, Parameter, LocalVariable
+    reveals Expr, Operator, ParameterMode, AExpr, Stmt, CallArgument
     reveals Program.WellFormed, Procedure.WellFormed, Parameter.WellFormed, AExpr.WellFormed, Stmt.WellFormed, Expr.WellFormed, CallArgument.WellFormed
     reveals CallArgument.CorrespondingMode
     provides Procedure.Name, Procedure.Parameters, Procedure.Pre, Procedure.Post, Procedure.Body
@@ -28,7 +30,7 @@ module Ast {
     provides Expr.CreateAnd, Expr.CreateBigAnd, Expr.CreateOr, Expr.CreateBigOr
     reveals Pattern, Pattern.WellFormed
     provides CustomLiteralToString
-    provides Raw, Types, Wrappers
+    provides Raw, Types, Wrappers, DeclarationMarkers
 
   type Type = Types.Type
 
@@ -130,7 +132,7 @@ module Ast {
 
   type ParameterMode = Raw.ParameterMode
 
-  class Tagger {
+  class Tagger extends DeclarationMarker {
     const Name: string
     const ForType: Type
 
@@ -146,7 +148,7 @@ module Ast {
     }
   }
 
-  class Function {
+  class Function extends DeclarationMarker {
     const Name: string
     const Parameters: seq<FParameter>
     const ResultType: Type

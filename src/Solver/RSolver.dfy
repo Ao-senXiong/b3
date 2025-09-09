@@ -25,12 +25,12 @@ module RSolvers {
 
   datatype ROperator =
     | BuiltInOperator(name: string)
-    | UserDefinedFunction(decl: SolverExpr.STypedDeclaration, maybeTagger: Option<SolverExpr.STypedDeclaration>)
+    | UserDefinedFunction(func: Ast.Function, decl: SolverExpr.STypedDeclaration, maybeTagger: Option<SolverExpr.STypedDeclaration>)
   {
     function ToString(): string {
       match this
       case BuiltInOperator(name) => name
-      case UserDefinedFunction(decl, _) => decl.name
+      case UserDefinedFunction(func, decl, _) => decl.name
     }
   }
 
@@ -396,27 +396,28 @@ module RSolvers {
       case Id(v) =>
         if v !in exclude && v !in state.declarations {
           DeclareNewTypes(v.typ);
-          state.DeclareSymbol(v);
+          state.DeclareSymbol(v, v);
         }
       case FuncAppl(op, args) =>
         match op {
           case BuiltInOperator(_) =>
-          case UserDefinedFunction(funcDecl, maybeTagger) =>
-            if funcDecl !in state.declarations {
+          case UserDefinedFunction(func, decl, maybeTagger) =>
+            if func !in state.declarations {
               // declare the types in the function's signature
-              for i := 0 to |funcDecl.inputTypes|
+              for i := 0 to |decl.inputTypes|
                 invariant Valid() && state.stack == old(state.stack)
               {
-                DeclareNewTypes(funcDecl.inputTypes[i]);
+                DeclareNewTypes(decl.inputTypes[i]);
               }
-              DeclareNewTypes(funcDecl.typ);
+              DeclareNewTypes(decl.typ);
               // declare the function itself
-              state.DeclareSymbol(funcDecl);
+              state.DeclareSymbol(decl, func);
+              // TODO: visit explains sets
               // TODO: for each injective parameter x of function f, declare and axiomatize a function f.x (this should also be done during resolution)
               // set up tagger
               if maybeTagger.Some? {
                 // TODO: declare a function f.tag that can be used in the B3 program (this should also be done during resolution)
-                DeclareAndUseTagger(maybeTagger.value, funcDecl);
+//                DeclareAndUseTagger(maybeTagger.value, funcDecl);
               }
             }
         }
@@ -456,14 +457,15 @@ module RSolvers {
         DeclareNewSymbols(body, exclude');
     }
 
-    method DeclareAndUseTagger(taggerFunc: SolverExpr.STypedDeclaration, func: SolverExpr.STypedDeclaration)
+/*** SOON AGAIN, but in a different form
+    method DeclareAndUseTagger(tagger: Ast.Tagger, taggerFunc: SolverExpr.STypedDeclaration, func: SolverExpr.STypedDeclaration)
       requires Valid()
       modifies Repr
       ensures Valid() && state.stack == old(state.stack)
     {
       // Declare the tagger function, if it hasn't already been declared.
       // We assume its .ForType has already been declared by the caller.
-      if taggerFunc !in state.declarations {
+      if tagger !in state.declarations {
         state.DeclareSymbol(taggerFunc);
       }
 
@@ -480,12 +482,13 @@ module RSolvers {
         var arg := Id(bv);
         boundedVars, functionArguments := boundedVars + [bv], functionArguments + [arg];
       }
-      var funcX := FuncAppl(UserDefinedFunction(func, None), functionArguments);
-      var taggerFuncX := FuncAppl(UserDefinedFunction(taggerFunc, None), [funcX]);
+      var funcX := FuncAppl(UserDefinedFunction(tagger, func, None), functionArguments);
+      var taggerFuncX := FuncAppl(UserDefinedFunction(tagger, taggerFunc, None), [funcX]);
       var eq := RExpr.Eq(taggerFuncX, n);
       var axiom := QuantifierExpr(true, boundedVars, [RPattern([funcX])], eq);
       state.AddAssumption(axiom.ToSExpr());
     }
+****/
 
     method DeclareNewTypes(typ: SolverExpr.SType)
       requires Valid()
@@ -496,7 +499,7 @@ module RSolvers {
       case SBool | SInt =>
       case SUserType(decl) =>
         if decl !in state.declarations {
-          state.DeclareType(decl);
+          state.DeclareType(decl, decl);
         }
     }
   }

@@ -3,6 +3,7 @@ module Solvers {
   import opened Basics
   import opened SolverExpr
   import Smt
+  import opened DeclarationMarkers
 
   export
     reveals SolverState, ProofResult
@@ -11,23 +12,23 @@ module Solvers {
     reveals SolverState.IsTopMemo
     provides SolverState.Push, SolverState.Pop
     provides SolverState.DeclareType, SolverState.DeclareSymbol, SolverState.AddAssumption, SolverState.Prove
-    provides Smt, Basics, SolverExpr
+    provides Smt, Basics, SolverExpr, DeclarationMarkers
 
   datatype ProofResult =
     | Proved
     | Unproved(reason: string)
   
   /// This solver state can backtrack, however, it cannot spawn new SMT instances.
-  /// The solver state includes a stack of memo/declaration-set pairs, which allows the solver
+  /// The solver state includes a stack of (memo, marker set) pairs, which allows the solver
   /// to be shared (in a sequential fashion) among several clients. The clients then update
-  /// the stack to keep track of what has been given to the underlying SMT solver.
+  /// the stack and marker set to keep track of what has been given to the underlying SMT solver.
   class SolverState<Memo(==)> {
     ghost const Repr: set<object>
 
     const smtEngine: Smt.SolverEngine
-    var stack: List<(Memo, set<SDeclaration>)>
+    var stack: List<(Memo, set<DeclarationMarker>)>
 
-    var declarations: set<SDeclaration>
+    var declarations: set<DeclarationMarker>
 
     constructor (smtEngine: Smt.SolverEngine)
       requires smtEngine.Valid() && smtEngine.CommandStacks() == Cons(Nil, Nil)
@@ -86,22 +87,22 @@ module Solvers {
       smtEngine.Assume(expr.ToString());
     }
 
-    method DeclareType(decl: STypeDecl)
+    method DeclareType(decl: STypeDecl, marker: DeclarationMarker)
       requires Valid()
       modifies Repr
       ensures Valid() && stack == old(stack)
     {
       smtEngine.DeclareSort(decl.name);
-      declarations := declarations + {decl};
+      declarations := declarations + {marker};
     }
 
-    method DeclareSymbol(decl: STypedDeclaration)
+    method DeclareSymbol(decl: STypedDeclaration, marker: DeclarationMarker)
       requires Valid()
       modifies Repr
       ensures Valid() && stack == old(stack)
     {
       DeclareSymbolByName(decl.name, SType.TypesToSExpr(decl.inputTypes), decl.typ.ToSExpr());
-      declarations := declarations + {decl};
+      declarations := declarations + {marker};
     }
 
     method DeclareSymbolByName(name: string, inputTpe: SExpr, outputTpe: SExpr)
