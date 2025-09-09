@@ -38,15 +38,17 @@ module Ast {
     predicate WellFormed()
       reads procedures, functions
     {
-      // axioms are well-formed
-      && (forall axiom <- axioms :: axiom.WellFormed())
-
       // type declarations have distinct names
       && (forall typ0 <- types, typ1 <- types :: typ0.Name == typ1.Name ==> typ0 == typ1)
+
       // function declarations have distinct names
       && (forall func0 <- functions, func1 <- functions :: func0.Name == func1.Name ==> func0 == func1)
       // function are well-formed
       && (forall func <- functions :: func.WellFormed())
+
+      // axioms are well-formed
+      && (forall axiom <- axioms :: axiom.WellFormed())
+
       // procedure declarations have distinct names
       && (forall proc0 <- procedures, proc1 <- procedures :: proc0.Name == proc1.Name ==> proc0 == proc1)
       // procedures are well-formed

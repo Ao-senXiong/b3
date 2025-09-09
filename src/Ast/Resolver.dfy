@@ -16,18 +16,35 @@ module Resolver {
     var typeMap :- ResolveAllTypes(b3);
     var taggerMap :- ResolveAllTaggers(b3, typeMap);
     var functionMap :- ResolveAllFunctions(b3, typeMap, taggerMap);
-    assert (taggerMap + functionMap).Values == taggerMap.Values + functionMap.Values;
+    CombineMaps(taggerMap, functionMap);
     functionMap := taggerMap + functionMap;
     var ers := ExprResolverState(b3, typeMap, functionMap);
     var axioms :- ResolveAllAxioms(ers);
     var procMap :- ResolveAllProcedures(ers);
 
     var types := SeqMap(b3.types, typeName requires typeName in typeMap => typeMap[typeName]);
-    var functions := SeqMap(b3.functions, (func: Raw.Function) requires func.name in functionMap => functionMap[func.name]);
+    var tagAndFunctionNames :=
+      SeqMap(b3.taggers, (tagger: Raw.Tagger) => tagger.name) +
+      SeqMap(b3.functions, (func: Raw.Function) => func.name);
+    var functions := SeqMap(tagAndFunctionNames, (name: string) requires name in functionMap => functionMap[name]);
     var procedures := SeqMap(b3.procedures, (proc: Raw.Procedure) requires proc.name in procMap => procMap[proc.name]);
     var r3 := Program(types, functions, axioms, procedures);
 
     return Success(r3);
+  }
+
+  ghost predicate NameAlignment(functionMap: map<string, Function>) {
+    && (forall functionName <- functionMap :: functionMap[functionName].Name == functionName)
+    && (var functions: set<Function> := functionMap.Values;
+         forall func0 <- functions, func1 <- functions :: func0.Name == func1.Name ==> func0 == func1)
+  }
+
+  lemma CombineMaps(a: map<string, Function>, b: map<string, Function>)
+    requires a.Keys !! b.Keys
+    requires NameAlignment(a) && NameAlignment(b)
+    ensures (a + b).Values == a.Values + b.Values
+    ensures NameAlignment(a + b)
+  {
   }
 
   method ResolveAllTypes(b3: Raw.Program) returns (r: Result<map<string, TypeDecl>, string>)
@@ -69,10 +86,9 @@ module Resolver {
       && (forall tagger <- b3.taggers :: tagger.WellFormed(b3))
     ensures r.Success? ==> var taggerMap: map<string, Function> := r.value;
       && taggerMap.Keys == (set tagger <- b3.taggers :: tagger.name)
-      && (forall taggerName <- taggerMap :: taggerMap[taggerName].Name == taggerName)
+      && NameAlignment(taggerMap)
     ensures r.Success? ==> var taggers: set<Function> := r.value.Values;
       && fresh(taggers)
-      && (forall tagger0 <- taggers, tagger1 <- taggers :: tagger0.Name == tagger1.Name ==> tagger0 == tagger1)
       && (forall tagger <- taggers :: tagger.WellFormedAsTagger())
   {
     var taggerMap: map<string, Function> := map[];
@@ -110,10 +126,10 @@ module Resolver {
       && (forall func <- b3.functions :: func.WellFormed(b3))
     ensures r.Success? ==> var functions: set<Function> := r.value.Values;
       && fresh(functions)
-      && (forall func0 <- functions, func1 <- functions :: func0.Name == func1.Name ==> func0 == func1)
       && (forall func <- functions :: func.WellFormed())
     ensures r.Success? ==> var functionMap := r.value;
       && taggerMap.Keys !! functionMap.Keys
+      && NameAlignment(functionMap)
       && (forall functionName <- functionMap :: exists func <- b3.functions :: func.name == functionName)
       && (forall rawFunction <- b3.functions ::
             && rawFunction.name in functionMap
