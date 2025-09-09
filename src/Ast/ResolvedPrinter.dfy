@@ -14,11 +14,6 @@ module ResolvedPrinter {
       TypeDecl(typ);
     }
 
-    for i := 0 to |b3.taggers| {
-      print "\n";
-      TaggerDecl(b3.taggers[i]);
-    }
-
     for i := 0 to |b3.functions| {
       var func := b3.functions[i];
       print "\n";
@@ -39,10 +34,6 @@ module ResolvedPrinter {
 
   method TypeDecl(decl: Types.TypeDecl) {
     print "type ", decl.Name, "\n";
-  }
-
-  method TaggerDecl(tagger: Tagger) {
-    print "tagger ", tagger.Name, " for ", tagger.ForType.ToString(), "\n";
   }
 
   method FunctionDecl(func: Function) {

@@ -226,7 +226,13 @@ module Parser {
   const parseIdOptionalType: B<(string, Option<string>)> :=
     parseId.I_I(SymNotPrefix(":", [":="]).e_I(parseType).Option())
 
-  const parseType: B<Types.TypeName> := parseId
+  const parseType: B<Types.TypeName> :=
+    Or([
+      T("bool"),
+      T("int"),
+      T("tag"),
+      parseId
+    ])
 
   // ----- Parsing gallery
 

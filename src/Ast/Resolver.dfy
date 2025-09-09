@@ -16,15 +16,16 @@ module Resolver {
     var typeMap :- ResolveAllTypes(b3);
     var taggerMap :- ResolveAllTaggers(b3, typeMap);
     var functionMap :- ResolveAllFunctions(b3, typeMap, taggerMap);
+    assert (taggerMap + functionMap).Values == taggerMap.Values + functionMap.Values;
+    functionMap := taggerMap + functionMap;
     var ers := ExprResolverState(b3, typeMap, functionMap);
     var axioms :- ResolveAllAxioms(ers);
     var procMap :- ResolveAllProcedures(ers);
 
     var types := SeqMap(b3.types, typeName requires typeName in typeMap => typeMap[typeName]);
-    var taggers := SeqMap(b3.taggers, (tagger: Raw.Tagger) requires tagger.name in taggerMap => taggerMap[tagger.name]);
     var functions := SeqMap(b3.functions, (func: Raw.Function) requires func.name in functionMap => functionMap[func.name]);
     var procedures := SeqMap(b3.procedures, (proc: Raw.Procedure) requires proc.name in procMap => procMap[proc.name]);
-    var r3 := Program(types, taggers, functions, axioms, procedures);
+    var r3 := Program(types, functions, axioms, procedures);
 
     return Success(r3);
   }
@@ -61,19 +62,20 @@ module Resolver {
     return Success(typeMap);
   }
 
-  method ResolveAllTaggers(b3: Raw.Program, typeMap: map<string, TypeDecl>) returns (r: Result<map<string, Tagger>, string>)
+  method ResolveAllTaggers(b3: Raw.Program, typeMap: map<string, TypeDecl>) returns (r: Result<map<string, Function>, string>)
     requires forall typename :: b3.IsType(typename) <==> typename in BuiltInTypes || typename in typeMap
     ensures r.Success? ==>
       && (forall i, j :: 0 <= i < j < |b3.taggers| ==> b3.taggers[i].name != b3.taggers[j].name)
       && (forall tagger <- b3.taggers :: tagger.WellFormed(b3))
-    ensures r.Success? ==> var taggerMap: map<string, Tagger> := r.value;
+    ensures r.Success? ==> var taggerMap: map<string, Function> := r.value;
       && taggerMap.Keys == (set tagger <- b3.taggers :: tagger.name)
       && (forall taggerName <- taggerMap :: taggerMap[taggerName].Name == taggerName)
-    ensures r.Success? ==> var taggers: set<Tagger> := r.value.Values;
+    ensures r.Success? ==> var taggers: set<Function> := r.value.Values;
+      && fresh(taggers)
       && (forall tagger0 <- taggers, tagger1 <- taggers :: tagger0.Name == tagger1.Name ==> tagger0 == tagger1)
-      && (forall tagger <- taggers :: tagger.WellFormed())
+      && (forall tagger <- taggers :: tagger.WellFormedAsTagger())
   {
-    var taggerMap: map<string, Tagger> := map[];
+    var taggerMap: map<string, Function> := map[];
     for n := 0 to |b3.taggers|
       // taggerMap maps the user-defined taggers seen so far to distinct and fresh tagger-declaration objects
       invariant taggerMap.Keys == set tagger <- b3.taggers[..n] :: tagger.name
@@ -84,7 +86,7 @@ module Resolver {
       // taggers seen so far have distinct names
       invariant forall i, j :: 0 <= i < j < n ==> b3.taggers[i].name != b3.taggers[j].name
       // the taggers seen so far are well-formed
-      invariant forall tagger <- b3.taggers[..n] :: tagger.WellFormed(b3) && taggerMap[tagger.name].WellFormed()
+      invariant forall tagger <- b3.taggers[..n] :: tagger.WellFormed(b3) && taggerMap[tagger.name].WellFormedAsTagger()
     {
       var tagger := b3.taggers[n];
       var name := tagger.name;
@@ -92,15 +94,17 @@ module Resolver {
         return Failure("duplicate tagger name: " + name);
       }
       var typ :- ResolveType(tagger.typ, typeMap);
-      var rTagger := new Tagger(name, typ);
+
+      var parameter := new FParameter("subject", false, typ);
+      var rTagger := new Function(name, [parameter], Types.TagType, None);
       taggerMap := taggerMap[name := rTagger];
     }
     return Success(taggerMap);
   }
 
-  method ResolveAllFunctions(b3: Raw.Program, typeMap: map<string, TypeDecl>, taggerMap: map<string, Tagger>) returns (r: Result<map<string, Function>, string>)
+  method ResolveAllFunctions(b3: Raw.Program, typeMap: map<string, TypeDecl>, taggerMap: map<string, Function>) returns (r: Result<map<string, Function>, string>)
     requires forall typename :: b3.IsType(typename) <==> typename in BuiltInTypes || typename in typeMap
-    requires forall taggerName <- taggerMap :: taggerMap[taggerName].Name == taggerName
+    requires forall taggerName <- taggerMap :: taggerMap[taggerName].Name == taggerName && taggerMap[taggerName].WellFormedAsTagger()
     ensures r.Success? ==>
       && (forall i, j :: 0 <= i < j < |b3.functions| ==> b3.functions[i].name != b3.functions[j].name)
       && (forall func <- b3.functions :: func.WellFormed(b3))
@@ -109,6 +113,7 @@ module Resolver {
       && (forall func0 <- functions, func1 <- functions :: func0.Name == func1.Name ==> func0 == func1)
       && (forall func <- functions :: func.WellFormed())
     ensures r.Success? ==> var functionMap := r.value;
+      && taggerMap.Keys !! functionMap.Keys
       && (forall functionName <- functionMap :: exists func <- b3.functions :: func.name == functionName)
       && (forall rawFunction <- b3.functions ::
             && rawFunction.name in functionMap
@@ -122,6 +127,8 @@ module Resolver {
       invariant functionMap.Keys == set func <- b3.functions[..n] :: func.name
       invariant MapIsInjective(functionMap)
       invariant forall name <- functionMap :: fresh(functionMap[name])
+      // user-defined functions don't have the same names as taggers
+      invariant taggerMap.Keys !! functionMap.Keys
       // functionMap organizes function-declaration objects correctly according to their names
       invariant forall functionName <- functionMap :: functionMap[functionName].Name == functionName
       // functions seen so far have distinct names
@@ -131,6 +138,9 @@ module Resolver {
     {
       var func := b3.functions[n];
       var name := func.name;
+      if name in taggerMap.Keys {
+        return Failure("function and tagger have the same name: " + name);
+      }
       if name in functionMap.Keys {
         return Failure("duplicate function name: " + name);
       }
@@ -151,9 +161,9 @@ module Resolver {
     return Success(functionMap);
   }
 
-  method ResolveFunctionSignature(func: Raw.Function, b3: Raw.Program, typeMap: map<string, TypeDecl>, taggerMap: map<string, Tagger>) returns (r: Result<Function, string>)
+  method ResolveFunctionSignature(func: Raw.Function, b3: Raw.Program, typeMap: map<string, TypeDecl>, taggerMap: map<string, Function>) returns (r: Result<Function, string>)
     requires forall typename :: b3.IsType(typename) <==> typename in BuiltInTypes || typename in typeMap
-    requires forall taggerName <- taggerMap :: taggerMap[taggerName].Name == taggerName
+    requires forall taggerName <- taggerMap :: taggerMap[taggerName].Name == taggerName && taggerMap[taggerName].WellFormedAsTagger()
     ensures r.Success? ==> func.SignatureWellFormed(b3)
     ensures r.Success? ==> fresh(r.value) && r.value.SignatureWellFormed(func)
   {
@@ -191,8 +201,9 @@ module Resolver {
         return Failure("use of undeclared tagger: " + tagName);
       }
       var tag := taggerMap[tagName];
-      if tag.ForType != resultType {
-        var msg := "tagger '" + tagName + "' is for type '" + tag.ForType.ToString() + "' and must agree with function result type '" + resultType.ToString() + "'";
+      var taggerForType := tag.Parameters[0].typ;
+      if taggerForType != resultType {
+        var msg := "tagger '" + tagName + "' is for type '" + taggerForType.ToString() + "' and must agree with function result type '" + resultType.ToString() + "'";
         return Result<Function, string>.Failure(msg);
       }
       maybeTag := Some(tag);
@@ -395,6 +406,8 @@ module Resolver {
       return Success(BoolType);
     } else if typename == IntTypeName {
       return Success(IntType);
+    } else if typename == TagTypeName {
+      return Success(TagType);
     }
 
     if typename !in typeMap {
@@ -425,7 +438,10 @@ module Resolver {
   {
     ghost predicate Valid() {
       && (forall typename :: b3.IsType(typename) <==> typename in BuiltInTypes || typename in typeMap)
-      && (forall functionName <- functionMap :: exists func <- b3.functions :: func.name == functionName)
+      && (forall functionName <- functionMap ::
+            || (exists func <- b3.taggers :: func.name == functionName)
+            || (exists func <- b3.functions :: func.name == functionName)
+         )
       && (forall rawFunction <- b3.functions ::
             && rawFunction.name in functionMap
             && var func := functionMap[rawFunction.name];

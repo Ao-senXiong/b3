@@ -28,14 +28,6 @@ module Verifier {
       typeMap := typeMap[typ := t];
     }
 
-    var taggerMap := map[];
-    for i := 0 to |b3.taggers| {
-      var tagger := b3.taggers[i];
-      var forType := I.DeclMappings.Type2STypeWithMap(tagger.ForType, typeMap);
-      var f := new SConstant.Function("_tagger_" + tagger.Name, [forType], I.DeclMappings.Type2STypeWithMap(Types.IntType, typeMap));
-      taggerMap := taggerMap[tagger := f];
-    }
-
     var functionMap := map[];
     for i := 0 to |b3.functions| {
       var func := b3.functions[i];
@@ -44,7 +36,7 @@ module Verifier {
       functionMap := functionMap[func := f];
     }
 
-    var declMap := I.DeclMappings(typeMap, taggerMap, functionMap);
+    var declMap := I.DeclMappings(typeMap, functionMap);
 
     // Add undifferentiated axioms to context (i.e., those axioms that don't explain specific functions)
     var context := RSolvers.CreateEmptyContext();

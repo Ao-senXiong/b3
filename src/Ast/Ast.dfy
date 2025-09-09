@@ -15,8 +15,7 @@ module Ast {
     reveals Procedure.SignatureWellFormed, Procedure.WellFormedHeader
     reveals Function, FParameter, FunctionDefinition
     provides Function.Name, Function.Parameters, Function.ResultType, Function.Tag, Function.Definition, Function.ExplainedBy, FParameter.injective
-    reveals Function.SignatureWellFormed, Function.WellFormed, FParameter.WellFormed, FunctionDefinition.WellFormed
-    reveals Tagger, Tagger.Name, Tagger.ForType, Tagger.WellFormed
+    reveals Function.SignatureWellFormed, Function.WellFormed, Function.WellFormedAsTagger, FParameter.WellFormed, FunctionDefinition.WellFormed
     reveals Axiom, Axiom.WellFormed
     provides Axiom.Explains, Axiom.Expr
     provides Variable.name, Variable.typ
@@ -34,7 +33,7 @@ module Ast {
 
   type Type = Types.Type
 
-  datatype Program = Program(types: seq<Types.TypeDecl>, taggers: seq<Tagger>, functions: seq<Function>, axioms: seq<Axiom>, procedures: seq<Procedure>)
+  datatype Program = Program(types: seq<Types.TypeDecl>, functions: seq<Function>, axioms: seq<Axiom>, procedures: seq<Procedure>)
   {
     predicate WellFormed()
       reads procedures, functions
@@ -132,31 +131,15 @@ module Ast {
 
   type ParameterMode = Raw.ParameterMode
 
-  class Tagger extends DeclarationMarker {
-    const Name: string
-    const ForType: Type
-
-    constructor (name: string, forType: Type)
-      ensures Name == name && ForType == forType
-    {
-      Name := name;
-      ForType := forType;
-    }
-
-    predicate WellFormed() {
-      true
-    }
-  }
-
   class Function extends DeclarationMarker {
     const Name: string
     const Parameters: seq<FParameter>
     const ResultType: Type
-    const Tag: Option<Tagger>
+    const Tag: Option<Function>
     var Definition: Option<FunctionDefinition>
     var ExplainedBy: seq<Axiom>
 
-    constructor (name: string, parameters: seq<FParameter>, resultType: Type, maybeTag: Option<Tagger>)
+    constructor (name: string, parameters: seq<FParameter>, resultType: Type, maybeTag: Option<Function>)
       ensures Name == name && Parameters == parameters && ResultType == resultType && Tag == maybeTag && Definition == None
       ensures ExplainedBy == []
     {
@@ -177,7 +160,7 @@ module Ast {
       && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].injective == func.parameters[i].injective)
       && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].WellFormed())
       && (if func.tag == None then Tag == None else Tag.Some? && Tag.value.Name == func.tag.value)
-      && (Tag.Some? ==> Tag.value.ForType == ResultType)
+      && (Tag.Some? ==> var tagger := Tag.value; |tagger.Parameters| == 1 && tagger.Parameters[0].typ == ResultType)
     }
 
     predicate WellFormed()
@@ -186,7 +169,15 @@ module Ast {
       && (forall i :: 0 <= i < |Parameters| ==> Parameters[i].WellFormed())
       && (forall i, j :: 0 <= i < j < |Parameters| ==> Parameters[i].name != Parameters[j].name)
       && (Definition == None || Definition.value.WellFormed())
-      && (Tag.Some? ==> Tag.value.ForType == ResultType)
+      && (Tag.Some? ==> var tagger := Tag.value; |tagger.Parameters| == 1 && tagger.Parameters[0].typ == ResultType)
+    }
+
+    predicate WellFormedAsTagger()
+      reads this
+    {
+      && WellFormed()
+      && |Parameters| == 1
+      && ResultType == Types.TagType
     }
   }
 

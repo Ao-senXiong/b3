@@ -18,7 +18,7 @@ module Incarnations {
 
   type RExpr = RSolvers.RExpr
 
-  datatype DeclMappings = DeclMappings(typeMap: map<Types.TypeDecl, STypeDecl>, taggerMap: map<Tagger, STypedDeclaration>, functionMap: map<Function, STypedDeclaration>)
+  datatype DeclMappings = DeclMappings(typeMap: map<Types.TypeDecl, STypeDecl>, functionMap: map<Function, STypedDeclaration>)
   {
     function Type2SType(typ: Type): SType {
       Type2STypeWithMap(typ, typeMap)
@@ -27,7 +27,7 @@ module Incarnations {
     static function Type2STypeWithMap(typ: Type, typeMap: map<Types.TypeDecl, STypeDecl>): SType {
       match typ
       case BoolType => SBool
-      case IntType => SInt
+      case IntType | TagType => SInt
       case UserType(decl) =>
         assume {:axiom} decl in typeMap;
         var sTypeDecl := typeMap[decl];
@@ -174,13 +174,7 @@ module Incarnations {
         var rArgs := SubstituteList(args);
         assume {:axiom} func in declMap.functionMap;
         var f := declMap.functionMap[func];
-        var t := match func.Tag {
-          case None => None
-          case Some(tagger) =>
-            assume {:axiom} tagger in declMap.taggerMap;
-            Some(declMap.taggerMap[tagger])
-        };
-        RExpr.FuncAppl(RSolvers.UserDefinedFunction(func, f, t), rArgs)
+        RExpr.FuncAppl(RSolvers.UserDefinedFunction(func, f, None), rArgs)
       case LabeledExpr(_, body) =>
         // TODO: do something with the label
         Substitute(body)
