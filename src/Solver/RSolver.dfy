@@ -5,7 +5,7 @@
 module RSolvers {
   import SolverExpr
   import Solvers
-  import Z3SmtSolver
+  import ExternalSolvers
   import Ast
   import opened Std.Wrappers
   import opened Basics
@@ -504,7 +504,7 @@ module RSolvers {
   method CreateEngine(cli: CLI.CliResult) returns (r: REngine)
     ensures r.Valid() && fresh(r.Repr)
   {
-    var z3 := Z3SmtSolver.CreateZ3SolverEngine("solver-log" in cli.options);
+    var z3 := ExternalSolvers.Create(ExternalSolvers.Z3, "solver-log" in cli.options);
     var state := new Solvers.SolverState(z3);
     r := new REngine.New(state);
   }
