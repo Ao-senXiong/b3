@@ -6,6 +6,9 @@ JS_TARGET = "bin/b3.js"
 
 all: build lit
 
+clean:
+	rm -rf bin target/cs/bin target/java/bin
+
 build:
 	dafny build $(PROJECT_FILE) --output $(TARGET)
 
