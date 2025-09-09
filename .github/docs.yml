@@ -1,0 +1,15 @@
+name: Deploy docs
+on: push
+jobs:
+deploy:
+runs-on: ubuntu-latest
+steps:
+- uses: actions/checkout@v3
+- run: |
+cd doc/refman
+pip install sphinx myst-parser renku-sphinx-theme
+make
+- uses: peaceiris/actions-gh-pages@v3
+with:
+github_token: ${{ secrets.GITHUB_TOKEN }}
+publish_dir: doc/refman/_build/html
