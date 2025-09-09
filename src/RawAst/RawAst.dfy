@@ -6,7 +6,7 @@ module RawAst {
   // Top-level program
 
   // A raw program reflects program that has been parsed.
-  datatype Program = Program(types: seq<TypeName>, taggers: seq<Tagger>, functions: seq<Function>, axioms: seq<Expr>, procedures: seq<Procedure>)
+  datatype Program = Program(types: seq<TypeName>, taggers: seq<Tagger>, functions: seq<Function>, axioms: seq<Axiom>, procedures: seq<Procedure>)
   {
     // A raw program is well-formed when its identifiers resolve to declarations and some basic
     // properties hold:
@@ -89,6 +89,15 @@ module RawAst {
       && (forall e <- when :: e.WellFormed(b3, whenScope))
       // body is well-formed
       && (body.WellFormed(b3, bodyScope))
+    }
+  }
+
+  // Axioms
+
+  datatype Axiom = Axiom(explains: seq<string>, expr: Expr)
+  {
+    predicate WellFormed(b3: Program, scope: Scope) {
+      expr.WellFormed(b3, scope)
     }
   }
 

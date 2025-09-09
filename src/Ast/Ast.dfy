@@ -12,9 +12,11 @@ module Ast {
     provides Procedure.Name, Procedure.Parameters, Procedure.Pre, Procedure.Post, Procedure.Body
     reveals Procedure.SignatureWellFormed, Procedure.WellFormedHeader
     reveals Function, FParameter, FunctionDefinition
-    provides Function.Name, Function.Parameters, Function.ResultType, Function.Tag, Function.Definition, FParameter.injective
+    provides Function.Name, Function.Parameters, Function.ResultType, Function.Tag, Function.Definition, Function.ExplainedBy, FParameter.injective
     reveals Function.SignatureWellFormed, Function.WellFormed, FParameter.WellFormed, FunctionDefinition.WellFormed
     reveals Tagger, Tagger.Name, Tagger.ForType, Tagger.WellFormed
+    reveals Axiom, Axiom.WellFormed
+    provides Axiom.Explains, Axiom.Expr
     provides Variable.name, Variable.typ
     provides Variable.IsMutable, LocalVariable.IsMutable, Parameter.IsMutable, FParameter.IsMutable
     provides Parameter.mode, Parameter.oldInOut
@@ -30,7 +32,7 @@ module Ast {
 
   type Type = Types.Type
 
-  datatype Program = Program(types: seq<Types.TypeDecl>, taggers: seq<Tagger>, functions: seq<Function>, axioms: seq<Expr>, procedures: seq<Procedure>)
+  datatype Program = Program(types: seq<Types.TypeDecl>, taggers: seq<Tagger>, functions: seq<Function>, axioms: seq<Axiom>, procedures: seq<Procedure>)
   {
     predicate WellFormed()
       reads procedures, functions
@@ -150,15 +152,18 @@ module Ast {
     const ResultType: Type
     const Tag: Option<Tagger>
     var Definition: Option<FunctionDefinition>
+    var ExplainedBy: seq<Axiom>
 
     constructor (name: string, parameters: seq<FParameter>, resultType: Type, maybeTag: Option<Tagger>)
       ensures Name == name && Parameters == parameters && ResultType == resultType && Tag == maybeTag && Definition == None
+      ensures ExplainedBy == []
     {
       Name := name;
       Parameters := parameters;
       ResultType := resultType;
       Tag := maybeTag;
       Definition := None;
+      ExplainedBy := [];
     }
 
     ghost predicate SignatureWellFormed(func: Raw.Function) {
@@ -211,6 +216,22 @@ module Ast {
 
     function DeclToString(): string {
       (if injective then "injective " else "") + name + ": " + typ.ToString()
+    }
+  }
+
+  class Axiom {
+    const Explains: seq<Function>
+    const Expr: Expr
+
+    constructor (explains: seq<Function>, expr: Expr)
+      ensures Explains == explains && Expr == expr
+    {
+      this.Explains := explains;
+      this.Expr := expr;
+    }
+
+    predicate WellFormed() {
+      Expr.WellFormed()
     }
   }
 

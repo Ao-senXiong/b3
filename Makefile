@@ -4,7 +4,7 @@ INPUT = "test/verifier/basics.b3"
 EXPECTED_OUTPUT = "input.expect"
 JS_TARGET = "bin/b3.js"
 
-all: build lit
+all: build lit test-cs
 
 clean:
 	rm -rf bin target/cs/bin target/java/bin

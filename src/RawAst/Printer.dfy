@@ -68,9 +68,16 @@ module Printer {
     }
   }
 
-  method AxiomDecl(expr: Expr) {
-    print "axiom ";
-    Expression(expr);
+  method AxiomDecl(axiom: Axiom) {
+    print "axiom";
+    var prefix := " explains ";
+    for i := 0 to |axiom.explains| {
+      print prefix, axiom.explains[i];
+      prefix := ", ";
+    }
+    print "\n";
+    Indent(IndentAmount);
+    Expression(axiom.expr, MultipleLines(IndentAmount));
     print "\n";
   }
 

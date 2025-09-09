@@ -46,13 +46,16 @@ module Verifier {
 
     var declMap := I.DeclMappings(typeMap, taggerMap, functionMap);
 
-    // Add axioms to context
+    // Add undifferentiated axioms to context (i.e., those axioms that don't explain specific functions)
     var context := RSolvers.CreateEmptyContext();
     var axiomIncarnations := I.Incarnations.Empty(declMap);
     for i := 0 to |b3.axioms| {
       var axiom := b3.axioms[i];
-      var cond := axiomIncarnations.REval(axiom);
-      context := RSolvers.Extend(context, cond);
+      assert axiom.WellFormed();
+      if axiom.Explains == [] {
+        var cond := axiomIncarnations.REval(axiom.Expr);
+        context := RSolvers.Extend(context, cond);
+      }
     }
 
     // Verify each procedure

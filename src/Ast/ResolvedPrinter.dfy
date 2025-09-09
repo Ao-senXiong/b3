@@ -76,9 +76,16 @@ module ResolvedPrinter {
     }
   }
 
-  method AxiomDecl(expr: Expr) {
-    print "axiom ";
-    Expression(expr);
+  method AxiomDecl(axiom: Axiom) {
+    print "axiom";
+    var prefix := " explains ";
+    for i := 0 to |axiom.Explains| {
+      print prefix, axiom.Explains[i].Name;
+      prefix := ", ";
+    }
+    print "\n";
+    Indent(IndentAmount);
+    Expression(axiom.Expr, MultipleLines(IndentAmount));
     print "\n";
   }
 

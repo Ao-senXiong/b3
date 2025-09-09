@@ -133,7 +133,7 @@ module Parser {
     | TType(typeDecl: Types.TypeName)
     | TTagger(taggerDecl: Tagger)
     | TFunction(funcDecl: Function)
-    | TAxiom(axiomDecl: Expr)
+    | TAxiom(axiomDecl: Axiom)
     | TProc(procDecl: Procedure)
 
   const parseTopLevelDecl: B<TopLevelDecl> :=
@@ -145,7 +145,7 @@ module Parser {
          parseProcDecl.M(decl => TProc(decl))
        ])
 
-  function SeparateTopLevelDecls(decls: seq<TopLevelDecl>): (seq<Types.TypeName>, seq<Tagger>, seq<Function>, seq<Expr>, seq<Procedure>) {
+  function SeparateTopLevelDecls(decls: seq<TopLevelDecl>): (seq<Types.TypeName>, seq<Tagger>, seq<Function>, seq<Axiom>, seq<Procedure>) {
     if decls == [] then ([], [], [], [], []) else
       var (tt, gg, ff, aa, pp) := SeparateTopLevelDecls(decls[1..]);
       match decls[0]
@@ -182,8 +182,10 @@ module Parser {
   const parseWhenClause: B<Expr> :=
     T("when").e_I(parseExpr)
 
-  const parseAxiomDecl: B<Expr> :=
-    T("axiom").e_I(parseExpr)
+  const parseAxiomDecl: B<Axiom> :=
+    T("axiom")
+    .e_I(T("explains").e_I(parseCommaDelimitedSeq(parseId)).Option())
+    .I_I(parseExpr).M2(MId, (explains, expr) => Axiom(if explains == None then [] else explains.value, expr))
 
   const parseProcDecl: B<Procedure> :=
     T("procedure")

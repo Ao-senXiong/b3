@@ -105,6 +105,7 @@ module Resolver {
       && (forall i, j :: 0 <= i < j < |b3.functions| ==> b3.functions[i].name != b3.functions[j].name)
       && (forall func <- b3.functions :: func.WellFormed(b3))
     ensures r.Success? ==> var functions: set<Function> := r.value.Values;
+      && fresh(functions)
       && (forall func0 <- functions, func1 <- functions :: func0.Name == func1.Name ==> func0 == func1)
       && (forall func <- functions :: func.WellFormed())
     ensures r.Success? ==> var functionMap := r.value;
@@ -235,22 +236,47 @@ module Resolver {
     return Success(());
   }
 
-  method ResolveAllAxioms(ers: ExprResolverState) returns (r: Result<seq<Expr>, string>)
+  method ResolveAllAxioms(ers: ExprResolverState) returns (r: Result<seq<Axiom>, string>)
     requires ers.Valid()
+    requires forall functionName <- ers.functionMap :: ers.functionMap[functionName].WellFormed()
+    modifies ers.functionMap.Values
+    ensures forall functionName <- ers.functionMap :: ers.functionMap[functionName].WellFormed()
     ensures r.Success? ==> forall axiom <- ers.b3.axioms :: axiom.WellFormed(ers.b3, {})
     ensures r.Success? ==> forall axiom <- r.value :: axiom.WellFormed()
   {
     var b3 := ers.b3;
-    var resolvedAxioms: seq<Expr> := [];
+    var resolvedAxioms: seq<Axiom> := [];
     for n := 0 to |b3.axioms|
+      invariant forall functionName <- ers.functionMap :: ers.functionMap[functionName].WellFormed()
       // the axioms seen so far are well-formed
       invariant forall axiom <- b3.axioms[..n] :: axiom.WellFormed(b3, {})
       invariant forall axiom <- resolvedAxioms :: axiom.WellFormed()
    {
       var axiom := b3.axioms[n];
+      var resolvedExplains := [];
+      for i := 0 to |axiom.explains|
+        invariant forall functionName <- ers.functionMap :: ers.functionMap[functionName].WellFormed()
+        invariant forall func <- resolvedExplains :: func in ers.functionMap.Values
+      {
+        var name := axiom.explains[i];
+        if name !in ers.functionMap {
+          return Failure("undeclared function: " + name);
+        }
+        var func := ers.functionMap[name];
+        assert func in ers.functionMap.Values;
+        resolvedExplains := resolvedExplains + [func];
+      }
       assert (map[] as map<string, Variable>).Keys == {};
-      var expr :- ResolveExpr(axiom, ers, map[]);
-      resolvedAxioms := resolvedAxioms + [expr];
+      var expr :- ResolveExpr(axiom.expr, ers, map[]);
+
+      var resolvedAxiom := new Axiom(resolvedExplains, expr);
+      for i := 0 to |resolvedExplains|
+        invariant forall functionName <- ers.functionMap :: ers.functionMap[functionName].WellFormed()
+      {
+        var func := resolvedExplains[i];
+        func.ExplainedBy := func.ExplainedBy + [resolvedAxiom];
+      }
+      resolvedAxioms := resolvedAxioms + [resolvedAxiom];
     }
 
     return Success(resolvedAxioms);
