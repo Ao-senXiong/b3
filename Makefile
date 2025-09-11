@@ -68,3 +68,4 @@ b3:
 
 docs:
 	cd doc ; make
+	cd doc/refman ; make
