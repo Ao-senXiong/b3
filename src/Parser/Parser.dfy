@@ -123,6 +123,10 @@ module Parser {
     parser.RepSep(Sym(","))
   }
 
+  function parseNonemptyCommaDelimitedSeq<X>(parser: B<X>): B<seq<X>> {
+    parser.I_I(Sym(",").e_I(parser).Rep()).M2(MId, (x, xs) => [x] + xs)
+  }
+
   function Unfold3l<X, Y, Z>(r: ((X, Y), Z)): (X, Y, Z) {
     (r.0.0, r.0.1, r.1)
   }
@@ -184,7 +188,7 @@ module Parser {
 
   const parseAxiomDecl: B<Axiom> :=
     T("axiom")
-    .e_I(T("explains").e_I(parseCommaDelimitedSeq(parseId)).Option())
+    .e_I(T("explains").e_I(parseNonemptyCommaDelimitedSeq(parseId)).Option())
     .I_I(parseExpr).M2(MId, (explains, expr) => Axiom(if explains == None then [] else explains.value, expr))
 
   const parseProcDecl: B<Procedure> :=
@@ -358,7 +362,7 @@ module Parser {
    *               | AtomicExpr
    * EndlessExpr ::= "if" Expr "then" Expr "else" Expr
    *               | "var" Id ":" Type ":=" Expr ";" Expr
-   *               | ( "forall" | "exists" ) Id ":" Type ( "pattern" Expr*, )* "::" Expr
+   *               | ( "forall" | "exists" ) Id ":" Type ( "pattern" Expr*, )* Expr
    *               | Id ":" Expr
    * AtomicExpr ::= "false" | "true"
    *              | nat
@@ -460,9 +464,9 @@ module Parser {
         Sym(":=").e_I(c("expr")).I_I(c("expr")).M2(MId, (rhs, body) => LetExpr(name, optionalType, rhs, body)))
       ),
       Or([T("forall").M(_ => true), T("exists").M(_ => false)]).Then(universal =>
-        parseIdType.Then(p => var (name: string, typ: Types.TypeName) := p;
+        parseNonemptyCommaDelimitedSeq(parseIdType.M2(MId, (name: string, typ: Types.TypeName) => Binding(name, typ))).Then(bindings =>
           parsePattern(c).Rep().Then(patterns =>
-            Sym("::").e_I(c("expr")).M(body => QuantifierExpr(universal, name, typ, patterns, body))
+            c("expr").M(body => QuantifierExpr(universal, bindings, patterns, body))
           )
         )
       ),
@@ -471,7 +475,7 @@ module Parser {
   }
 
   function parsePattern(c: ExprRecSel): B<Pattern> {
-    T("pattern").e_I(parseCommaDelimitedSeq(c("expr"))).M(exprs => Pattern(exprs))
+    T("pattern").e_I(parseNonemptyCommaDelimitedSeq(c("expr"))).M(exprs => Pattern(exprs))
   }
 
   function parseAtomicExpr(c: ExprRecSel): B<Expr> {

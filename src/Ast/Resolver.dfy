@@ -863,17 +863,24 @@ module Resolver {
         assert varMap'.Keys == varMap.Keys + {name};
         var rBody :- ResolveExpr(body, ers, varMap');
         r := LetExpr(letVariable, rRhs, rBody);
-      case QuantifierExpr(univ, name, typeName, patterns, body) =>
-        if !Raw.LegalVariableName(name) {
-          return Failure("illegal variable name: " + name);
+      case QuantifierExpr(univ, bindings, patterns, body) =>
+        var boundVars, varMap' := [], varMap;
+        for n := 0 to |bindings|
+          invariant varMap'.Keys == varMap.Keys + set binding <- bindings[..n] :: binding.name
+        {
+          var binding := bindings[n];
+          if !Raw.LegalVariableName(binding.name) {
+            return Failure("illegal variable name: " + binding.name);
+          }
+          var typ :- ResolveType(binding.typ, ers.typeMap);
+          var quantifiedVariable := new LocalVariable(binding.name, false, typ);
+          boundVars := boundVars + [quantifiedVariable];
+          varMap' := varMap'[binding.name := quantifiedVariable];
         }
-        var typ :- ResolveType(typeName, ers.typeMap);
-        var quantifiedVariable := new LocalVariable(name, false, typ);
-        var varMap' := varMap[name := quantifiedVariable];
-        assert varMap'.Keys == varMap.Keys + {name};
+        assert varMap'.Keys == varMap.Keys + set binding <- bindings :: binding.name;
         var b :- ResolveExpr(body, ers, varMap');
         var trs :- ResolvePatterns(patterns, ers, varMap');
-        r := QuantifierExpr(univ, quantifiedVariable, trs, b);
+        r := QuantifierExpr(univ, boundVars, trs, b);
     }
     return Success(r);
   }

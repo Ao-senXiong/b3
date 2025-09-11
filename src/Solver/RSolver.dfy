@@ -146,7 +146,7 @@ module RSolvers {
         (if univ then "(forall " else "(exists ") +
         BoundVarsToString(vv) +
         PatternsToString(patterns, this) +
-        " :: " + body.ToString() + ")"
+        " " + body.ToString() + ")"
     }
 
     static function BoundVarsToString(vv: seq<SolverExpr.SConstant>): string {

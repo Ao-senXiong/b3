@@ -346,7 +346,7 @@ module Ast {
     | FunctionCallExpr(func: Function, args: seq<Expr>)
     | LabeledExpr(lbl: Label, body: Expr)
     | LetExpr(v: Variable, rhs: Expr, body: Expr)
-    | QuantifierExpr(univ: bool, v: Variable, patterns: seq<Pattern>, body: Expr)
+    | QuantifierExpr(univ: bool, vv: seq<Variable>, patterns: seq<Pattern>, body: Expr)
   {
     function ExprType(): Type {
       match this
@@ -391,7 +391,8 @@ module Ast {
         body.WellFormed()
       case LetExpr(_, rhs, body) =>
         rhs.WellFormed() && body.WellFormed()
-      case QuantifierExpr(_, _, patterns, body) =>
+      case QuantifierExpr(_, vv, patterns, body) =>
+        // SOON: && (forall i, j :: 0 <= i < j < |vv| ==> vv[i].name != vv[j].name)
         && (forall tr <- patterns :: tr.WellFormed())
         && body.WellFormed()
     }
@@ -423,12 +424,18 @@ module Ast {
         ParenthesisWrap(opStrength <= contextStrength,
           v.DeclToString() + " := " + rhs.ToString() + " " + body.ToString(opStrength)
         )
-      case QuantifierExpr(univ, v, patterns, body) =>
+      case QuantifierExpr(univ, vv, patterns, body) =>
         var opStrength := Operator.EndlessOperatorBindingStrength;
         ParenthesisWrap(opStrength <= contextStrength,
           var opStrength := Operator.EndlessOperatorBindingStrength;
-          (if univ then "forall " else "exists ") + v.DeclToString() + Pattern.ListToString(patterns) + " :: " + body.ToString(opStrength)
+          (if univ then "forall " else "exists ") +
+          DeclsToString(vv) +
+          Pattern.ListToString(patterns) + " " + body.ToString(opStrength)
         )
+    }
+
+    static function DeclsToString(vv: seq<Variable>): string {
+      Comma(SeqMap(vv, (v: Variable) => v.DeclToString()), ", ")
     }
 
     static function ListToString(exprs: seq<Expr>): string {
@@ -468,7 +475,7 @@ module Ast {
     static function CreateForall(v: Variable, body: Expr): (r: Expr)
       requires body.WellFormed()
       ensures r.WellFormed()
-    { QuantifierExpr(true, v, [], body) }
+    { QuantifierExpr(true, [v], [], body) }
 
     static function CreateAnd(e0: Expr, e1: Expr): (r: Expr)
       requires e0.WellFormed() && e1.WellFormed()

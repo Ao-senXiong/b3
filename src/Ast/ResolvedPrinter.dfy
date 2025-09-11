@@ -206,6 +206,14 @@ module ResolvedPrinter {
     BlockAsStatementList(body, indent, followedByEndCurly);
   }
 
+  method Bindings(prefix: string, vv: seq<Variable>) {
+    var prefix := prefix;
+    for i := 0 to |vv| {
+      IdTypeDecl(prefix, vv[i].name, vv[i].typ);
+      prefix := ", ";
+    }
+  }
+
   method IdTypeDecl(prefix: string, name: string, typ: Types.Type) {
     print prefix, name, ": ", typ.ToString();
   }
@@ -328,20 +336,16 @@ module ResolvedPrinter {
       Expression(rhs);
       format.Space();
       Expression(body, format);
-    case QuantifierExpr(univ, v, patterns, body) =>
-      IdTypeDecl(if univ then "forall " else "exists ", v.name, v.typ);
+    case QuantifierExpr(univ, vv, patterns, body) =>
+      Bindings(if univ then "forall " else "exists ", vv);
       var ind := format.More();
-      if patterns == [] {
-        print " ";
-      } else {
+      if patterns != [] {
         for i := 0 to |patterns| {
           ind.Space();
           print "pattern ";
           ExpressionList(patterns[i].exprs);
         }
-        format.Space();
       }
-      print "::";
       ind.Space();
       Expression(body, ind);
   }
