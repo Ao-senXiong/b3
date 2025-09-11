@@ -2,6 +2,7 @@
 //   * turning injective function parameters into inverse functions and their corresponding axioms
 //   * creating a tag constant (nullary function) for every tagged function, along with its definition axiom
 //   * declaring a tag axiom for each tagged function
+//   * turning each function definition (body) into an axiom
 
 module FunctionDesugaring {
   import opened Ast
@@ -29,11 +30,18 @@ module FunctionDesugaring {
       invariant GoodExtension(b3.functions, b3.axioms, functions, axioms)
     {
       var func := b3.functions[i];
+
       var rr :- AddInverseFunctions(func, b3.functions, b3.axioms, functions, axioms);
       functions, axioms := rr.0, rr.1;
+
       if func.Tag.Some? {
         rr :- AddFunctionTag(func, b3.functions, b3.axioms, functions, axioms);
         functions, axioms := rr.0, rr.1;
+      }
+
+      if func.Definition.Some? {
+        var axiom := DefinitionAxiom(func);
+        axioms := axioms + [axiom];
       }
     }
 
@@ -81,9 +89,9 @@ module FunctionDesugaring {
         // axiom explains F
         //   forall x: X, y: Y pattern F(x, y)
         //     F.x(F(x, y)) == x
-        var boundVars, pattern, lhs := GenerateAxiomPieces(func, inverseFunction);
+        var boundVars, pattern, lhs := GenerateAxiomPieces(func, Some(inverseFunction));
         var rhs := IdExpr(boundVars[j]);
-        var axiom := AssembleAxiom(func, boundVars, pattern, lhs, rhs);
+        var axiom := AssembleAxiom(func, boundVars, pattern, None, lhs, rhs);
         axioms := axioms + [axiom];
       }
     }
@@ -116,20 +124,50 @@ module FunctionDesugaring {
     // axiom explains F
     //   forall x: X, y: Y pattern F(x, y)
     //     G(F(x, y)) == F.tag()
-    var boundVars, pattern, lhs := GenerateAxiomPieces(func, func.Tag.value);
+    var boundVars, pattern, lhs := GenerateAxiomPieces(func, Some(func.Tag.value));
     var rhs := FunctionCallExpr(Ftag, []);
-    var axiom := AssembleAxiom(func, boundVars, pattern, lhs, rhs);
+    var axiom := AssembleAxiom(func, boundVars, pattern, None, lhs, rhs);
     axioms := axioms + [axiom];
 
     return Success((functions, axioms));
+  }
+
+  // Given "func" as "function F(x: X, y: Y): S when W { Body }", generate
+  //
+  //     axiom explains F
+  //       forall x: X, y: Y
+  //         pattern F(x, y)
+  //         W ==>
+  //         F(x, y) == Body
+  //
+  // and add this axiom to func.ExplainedBy.
+  method DefinitionAxiom(func: Function) returns (axiom: Axiom)
+    requires func.WellFormed() && func.Definition.Some?
+    modifies func`ExplainedBy
+    ensures axiom.WellFormed()
+  {
+    var def := func.Definition.value;
+
+    var boundVars, pattern, lhs := GenerateAxiomPieces(func, None);
+    var antecedent: Option<Expr> := None;
+    for i := 0 to |def.when|
+      invariant antecedent.Some? ==> antecedent.value.WellFormed()
+    {
+      var when := def.when[i];
+      antecedent := Some(
+        match antecedent
+        case None => when
+        case Some(a) => OperatorExpr(Operator.LogicalAnd, [a, when]));
+    }
+    axiom := AssembleAxiom(func, boundVars, pattern, antecedent, lhs, def.body);
   }
 
   // Given "func" as "function F(x: X, y: Y): S", generate
   //     * boundVars -- a list of fresh bound variables:  x: X, y: Y
   //     * pattern -- pattern F(x, y)
   //     * lhs -- wrapper(F(x, y))
-  method GenerateAxiomPieces(func: Function, wrapper: Function) returns (boundVars: seq<Variable>, pattern: Pattern, lhs: Expr)
-    requires |wrapper.Parameters| == 1
+  method GenerateAxiomPieces(func: Function, wrapper: Option<Function>) returns (boundVars: seq<Variable>, pattern: Pattern, lhs: Expr)
+    requires wrapper.Some? ==> |wrapper.value.Parameters| == 1
     ensures |boundVars| == |func.Parameters| && pattern.WellFormed() && lhs.WellFormed()
   {
     boundVars := [];
@@ -143,7 +181,11 @@ module FunctionDesugaring {
 
     var Fxy := FunctionCallExpr(func, SeqMap(boundVars, (v: Variable) => IdExpr(v)));
     pattern := Pattern([Fxy]);
-    lhs := FunctionCallExpr(wrapper, [Fxy]);
+    if wrapper == None {
+      lhs := Fxy;
+    } else {
+      lhs := FunctionCallExpr(wrapper.value, [Fxy]);
+    }
   }
 
   // Generate:
@@ -151,15 +193,21 @@ module FunctionDesugaring {
   //     axiom explains func
   //       forall boundVars
   //         pattern
+  //         antecedent ==>
   //         lhs == rhs
   //
   // and add this axiom to func.ExplainedBy.
-  method AssembleAxiom(func: Function, boundVars: seq<Variable>, pattern: Pattern, lhs: Expr, rhs: Expr) returns (axiom: Axiom)
-    requires pattern.WellFormed() && lhs.WellFormed() && rhs.WellFormed()
+  method AssembleAxiom(func: Function, boundVars: seq<Variable>, pattern: Pattern, antecedent: Option<Expr>, lhs: Expr, rhs: Expr) returns (axiom: Axiom)
+    requires pattern.WellFormed()
+    requires antecedent.Some? ==> antecedent.value.WellFormed()
+    requires lhs.WellFormed() && rhs.WellFormed()
     modifies func`ExplainedBy
     ensures axiom.WellFormed()
   {
     var body := OperatorExpr(Operator.Eq, [lhs, rhs]);
+    if antecedent.Some? {
+      body := OperatorExpr(Operator.LogicalImp, [antecedent.value, body]);
+    }
     var q;
     if |boundVars| == 0 {
       q := body;
