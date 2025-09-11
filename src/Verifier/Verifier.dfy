@@ -38,15 +38,19 @@ module Verifier {
 
     var declMap := I.DeclMappings(typeMap, functionMap);
 
-    // Add undifferentiated axioms to context (i.e., those axioms that don't explain specific functions)
+    // Add undifferentiated axioms to context (i.e., those axioms that don't explain specific functions).
+    // For the other axioms (i.e., those that explain functions), do the .REval and add them to the axiomMap
     var context := RSolvers.CreateEmptyContext();
     var axiomIncarnations := I.Incarnations.Empty(declMap);
+    var axiomMap := map[];
     for i := 0 to |b3.axioms| {
       var axiom := b3.axioms[i];
       assert axiom.WellFormed();
+      var cond := axiomIncarnations.REval(axiom.Expr);
       if axiom.Explains == [] {
-        var cond := axiomIncarnations.REval(axiom.Expr);
         context := RSolvers.Extend(context, cond);
+      } else {
+        axiomMap := axiomMap[axiom := cond];
       }
     }
 
@@ -55,14 +59,14 @@ module Verifier {
     for i := 0 to |b3.procedures| {
       var proc := b3.procedures[i];
       print "Verifying ", proc.Name, " ...\n";
-      VerifyProcedure(proc, context, declMap, cli);
+      VerifyProcedure(proc, context, declMap, axiomMap, cli);
     }
   }
 
-  method VerifyProcedure(proc: Ast.Procedure, context_in: RSolvers.RContext, declMap: I.DeclMappings, cli: CLI.CliResult)
+  method VerifyProcedure(proc: Ast.Procedure, context_in: RSolvers.RContext, declMap: I.DeclMappings, axiomMap: map<Axiom, RSolvers.RExpr>, cli: CLI.CliResult)
     requires AstValid.Procedure(proc)
   {
-    var smtEngine := RSolvers.CreateEngine(cli);
+    var smtEngine := RSolvers.CreateEngine(axiomMap, cli);
     var preIncarnations, bodyIncarnations, postIncarnations := CreateProcIncarnations(proc.Parameters, declMap);
 
     {

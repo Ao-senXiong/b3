@@ -277,7 +277,7 @@ module ResolvedPrinter {
     match expr
     case BLiteral(value) => print value;
     case ILiteral(value) => print value;
-    case CustomLiteral(s, typ) => print "|", s, ": ", typ, "|";
+    case CustomLiteral(s, typ) => print "|", s, ": ", typ.ToString(), "|";
     case IdExpr(v) => print v.name;
     case OperatorExpr(op, args) =>
       if op == Operator.IfThenElse && op.ArgumentCount() == |args| {

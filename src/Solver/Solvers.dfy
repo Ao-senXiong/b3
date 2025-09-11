@@ -11,7 +11,7 @@ module Solvers {
     provides SolverState.stack, SolverState.declarations
     reveals SolverState.IsTopMemo
     provides SolverState.Push, SolverState.Pop
-    provides SolverState.DeclareType, SolverState.DeclareSymbol, SolverState.AddAssumption, SolverState.Prove
+    provides SolverState.DeclareType, SolverState.AddDeclarationMarker, SolverState.DeclareSymbol, SolverState.AddAssumption, SolverState.Prove
     provides Smt, Basics, SolverExpr, DeclarationMarkers
 
   datatype ProofResult =
@@ -61,7 +61,7 @@ module Solvers {
     method Push(memo: Memo)
       requires Valid()
       modifies Repr
-      ensures Valid() && stack == Cons((memo, declarations), old(stack))
+      ensures Valid() && stack == Cons((memo, declarations), old(stack)) && declarations == old(declarations)
     {
       smtEngine.Push();
       stack := Cons((memo, declarations), stack);
@@ -70,7 +70,7 @@ module Solvers {
     method Pop()
       requires Valid() && stack.Cons?
       modifies Repr
-      ensures Valid() && stack == old(stack).tail
+      ensures Valid() && stack == old(stack).tail && declarations == old(stack).head.1
     {
       smtEngine.CommandStacks().AboutDoubleCons();
       smtEngine.Pop();
@@ -82,7 +82,7 @@ module Solvers {
     method AddAssumption(expr: SExpr)
       requires Valid()
       modifies Repr
-      ensures Valid() && stack == old(stack)
+      ensures Valid() && stack == old(stack) && declarations == old(declarations)
     {
       smtEngine.Assume(expr.ToString());
     }
@@ -90,16 +90,24 @@ module Solvers {
     method DeclareType(decl: STypeDecl, marker: DeclarationMarker)
       requires Valid()
       modifies Repr
-      ensures Valid() && stack == old(stack)
+      ensures Valid() && stack == old(stack) && declarations == old(declarations) + {marker}
     {
       smtEngine.DeclareSort(decl.name);
+      declarations := declarations + {marker};
+    }
+
+    method AddDeclarationMarker(marker: DeclarationMarker)
+      requires Valid()
+      modifies Repr
+      ensures Valid() && stack == old(stack) && declarations == old(declarations) + {marker}
+    {
       declarations := declarations + {marker};
     }
 
     method DeclareSymbol(decl: STypedDeclaration, marker: DeclarationMarker)
       requires Valid()
       modifies Repr
-      ensures Valid() && stack == old(stack)
+      ensures Valid() && stack == old(stack) && declarations == old(declarations) + {marker}
     {
       DeclareSymbolByName(decl.name, SType.TypesToSExpr(decl.inputTypes), decl.typ.ToSExpr());
       declarations := declarations + {marker};
@@ -108,7 +116,7 @@ module Solvers {
     method DeclareSymbolByName(name: string, inputTpe: SExpr, outputTpe: SExpr)
       requires Valid()
       modifies Repr
-      ensures Valid() && stack == old(stack)
+      ensures Valid() && stack == old(stack) && declarations == old(declarations)
     {
       smtEngine.DeclareFunction(name, inputTpe.ToString(), outputTpe.ToString());
     }
@@ -116,7 +124,7 @@ module Solvers {
     method Prove(expr: SExpr) returns (result: ProofResult)
       requires Valid()
       modifies Repr
-      ensures Valid() && stack == old(stack)
+      ensures Valid() && stack == old(stack) && declarations == old(declarations)
     {
       smtEngine.Push();
       smtEngine.Assume(SExpr.Negation(expr).ToString());

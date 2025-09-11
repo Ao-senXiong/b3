@@ -214,7 +214,7 @@ module Ast {
     }
   }
 
-  class Axiom {
+  class Axiom extends DeclarationMarker {
     const Explains: seq<Function>
     const Expr: Expr
 

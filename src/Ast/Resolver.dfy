@@ -9,6 +9,7 @@ module Resolver {
   import Raw = RawAst
   import opened Ast
   import Printer
+  import FunctionDesugaring
 
   method Resolve(b3: Raw.Program) returns (r: Result<Ast.Program, string>)
     ensures r.Success? ==> b3.WellFormed() && r.value.WellFormed()
@@ -29,6 +30,8 @@ module Resolver {
     var functions := SeqMap(tagAndFunctionNames, (name: string) requires name in functionMap => functionMap[name]);
     var procedures := SeqMap(b3.procedures, (proc: Raw.Procedure) requires proc.name in procMap => procMap[proc.name]);
     var r3 := Program(types, functions, axioms, procedures);
+
+    r3 :- FunctionDesugaring.Desugar(r3);
 
     return Success(r3);
   }
