@@ -188,7 +188,7 @@ module Ast {
     predicate WellFormed() {
       && (forall e <- when :: e.WellFormed())
       && (body.WellFormed())
-      // TODO: make sure free variables of when/body are the expected ones
+      // TODO: make sure free/bound variables of when/body are the expected ones
     }
   }
 
