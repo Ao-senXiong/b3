@@ -28,6 +28,13 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y z3
     
+    - name: Install Dafny
+      run: |
+        wget https://github.com/dafny-lang/dafny/releases/latest/download/dafny-4.8.1-x64-ubuntu-20.04.zip
+        unzip dafny-4.8.1-x64-ubuntu-20.04.zip
+        sudo mv dafny /usr/local/
+        echo "/usr/local/dafny" >> $GITHUB_PATH
+    
     - name: Build
       run: make build
     
