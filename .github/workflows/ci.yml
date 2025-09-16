@@ -33,6 +33,8 @@ jobs:
     
     - name: "Install Dafny"
       uses: dafny-lang/setup-dafny-action@v1
+      with:
+        dafny-version: "4.11.0"
     
     - name: Build
       run: make build
