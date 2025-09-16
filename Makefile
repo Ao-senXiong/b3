@@ -26,7 +26,7 @@ resolve:
 
 # This is the target for running the B3 test suite. (make won't let it be called "test", because there's a directory named "test")
 lit:
-	lit test
+	lit test/ --param b3_params="--solver=cvc5"
 
 # C# targets (in addition to the standard targets above)
 
