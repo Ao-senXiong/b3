@@ -36,12 +36,8 @@ jobs:
           sudo apt-get install -y cvc5
         fi
     
-    - name: Install Dafny
-      run: |
-        wget https://github.com/dafny-lang/dafny/releases/latest/download/dafny-4.11.0-x64-ubuntu-22.04.zip
-        unzip dafny-4.11.0-x64-ubuntu-22.04.zip
-        sudo mv dafny /usr/local/
-        echo "/usr/local/dafny" >> $GITHUB_PATH
+    - name: "Install Dafny"
+      uses: dafny-lang/setup-dafny-action@v1
     
     - name: Build
       run: make build
