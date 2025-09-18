@@ -1,4 +1,4 @@
-// RUN: %b3 verify "%s" --show-proof-obligations > "%t"
+// RUN: %verify "%s" --show-proof-obligations > "%t"
 // RUN: %diff "%s.expect" "%t"
 
 // here is a comment

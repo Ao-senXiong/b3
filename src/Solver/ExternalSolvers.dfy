@@ -1,88 +1,130 @@
 module ExternalSolvers {
   import opened Basics
-  import Smt
-  import Z3SmtSolver
+  import opened Std.Wrappers
+  import opened OSProcesses
 
   export
-    reveals ExternalSolver
-    provides Create
-    provides Smt, Basics
+    reveals SolverSelection
+    provides StartSmtSolverProcess, Send
+    provides Wrappers, OSProcesses
 
-  datatype ExternalSolver = Z3 // soon:  | CVC5
+  datatype SolverSelection = Z3 | CVC5
 
-  method Create(which: ExternalSolver, printLog: bool) returns (smtEngine: Smt.SolverEngine)
-    ensures !smtEngine.Disposed()
-    ensures smtEngine.CommandStacks() == Cons(Nil, Nil)
-    ensures fresh(smtEngine) && fresh(smtEngine.process)
+  method StartSmtSolverProcess(which: SolverSelection) returns (r: Result<OSProcess, string>)
+    ensures r.Success? ==> var process := r.value; process.Valid() && fresh(process)
   {
     var process;
     match which {
-      case Z3 => process := Z3SmtSolver.CreateZ3Process();
+      case Z3 =>
+        process :- OSProcess.Create("z3", "-in");
+      case CVC5 =>
+        process :- OSProcess.Create("cvc5", "--incremental");
     }
-    smtEngine := new Smt.SolverEngine(process, printLog);
+
+    // Initialize SMT solver with some SMT-LIB2 commands
+    var _ :- Send(process, "(set-option :produce-models true)");
+    var _ :- Send(process, "(set-logic ALL)");
+
+    return Success(process);
   }
 
-  @Test
-  method DemonstrateExternalSolver() {
-    var z3 := Create(ExternalSolver.Z3, false);
-    
-    z3.DeclareFunction("x", "()", "Int");
+  method Send(p: OSProcess, cmd: string) returns (r: Result<string, string>)
+    requires p.Valid()
+    modifies p
+    ensures r.Success? && cmd != "(exit)" ==> p.Valid()
+  {
+    Log(p, ToProcess, cmd);
 
-    z3.Push();
-    
-    // Example: Check if x > y and y > x is satisfiable
-    z3.DeclareFunction("y", "()", "Int");
+    var _ := p.Send(cmd);
 
-    // Assert x > y
-    z3.Assume("(> x y)");
-    
-    // Assert y > x
-    z3.Assume("(> y x)");
-    
-    // Check satisfiability
-    var result := z3.CheckSat();
-    
-    // Print result (should be "unsat")
-    print "Checking if x > y and y > x is satisfiable: ", result, "\n";
-    expect result == "unsat";
-    
-    // Pop back to clean state
-    z3.Pop();
-    
-    // Example: Check if x >= 0 and x <= 10 is satisfiable
-    z3.Push();
-    
-    // Assert x >= 0
-    z3.Assume("(>= x 0)");
-    
-    // Assert x <= 10
-    z3.Assume("(<= x 10)");
-    
-    // Check satisfiability
-    result := z3.CheckSat();
-    
-    // Print result (should be "sat")
-    print "Checking if x >= 0 and x <= 10 is satisfiable: ", result, "\n";
-    expect result == "sat";
-    
-    // If satisfiable, get a model
-    var model := z3.GetModel();
-    print "Model: ", model, "\n";
-    
-    // Pop back to clean state
-    z3.Pop();
-    
-    // Clean up
-    z3.Dispose();
+    // For simple commands like (push), (pop), there is no response from the SMT solver
+    if
+      || cmd == "(push)"
+      || cmd == "(pop)"
+      || "(assert " <= cmd
+      || "(set-option " <= cmd
+      || "(set-logic " <= cmd
+      || "(declare-fun " <= cmd
+      || "(declare-const " <= cmd
+      || "(declare-sort " <= cmd
+      || cmd == "(exit)"
+    {
+      return Success("");
+    }
+
+    // For get-model, read until we get a balanced set of parentheses
+    if cmd == "(get-model)" {
+      r := ReadBalancedParentheses(p);
+      return;
+    }
+
+    // In all other cases, including the command check-sat, the response is a single line
+    var line :- p.ReadLine();
+    match line
+    case None => return Success("");
+    case Some(text) => return Success(text);
   }
-}
 
-module Z3SmtSolver {
-  import Smt
+  method ReadBalancedParentheses(p: OSProcess) returns (r: Result<string, string>)
+    requires p.Valid()
+    modifies p
+    ensures r.Success? ==> p.Valid()
+  {
+    // Read until we get a balanced set of parentheses
+    var response := "";
+    var parenCount: nat := 0;
+    var started := false;
+    // We don't actually know that the process is going to give us a finite amount
+    // of response output. However, we will in effect assume that here, by dreaming
+    // up the number of characters we're expecting in the reponse.
+    ghost var lengthOfEntireResponse :| 0 <= lengthOfEntireResponse;
+    assert |response| == 0 <= lengthOfEntireResponse;
+    while true
+      invariant |response| <= lengthOfEntireResponse
+      decreases lengthOfEntireResponse - |response|
+    {
+      var line :- p.ReadLine();
+      match line
+      case None =>
+        // at end of file; okay, so this is unexpected, but let's just return what we've got so far
+        return Success(response);
+      case Some(text) =>
+        response := response + text + "\n";
 
-  // Factory method to create a Z3 solver instance
-  @Axiom
-  method {:extern} CreateZ3Process() returns (process: Smt.SmtProcess)
-    ensures !process.Disposed()
-    ensures fresh(process)
+        for i := 0 to |text| {
+          var ch := text[i];
+          if ch == '(' {
+            started := true;
+            parenCount := parenCount + 1;
+          } else if ch == ')' {
+            if !started || parenCount == 0 {
+              // malformed parentheses; just return what we've got so far
+              return Success(response);
+            }
+            parenCount := parenCount - 1;
+          }
+        }
+
+        if started && parenCount == 0 {
+          // perfect
+          return Success(response);
+        }
+        assume {:axiom} |response| <= lengthOfEntireResponse;
+    }
+  }
+
+  const DEBUG: bool := false
+
+  datatype Direction = ToProcess | FromProcess
+
+  method Log(p: OSProcess, direction: Direction, msg: string) {
+    if DEBUG {
+      print p.ExecutableName();
+      match direction {
+        case ToProcess => print " << ";
+        case FromProcess => print " >> ";
+      }
+      print msg, "\n";
+    }
+  }
 }

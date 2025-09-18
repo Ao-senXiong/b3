@@ -66,7 +66,12 @@ module Verifier {
   method VerifyProcedure(proc: Ast.Procedure, context_in: RSolvers.RContext, declMap: I.DeclMappings, axiomMap: map<Axiom, RSolvers.RExpr>, options: CLI.CliOptions)
     requires AstValid.Procedure(proc)
   {
-    var smtEngine := RSolvers.CreateEngine(axiomMap, options);
+    var result := RSolvers.CreateEngine(axiomMap, options);
+    if result.Failure? {
+      print result.error, "\n";
+      return;
+    }
+    var smtEngine := result.value;
     var preIncarnations, bodyIncarnations, postIncarnations := CreateProcIncarnations(proc.Parameters, declMap);
 
     {

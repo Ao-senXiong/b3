@@ -1,4 +1,4 @@
-// RUN: %b3 verify "%s" --solver-log > "%t"
+// RUN: %verify "%s" --solver-log > "%t"
 // RUN: %diff "%s.expect" "%t"
 
 type string

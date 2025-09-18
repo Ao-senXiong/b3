@@ -8,3 +8,6 @@ pdf:
 html:
 	madoko -vv --odir=out krml301
 	madoko -vv --odir=out krml304
+
+clean:
+	rm -rf out

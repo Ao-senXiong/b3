@@ -8,6 +8,8 @@ all: build lit test-cs
 
 clean:
 	rm -rf bin target/cs/bin target/java/bin
+	cd doc ; make clean
+	cd doc/refman ; make clean
 
 build:
 	dafny build $(PROJECT_FILE) --output $(TARGET)
@@ -25,8 +27,11 @@ resolve:
 	dafny resolve $(PROJECT_FILE)
 
 # This is the target for running the B3 test suite. (make won't let it be called "test", because there's a directory named "test")
+# The --filter option will cause lit to ignore all files (and, in particular, unsupported files) in the "test" folder. This is
+# convenient, so that a B3 developer can keep temporary .b3 files in that folder.
 lit:
-	lit test
+	lit --filter '/' test
+	lit -D B3_OPTIONS=--cvc5 --filter '/' test/verifier
 
 # C# targets (in addition to the standard targets above)
 
@@ -40,6 +45,9 @@ build-cs:
 
 build-java:
 	(cd target/java; dafny build --target=java $(PROJECT_FILE) --output $(TARGET))
+
+quick-java:
+	(cd target/java; dafny build --no-verify --target=java $(PROJECT_FILE) --output $(TARGET))
 
 run-java:
 	(cd target/java; dafny run --target=java $(PROJECT_FILE) --no-verify --build $(TARGET) -- verify ../../$(INPUT))

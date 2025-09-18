@@ -6,6 +6,7 @@ module RSolvers {
   import SolverExpr
   import Solvers
   import ExternalSolvers
+  import Smt = SmtEngines
   import Ast
   import opened Std.Wrappers
   import opened Basics
@@ -152,7 +153,7 @@ module RSolvers {
     function CustomLiteralToSExprName(): string
       requires CustomLiteral?
     {
-      "|" + typ.ToString() + ":" + s + "|"
+      "|" + s + ":" + typ.ToString() + "|"
     }
 
     static function BoundVarsToString(vv: seq<SolverExpr.SConstant>): string {
@@ -519,11 +520,14 @@ module RSolvers {
     }
   }
 
-  method CreateEngine(axiomMap: map<Ast.Axiom, RExpr>, options: CLI.CliOptions) returns (r: REngine)
-    ensures r.Valid() && fresh(r.Repr)
+  method CreateEngine(axiomMap: map<Ast.Axiom, RExpr>, options: CLI.CliOptions) returns (r: Result<REngine, string>)
+    ensures r.Success? ==> var smtEngine := r.value; smtEngine.Valid() && fresh(smtEngine.Repr)
   {
-    var z3 := ExternalSolvers.Create(ExternalSolvers.Z3, "solver-log" in options);
-    var state := new Solvers.SolverState(z3);
-    r := new REngine.New(state, axiomMap, options);
+    var which := if "cvc5" in options then ExternalSolvers.CVC5 else ExternalSolvers.Z3;
+    var process :- ExternalSolvers.StartSmtSolverProcess(which);
+    var solver := new Smt.SolverEngine(process, "solver-log" in options);
+    var state := new Solvers.SolverState(solver);
+    var smtEngine := new REngine.New(state, axiomMap, options);
+    return Success(smtEngine);
   }
 }

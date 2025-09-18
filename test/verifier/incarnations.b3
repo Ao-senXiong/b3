@@ -1,4 +1,4 @@
-// RUN: %b3 verify "%s" --print-incarnations > "%t"
+// RUN: %verify "%s" --print-incarnations > "%t"
 // RUN: %diff "%s.expect" "%t"
 
 // Note. The Incarnations.Print method is nondeterministic, so it may print lines in a different order.

@@ -1,5 +1,5 @@
-includes = ["**/*.dfy", "../target/cs/src/Z3Interface.cs"]
-excludes = ["**/flycheck_*"]
+includes = ["**/*.dfy", "../target/cs/src/**/*.cs"]
+excludes = ["**/flycheck_*", "../target/**/flycheck_*"]
 
 [options]
 type-system-refresh = true

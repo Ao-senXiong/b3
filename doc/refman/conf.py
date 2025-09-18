@@ -22,7 +22,7 @@ lexers['b3'] = b3_pygments.CustomLexer()
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'This is B3'
-copyright = '2025, B3 developers'
+copyright = '2025, B3 contributors'
 author = 'K. Rustan M. Leino'
 
 # -- General configuration ---------------------------------------------------

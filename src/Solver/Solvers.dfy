@@ -2,7 +2,7 @@ module Solvers {
   import opened Std.Wrappers
   import opened Basics
   import opened SolverExpr
-  import Smt
+  import Smt = SmtEngines
   import opened DeclarationMarkers
 
   export
@@ -39,7 +39,8 @@ module Solvers {
     var additionalDeclaredNames: set<string>
 
     constructor (smtEngine: Smt.SolverEngine)
-      requires smtEngine.Valid() && smtEngine.CommandStacks() == Cons(Nil, Nil)
+      requires smtEngine.Valid()
+      requires smtEngine.CommandStacks == Cons(Nil, Nil)
       ensures Valid() && fresh(Repr - {smtEngine, smtEngine.process})
     {
       this.smtEngine := smtEngine;
@@ -58,7 +59,7 @@ module Solvers {
       && smtEngine.process in Repr
       && this !in {smtEngine, smtEngine.process}
       && smtEngine.Valid()
-      && stack.Length() + 1 == smtEngine.CommandStacks().Length()
+      && stack.Length() + 1 == smtEngine.CommandStacks.Length()
     }
 
     twostate predicate Evolves()
@@ -91,7 +92,7 @@ module Solvers {
       ensures Valid() && stack == old(stack).tail
       ensures declarations == old(stack).head.decls && additionalDeclaredNames == old(stack).head.names
     {
-      smtEngine.CommandStacks().AboutDoubleCons();
+      smtEngine.CommandStacks.AboutDoubleCons();
       smtEngine.Pop();
       var StackItem(_, decls, names) := stack.head;
       stack := stack.tail;
@@ -164,13 +165,21 @@ module Solvers {
     {
       smtEngine.Push();
       smtEngine.Assume(SExpr.Negation(expr).ToString());
+
       var satness := smtEngine.CheckSat();
-      if satness == "unsat" {
+      if satness.Failure? {
+        result := Unproved(satness.error);
+      } else if satness.value == "unsat" {
         result := Proved;
       } else {
-        var model := smtEngine.GetModel();
-        result := Unproved(satness + "\n" + model);
+        var reason := satness.value;
+        var r := smtEngine.GetModel();
+        if r.Success? {
+          reason := reason + "\n" + r.value;
+        }
+        result := Unproved(reason);
       }
+
       smtEngine.Pop();
     }
   }
