@@ -42,7 +42,7 @@ jobs:
     - name: Run tests
       run: |
         if [ "${{ matrix.solver }}" = "z3" ]; then
-            make 
+          make lit-z3
         else
-          sudo apt-get install -y cvc5
+          make lit-cvc5
         fi
