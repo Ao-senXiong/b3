@@ -30,7 +30,13 @@ resolve:
 # The --filter option will cause lit to ignore all files (and, in particular, unsupported files) in the "test" folder. This is
 # convenient, so that a B3 developer can keep temporary .b3 files in that folder.
 lit:
+	lit-z3
+	lit-cvc5
+
+lit-z3:
 	lit --filter '/' test
+
+lit-cvc5:
 	lit -D B3_OPTIONS=--cvc5 --filter '/' test/verifier
 
 # C# targets (in addition to the standard targets above)

@@ -28,19 +28,7 @@ jobs:
         if [ "${{ matrix.solver }}" = "z3" ]; then
           sudo apt-get install -y z3
         else
-          ARCH=$(uname -m)
-          if [ "$ARCH" = "x86_64" ]; then
-            ARCH_NAME="x86_64"
-          elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-            ARCH_NAME="arm64"
-          else
-            echo "Unsupported architecture: $ARCH"
-            exit 1
-          fi
-          wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-${ARCH_NAME}-static.zip
-          unzip cvc5-Linux-${ARCH_NAME}-static.zip
-          chmod +x cvc5-Linux-${ARCH_NAME}-static/bin/cvc5
-          echo "$GITHUB_WORKSPACE/cvc5-Linux-${ARCH_NAME}-static/bin/" >> $GITHUB_PATH
+          sudo apt-get install -y cvc5
         fi
     
     - name: "Install Dafny"
@@ -52,4 +40,9 @@ jobs:
       run: make build
     
     - name: Run tests
-      run: make lit
+      run: |
+        if [ "${{ matrix.solver }}" = "z3" ]; then
+            make 
+        else
+          sudo apt-get install -y cvc5
+        fi
