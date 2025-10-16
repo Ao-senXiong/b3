@@ -1,0 +1,8 @@
+/* Highlight B3 keywords in inline code */
+code .b3-keyword { 
+    color: #007020; 
+    font-weight: bold;
+    background: none;
+    padding: 0;
+    border: none;
+}

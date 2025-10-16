@@ -20,9 +20,6 @@ procedure TestLists(list: List) {
 }
 ```
 
-A to-do item for this documentation is to also make inline code, like `check x < y`,
-be processed by pygments syntax highlighting.
-
 Here is a longer example:
 
 ```{literalinclude} ../../test/refman/FileSystem.b3
