@@ -1,0 +1,66 @@
+// RUN: %b3 verify "%s" > "%t"
+// RUN: %diff "%s.expect" "%t"
+
+// BEGIN EXAMPLE
+type X
+type Y
+
+// Union is like a C type
+//     union {
+//       X x;
+//       Y y;
+//     }
+
+type Union
+function XUnion(injective getX: X): Union
+function YUnion(injective getY: Y): Union
+
+procedure TestUnion(x: X, y0: Y, y1: Y)
+{
+  var ux := XUnion(x)
+  var uy0 := YUnion(y0)
+  var uy1 := YUnion(y1)
+
+  check ux != uy0 // error: this is not provable
+  check y0 != y1 ==> uy0 != uy1 // this is provable, because YUnion has been declared to be injective in its parameter
+
+  check XUnion..getX(ux) == x
+}
+
+// DiscriminatedUnion is like a C type
+//     struct {
+//       Tag tag;
+//       union {
+//         X x;
+//         Y y;
+//       }
+//     }
+// where Tag is some type that includes the disinct values XDiscriminatedUnion..tag() and YDiscriminatedUnion..tag().
+
+type DiscriminatedUnion
+tagger Discriminant for DiscriminatedUnion
+function XDiscriminatedUnion(injective getX: X): DiscriminatedUnion tag Discriminant
+function YDiscriminatedUnion(injective getY: Y): DiscriminatedUnion tag Discriminant
+
+procedure TestDiscriminatedUnion(u: DiscriminatedUnion, x: X, y0: Y, y1: Y)
+{
+  var ux := XDiscriminatedUnion(x)
+  var uy0 := YDiscriminatedUnion(y0)
+  var uy1 := YDiscriminatedUnion(y1)
+
+  check ux != uy0 // yes, this is provable for a discriminated union
+  // Here's the reason:
+  check Discriminant(ux) == XDiscriminatedUnion..tag()
+  check Discriminant(uy0) == YDiscriminatedUnion..tag()
+  check XDiscriminatedUnion..tag() != YDiscriminatedUnion..tag()
+
+  check y0 != y1 ==> uy0 != uy1
+
+  check XDiscriminatedUnion..getX(ux) == x
+
+  if Discriminant(u) == XDiscriminatedUnion..tag() {
+    var xx := XDiscriminatedUnion..getX(u)
+    check u != uy1
+  }
+}
+// END EXAMPLE

@@ -1,0 +1,33 @@
+// RUN: %b3 verify "%s" > "%t"
+// RUN: %diff "%s.expect" "%t"
+
+// BEGIN EXAMPLE
+// This example defines maps from integers to values
+
+type Value
+
+type Map
+
+function select(m: Map, i: int): Value
+
+function store(m: Map, i: int, v: Value): Map
+
+axiom explains select, store
+  forall m: Map, i: int, j: int, v: Value
+    pattern select(store(m, i, v), j)
+    (i == j ==> select(store(m, i, v), j) == v) &&
+    (i != j ==> select(store(m, i, v), j) == select(m, j))
+
+procedure Test(v: Value, w: Value) {
+  var m: Map
+
+  m := store(m, 0, v)
+  m := store(m, 1, w)
+
+  check select(m, 0) == v
+  check select(m, 1) == w
+
+  m := store(m, 0, w)
+  check select(m, 0) == select(m, 1)
+}
+// END EXAMPLE

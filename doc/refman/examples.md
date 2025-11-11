@@ -26,3 +26,17 @@ Here is a longer example:
 :start-after: // BEGIN EXAMPLE
 :end-before: // END EXAMPLE
 ```
+
+Here are examples that show union types and discriminated union types:
+
+```{literalinclude} ../../test/refman/Unions.b3
+:start-after: // BEGIN EXAMPLE
+:end-before: // END EXAMPLE
+```
+
+Here is an example that defines maps from integers to values:
+
+```{literalinclude} ../../test/refman/Maps.b3
+:start-after: // BEGIN EXAMPLE
+:end-before: // END EXAMPLE
+```
